@@ -7,6 +7,5 @@ app/build/
 .kotlin/
 *.apk
 *.aab
-*.keystore
 *.jks
 .env
