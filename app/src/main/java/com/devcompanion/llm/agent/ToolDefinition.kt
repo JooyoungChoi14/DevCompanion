@@ -1,0 +1,291 @@
+package com.devcompanion.llm.agent
+
+import com.google.gson.JsonObject
+
+/**
+ * Tool definitions for the WebView agent loop.
+ *
+ * Each tool describes an action the LLM can take on the WebView,
+ * including its name, description, and JSON Schema parameters.
+ * These are converted to provider-specific function calling formats
+ * by each adapter.
+ */
+
+// ── Data classes ──────────────────────────────────────────────────────
+
+/**
+ * A tool definition provided to the LLM for function calling.
+ */
+data class ToolDefinition(
+    val name: String,
+    val description: String,
+    val parameters: JsonObject
+)
+
+/**
+ * A tool call from the LLM requesting an action.
+ */
+data class ToolCall(
+    val id: String,
+    val name: String,
+    val arguments: JsonObject
+)
+
+/**
+ * Result of executing a tool call.
+ */
+data class ToolResult(
+    val id: String,
+    val output: String,
+    val isError: Boolean = false
+)
+
+/**
+ * Confirmation details for a sensitive action requiring user approval.
+ */
+data class ToolConfirmationDetails(
+    val action: String,
+    val target: String,
+    val preview: String,
+    val riskLevel: ActionRisk
+)
+
+// ── Enums ──────────────────────────────────────────────────────────────
+
+/**
+ * Risk classification for tool actions.
+ * - [SAFE]: Read-only, no side effects
+ * - [MODERATE]: Has side effects but low risk
+ * - [SENSITIVE]: Requires user confirmation
+ */
+enum class ActionRisk { SAFE, MODERATE, SENSITIVE }
+
+/**
+ * State of the agent loop.
+ * Used by the UI to show progress and enable cancellation.
+ */
+sealed class AgentState {
+    object Idle : AgentState()
+    data class Thinking(val iteration: Int) : AgentState()
+    data class CheckingPermission(val call: ToolCall, val iteration: Int) : AgentState()
+    data class WaitingConfirmation(val call: ToolCall) : AgentState()
+    data class ExecutingTool(val tool: String, val iteration: Int) : AgentState()
+    data class Error(val message: String) : AgentState()
+}
+
+/**
+ * Events emitted by the agent loop for the UI to consume.
+ */
+sealed class AgentEvent {
+    data class ToolExecuted(val call: ToolCall, val result: ToolResult) : AgentEvent()
+    data class TextResponse(val content: String) : AgentEvent()
+    data class ConfirmationRequired(val call: ToolCall, val details: ToolConfirmationDetails) : AgentEvent()
+    data class Rejected(val call: ToolCall) : AgentEvent()
+    data class Error(val message: String) : AgentEvent()
+    object BudgetExceeded : AgentEvent()
+}
+
+// ── Tool definitions ──────────────────────────────────────────────────
+
+/**
+ * Predefined tool definitions for WebView interaction.
+ *
+ * Each tool has a name, description, and JSON Schema parameters.
+ * These are provided to the LLM via the `tools` parameter in chat requests.
+ */
+object WebViewTools {
+
+    val NAVIGATE = ToolDefinition(
+        name = "navigate",
+        description = "Navigate the browser to a URL. Only http:// and https:// URLs are allowed.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("url", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "The URL to navigate to (http:// or https:// only)")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("url") })
+        }
+    )
+
+    val CLICK = ToolDefinition(
+        name = "click",
+        description = "Click an element on the page identified by a CSS selector.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector of the element to click")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("selector") })
+        }
+    )
+
+    val TYPE = ToolDefinition(
+        name = "type",
+        description = "Type text into an input field. The field's sensitivity is checked at runtime: password, hidden, or credit-card fields require user confirmation.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector of the input element")
+                })
+                add("text", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Text to type into the field")
+                })
+                add("clear", JsonObject().apply {
+                    addProperty("type", "boolean")
+                    addProperty("description", "Whether to clear the field before typing (default: true)")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("selector"); add("text") })
+        }
+    )
+
+    val SCROLL = ToolDefinition(
+        name = "scroll",
+        description = "Scroll the page in a direction by a number of pixels.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("direction", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Scroll direction: up, down, left, right")
+                    add("enum", com.google.gson.JsonArray().apply {
+                        add("up"); add("down"); add("left"); add("right")
+                    })
+                })
+                add("amount", JsonObject().apply {
+                    addProperty("type", "integer")
+                    addProperty("description", "Number of pixels to scroll (default: 300)")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("direction") })
+        }
+    )
+
+    val EVAL_JS = ToolDefinition(
+        name = "eval_js",
+        description = "Execute a JavaScript expression in the page context. WARNING: This is a powerful tool that can access sensitive data. Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("expression", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "JavaScript expression to evaluate")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("expression") })
+        }
+    )
+
+    val GET_DOM = ToolDefinition(
+        name = "get_dom",
+        description = "Get a snapshot of the page DOM. Returns the HTML structure of the selected element. Sensitive fields (passwords, hidden inputs) are masked.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector to scope the DOM snapshot (default: 'body')")
+                })
+            })
+        }
+    )
+
+    val SCREENSHOT = ToolDefinition(
+        name = "screenshot",
+        description = "Take a screenshot of the current page. Password fields are blurred for privacy.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Optional CSS selector to capture a specific element instead of the full page")
+                })
+            })
+        }
+    )
+
+    val SUBMIT_FORM = ToolDefinition(
+        name = "submit_form",
+        description = "Submit a form on the page. Requires user confirmation because this sends data.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector of the form to submit")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("selector") })
+        }
+    )
+
+    val GET_CONSOLE_LOGS = ToolDefinition(
+        name = "get_console_logs",
+        description = "Retrieve recent console log messages from the WebView. Returns an array of log entries with level, message, and timestamp. Useful for debugging JavaScript errors or inspecting runtime behavior.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("limit", JsonObject().apply {
+                    addProperty("type", "integer")
+                    addProperty("description", "Maximum number of log entries to return (default: 50)")
+                })
+                add("level", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Filter by log level: 'all', 'error', 'warn', 'info' (default: 'all')")
+                })
+            })
+        }
+    )
+
+    val GET_COMPUTED_STYLE = ToolDefinition(
+        name = "get_computed_style",
+        description = "Get the computed CSS style of an element. Returns property values like color, font, display, margin, padding, etc. Useful for debugging layout and styling issues.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector of the element to inspect")
+                })
+                add("properties", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Comma-separated CSS property names to retrieve (e.g. 'color,font-size,display'). If omitted, returns common layout properties.")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("selector") })
+        }
+    )
+
+    val SET_STYLE = ToolDefinition(
+        name = "set_style",
+        description = "Apply inline CSS styles to an element. Useful for quick visual fixes or testing style changes before making them permanent. Requires user confirmation.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector of the element to style")
+                })
+                add("styles", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS declarations to apply, e.g. 'background: red; padding: 10px;'")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("selector"); add("styles") })
+        }
+    )
+
+    /** All available WebView tools. */
+    val ALL = listOf(
+        NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS
+    )
+}
