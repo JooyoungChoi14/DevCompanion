@@ -125,6 +125,7 @@ fun MainApp(
     var showBridgeInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAiChat by remember { mutableStateOf(false) }
+    var pendingAiQuestion by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     val debugger = WebViewDebuggerHolder.current
     val isActive = debugger != null
@@ -194,7 +195,11 @@ fun MainApp(
                 headerVisible = !showAiChat,
                 onHeaderVisibilityToggle = { headerVisible = !headerVisible },
                 onWebViewReady = onWebViewReady,
-                onWebViewCreated = { webView -> webViewRef = webView }
+                onWebViewCreated = { webView -> webViewRef = webView },
+                onAskAi = { question ->
+                    pendingAiQuestion = question
+                    showAiChat = true
+                }
             )
 
             // AI Chat as bottom sheet — WebView stays visible behind
@@ -208,7 +213,8 @@ fun MainApp(
                 ) {
                     AiChatScreen(
                         webView = webViewRef,
-                        onDismiss = { showAiChat = false },
+                        initialPrompt = pendingAiQuestion,
+                        onDismiss = { showAiChat = false; pendingAiQuestion = null },
                         modifier = Modifier.imePadding()
                     )
                 }

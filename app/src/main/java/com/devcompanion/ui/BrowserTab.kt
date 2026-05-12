@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +34,8 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import android.webkit.JavascriptInterface
+import com.devcompanion.data.Bookmark
+import com.devcompanion.data.BookmarksStore
 import com.devcompanion.debug.WebViewDebugger
 import com.devcompanion.debug.WebViewDebuggerHolder
 import com.devcompanion.bridge.BridgeServer
@@ -58,6 +61,8 @@ fun BrowserTab(
     onHeaderVisibilityToggle: (() -> Unit)? = null,
     onWebViewReady: ((() -> Boolean) -> Unit)? = null,
     onWebViewCreated: ((WebView) -> Unit)? = null,
+    onAskAi: ((String) -> Unit)? = null,
+    onNavigateHome: (() -> Unit)? = null,
 ) {
     var urlTextValue by remember { mutableStateOf(TextFieldValue("https://example.com")) }
     var canGoBack by remember { mutableStateOf(false) }
@@ -95,7 +100,21 @@ fun BrowserTab(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+    // ── Start page / Bookmarks state ──────────────────────────────────
+    val context = LocalContext.current
+    val bookmarksStore = remember { BookmarksStore(context) }
+    var bookmarks by remember { mutableStateOf(bookmarksStore.getBookmarks()) }
+    var showStartPage by remember { mutableStateOf(urlTextValue.text == "about:blank" || urlTextValue.text == "https://example.com") }
+
+    // Navigate away from start page
+    val navigateFromStartPage: (String) -> Unit = { url ->
+        showStartPage = false
+        urlTextValue = TextFieldValue(url, TextRange(url.length))
+        pendingAction = BrowserAction.Navigate(url)
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // ── Expanded header (URL bar + nav + zoom) ────────────────
         AnimatedVisibility(
             visible = headerVisible && headerExpanded,
@@ -135,11 +154,28 @@ fun BrowserTab(
                         ),
                         keyboardActions = KeyboardActions(
                             onGo = {
-                                val currentUrl = urlTextValue.text
-                                val loadUrl = if (!currentUrl.startsWith("http")) "https://$currentUrl" else currentUrl
-                                urlTextValue = TextFieldValue(loadUrl, TextRange(loadUrl.length))
+                                val input = urlTextValue.text.trim()
+                                when {
+                                    input.startsWith("?") -> {
+                                        val question = input.removePrefix("?").trim()
+                                        onAskAi?.invoke(question)
+                                        focusManager.clearFocus()
+                                    }
+                                    input.contains(".") && !input.contains(" ") && !input.startsWith("http") -> {
+                                        val url = "https://$input"
+                                        urlTextValue = TextFieldValue(url, TextRange(url.length))
+                                        pendingAction = BrowserAction.Navigate(url)
+                                    }
+                                    input.startsWith("http") -> {
+                                        pendingAction = BrowserAction.Navigate(input)
+                                    }
+                                    else -> {
+                                        val searchUrl = "https://duckduckgo.com/?q=${java.net.URLEncoder.encode(input, "UTF-8")}"
+                                        urlTextValue = TextFieldValue(searchUrl, TextRange(searchUrl.length))
+                                        pendingAction = BrowserAction.Navigate(searchUrl)
+                                    }
+                                }
                                 urlExpanded = false
-                                pendingAction = BrowserAction.Navigate(loadUrl)
                                 focusManager.clearFocus()
                             }
                         ),
@@ -234,6 +270,15 @@ fun BrowserTab(
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh", modifier = Modifier.size(18.dp))
+                    }
+                    IconButton(
+                        onClick = {
+                            showStartPage = true
+                            onNavigateHome?.invoke()
+                        },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Home, contentDescription = "Home", modifier = Modifier.size(18.dp))
                     }
                     Text(
                         text = pageTitle,
@@ -340,6 +385,8 @@ fun BrowserTab(
 
                     importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
                     settings.saveFormData = true
+                    @Suppress("DEPRECATION")
+                    settings.savePassword = true
                     isFocusable = true
                     isFocusableInTouchMode = true
 
@@ -437,12 +484,38 @@ fun BrowserTab(
         )
     }
 
+    // ── Start page overlay ──────────────────────────────────────────
+    if (showStartPage) {
+        StartPage(
+            bookmarks = bookmarks,
+            recentUrls = urlHistory.takeLast(5).reversed(),
+            onBookmarkClick = { url -> navigateFromStartPage(url) },
+            onAddBookmark = {
+                val currentUrl = urlTextValue.text
+                val currentTitle = pageTitle
+                if (currentUrl.isNotBlank() && currentUrl != "about:blank") {
+                    val bm = Bookmark(title = currentTitle.ifBlank { currentUrl }, url = currentUrl)
+                    bookmarksStore.addBookmark(bm)
+                    bookmarks = bookmarksStore.getBookmarks()
+                }
+            },
+            onRemoveBookmark = { id ->
+                bookmarksStore.removeBookmark(id)
+                bookmarks = bookmarksStore.getBookmarks()
+            },
+            onRecentClick = { url -> navigateFromStartPage(url) },
+            modifier = Modifier
+                .fillMaxSize()
+        )
+    }
+
+    } // Box
+
     LaunchedEffect(Unit) {
         WebViewDebuggerHolder.current = debugger
     }
 
     // Connect WebView to BridgeServer for agent API access
-    val context = LocalContext.current
     DisposableEffect(webViewRef) {
         val app = context.applicationContext as? DevCompanionApp
         app?.bridgeServer?.attachWebView(webViewRef)

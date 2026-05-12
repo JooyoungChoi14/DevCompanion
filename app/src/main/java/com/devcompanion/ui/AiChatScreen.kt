@@ -90,6 +90,7 @@ private val RECOMMENDED_MODELS = mapOf(
 fun AiChatScreen(
     viewModel: AiChatViewModel = viewModel(),
     webView: WebView?,
+    initialPrompt: String? = null,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -109,6 +110,17 @@ fun AiChatScreen(
     var inputText by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
     var showCaptureDialog by remember { mutableStateOf(false) }
+
+    // Auto-send initial prompt from address bar "?" prefix
+    val initialPromptSent = remember { mutableStateOf(false) }
+    LaunchedEffect(initialPrompt) {
+        if (initialPrompt != null && !initialPromptSent.value && initialPrompt.isNotBlank()) {
+            inputText = initialPrompt
+            initialPromptSent.value = true
+            viewModel.sendMessage(initialPrompt, webView)
+            inputText = ""
+        }
+    }
 
     // Track CSS styles injected from chat responses (styleId -> css)
     val injectedStyles = remember { mutableStateMapOf<String, String>() }
