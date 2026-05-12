@@ -1,10 +1,11 @@
+import androidx.compose.foundation.lazy.grid.GridCells
 package com.devcompanion.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,7 +51,7 @@ fun StartPage(
         ) {
             // Recent section
             if (recentUrls.isNotEmpty()) {
-                item(span = { GridCells.Max }) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = Spacing.xs, bottom = Spacing.xxs)
@@ -79,7 +80,7 @@ fun StartPage(
 
             // Bookmarks section
             if (bookmarks.isNotEmpty()) {
-                item(span = { GridCells.Max }) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(top = Spacing.md, bottom = Spacing.xxs)
@@ -109,7 +110,7 @@ fun StartPage(
 
             // Empty state
             if (bookmarks.isEmpty() && recentUrls.isEmpty()) {
-                item(span = { GridCells.Max }) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
