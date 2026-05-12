@@ -489,7 +489,7 @@ fun BrowserTab(
         StartPage(
             bookmarks = bookmarks,
             recentUrls = urlHistory.takeLast(5).reversed(),
-            onBookmarkClick = { url -> navigateFromStartPage(url) },
+            onBookmarkClick = { url: String -> navigateFromStartPage(url) },
             onAddBookmark = {
                 val currentUrl = urlTextValue.text
                 val currentTitle = pageTitle
@@ -499,11 +499,11 @@ fun BrowserTab(
                     bookmarks = bookmarksStore.getBookmarks()
                 }
             },
-            onRemoveBookmark = { id ->
+            onRemoveBookmark = { id: String ->
                 bookmarksStore.removeBookmark(id)
                 bookmarks = bookmarksStore.getBookmarks()
             },
-            onRecentClick = { url -> navigateFromStartPage(url) },
+            onRecentClick = { url: String -> navigateFromStartPage(url) },
             modifier = Modifier
                 .fillMaxSize()
         )
