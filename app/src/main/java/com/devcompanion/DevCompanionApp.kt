@@ -43,6 +43,9 @@ class DevCompanionApp : Application() {
         // Initialize LLM settings (encrypted preferences)
         com.devcompanion.llm.LlmSettings.initialize(this)
 
+        // Initialize GitHub settings (encrypted preferences)
+        com.devcompanion.github.GitHubSettings.initialize(this)
+
         // Start BridgeServer for AI agent access
         bridgeAuthToken = generateAuthToken()
         bridgeServer = BridgeServer(authToken = bridgeAuthToken)

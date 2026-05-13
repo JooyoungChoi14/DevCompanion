@@ -17,6 +17,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devcompanion.cdp.CdpClient
+import com.devcompanion.github.ui.GitHubPatSection
 import com.devcompanion.llm.LlmSettings
 import com.devcompanion.ui.theme.*
 import kotlinx.coroutines.launch
@@ -250,6 +251,11 @@ fun SettingsSheet(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(Spacing.md))
+
+        // ── GitHub PAT section ────────────────────────────────────
+        GitHubPatSection()
 
         Spacer(modifier = Modifier.height(Spacing.md))
 
