@@ -89,8 +89,9 @@ class TokenBudget(
     fun canProceed(
         estimatedInputTokens: Int,
         estimatedOutputTokens: Int = 0,
-        provider: LlmProvider = currentProvider ?: return BudgetCheck.Ok(0.0)
+        provider: LlmProvider? = currentProvider
     ): BudgetCheck {
+        if (provider == null) return BudgetCheck.Ok(0.0)
         if (!_enabled.value) return BudgetCheck.Ok(0.0)
 
         val estimatedCost = pricing.estimateCost(provider, estimatedInputTokens, estimatedOutputTokens)
@@ -107,7 +108,8 @@ class TokenBudget(
      * Record actual token usage from an API response.
      * Updates both session and monthly tracking.
      */
-    fun recordUsage(usage: TokenUsage, provider: LlmProvider = currentProvider ?: return) {
+    fun recordUsage(usage: TokenUsage, provider: LlmProvider? = currentProvider) {
+        if (provider == null) return
         if (!_enabled.value) return
 
         val cost = pricing.estimateCost(provider, usage.inputTokens, usage.outputTokens)
@@ -120,7 +122,8 @@ class TokenBudget(
      * Used during streaming before the final usage report arrives.
      * Will be corrected when recordUsage() is called with actual counts.
      */
-    fun recordStreamingEstimate(charCount: Int, isOutput: Boolean, provider: LlmProvider = currentProvider ?: return) {
+    fun recordStreamingEstimate(charCount: Int, isOutput: Boolean, provider: LlmProvider? = currentProvider) {
+        if (provider == null) return
         if (!_enabled.value) return
 
         val tokensPerChar = if (isOutput) 0.25 else 0.5  // rough: 4 chars/token output, 2 chars/token input
@@ -149,7 +152,8 @@ class TokenBudget(
     /**
      * Calculate token slot allocation for a given context window size.
      */
-    fun allocateSlots(contextWindow: Int, provider: LlmProvider = currentProvider ?: return emptySlots()): SlotAllocation {
+    fun allocateSlots(contextWindow: Int, provider: LlmProvider? = currentProvider): SlotAllocation {
+        if (provider == null) return emptySlots()
         val totalTokens = contextWindow
         return SlotAllocation(
             systemPrompt = (totalTokens * slots.systemPrompt).toInt(),
