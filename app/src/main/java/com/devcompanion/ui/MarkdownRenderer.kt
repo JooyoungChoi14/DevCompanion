@@ -46,16 +46,17 @@ private val commonmarkParser: Parser by lazy {
 
 @Composable
 fun MarkdownText(
-    text: String,
+    text: String?,
     onCssInject: ((styleId: String, css: String) -> Unit)? = null,
     onCssRevert: ((styleId: String) -> Unit)? = null,
     isCssInjected: ((styleId: String) -> Boolean)? = null,
     modifier: Modifier = Modifier
 ) {
-    if (text.isBlank()) return
+    if (text.isNullOrBlank()) return
+    val content = text!!  // safe after isNullOrBlank check
 
-    val cssBlockStates = remember(text) {
-        val blocks = parseMarkdown(text)
+    val cssBlockStates = remember(content) {
+        val blocks = parseMarkdown(content)
         var idx = 0
         blocks.mapNotNull { block ->
             if (block is MdBlock.CodeBlock) {
@@ -76,24 +77,24 @@ fun MarkdownText(
     }
 
     // Check for unclosed code fences (streaming) → use custom parser
-    val hasUnclosedFence = remember(text) {
-        text.lines().count { it.trimStart().startsWith("```") } % 2 != 0
+    val hasUnclosedFence = remember(content) {
+        content.lines().count { it.trimStart().startsWith("```") } % 2 != 0
     }
 
     val html = remember(text, hasUnclosedFence) {
         if (hasUnclosedFence) {
             // Streaming: custom parser handles unclosed fences
-            markdownToHtmlCustom(text)
+            markdownToHtmlCustom(content)
         } else {
             // Completed: use commonmark for spec-compliant rendering
-            markdownToHtmlCommonmark(text)
+            markdownToHtmlCommonmark(content)
         }
     }
 
     // Debug logging
     LaunchedEffect(html) {
         Log.d(TAG, "=== Markdown Render ===")
-        Log.d(TAG, "Input (${text.length} chars): ${text.take(300)}")
+        Log.d(TAG, "Input (${content.length} chars): ${content.take(300)}")
         Log.d(TAG, "Output HTML (${html.length} chars): ${html.take(300)}")
     }
 
@@ -191,7 +192,7 @@ private class MarkdownBridge(
  */
 private fun normalizeMarkdown(text: String): String {
     // Step 1: Ensure blank line after headings
-    val lines = text.lines()
+    val lines = content.lines()
     val step1 = mutableListOf<String>()
     for (i in lines.indices) {
         step1.add(lines[i])
@@ -443,7 +444,7 @@ private class CommonMarkHtmlVisitor : AbstractVisitor() {
 // ── Streaming fallback (custom parser) ──────────────────────────────────────
 
 private fun markdownToHtmlCustom(text: String): String {
-    val blocks = parseMarkdown(text)
+    val blocks = parseMarkdown(content)
     val sb = StringBuilder()
     var codeBlockIndex = 0
 
@@ -645,7 +646,7 @@ private fun wrapHtml(bodyHtml: String, isDark: Boolean): String {
     |    longPressTimer = setTimeout(function() {
     |      var el = e.target.closest('p, li, h1, h2, h3, h4, h5, h6, blockquote, td, th') || e.target;
     |      var text = (el.innerText || el.textContent || '').trim();
-    |      if (text.length > 0) {
+    |      if (content.length > 0) {
     |        var range = document.createRange();
     |        range.selectNodeContents(el);
     |        var sel = window.getSelection();
