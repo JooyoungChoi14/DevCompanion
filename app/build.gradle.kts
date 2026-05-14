@@ -33,15 +33,18 @@ android {
     }
 
     // ── ABI configuration ────────────────────────────────────────
-    // free flavor: no native libs, no ABI split needed.
-    // gecko flavor: GeckoView ships native libs for arm64-v8a and x86_64;
-    // split into per-ABI APKs to keep size reasonable (~100MB vs ~230MB universal).
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "x86_64")
-            isUniversalApk = false
+    // Only split by ABI when building for GeckoView (CI-only).
+    // Free flavor has no native libs and should produce a single universal APK.
+    // Controlled via -PabiSplit=true Gradle property.
+    if (project.providers.gradleProperty("abiSplit").forUseAtConfigurationTime()
+            .orElse("false").get().toBoolean()) {
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "x86_64")
+                isUniversalApk = false
+            }
         }
     }
 

@@ -74,10 +74,10 @@ jobs:
       - name: Build Gecko Debug APK
         run: |
           chmod +x gradlew-real
-          ./gradlew-real assembleGeckoDebug
+          ./gradlew-real assembleGeckoDebug -PabiSplit=true
 
       - name: Build Gecko Release APK
-        run: ./gradlew-real assembleGeckoRelease
+        run: ./gradlew-real assembleGeckoRelease -PabiSplit=true
 
       - name: Upload Gecko Debug APKs
         uses: actions/upload-artifact@v4
