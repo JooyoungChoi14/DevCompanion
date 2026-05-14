@@ -32,13 +32,14 @@ android {
         }
     }
 
-    // ABI splits for GeckoView flavor to keep APK size reasonable
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a", "x86_64")
-            isUniversalApk = false
+    // ── ABI configuration ────────────────────────────────────────
+    // GeckoView ships per-ABI AARs; restrict to arm64-v8a for release
+    // and include x86_64 for emulator testing.
+    // free flavor has no native libs, so no ABI split needed.
+    defaultConfig {
+        ndk {
+            // Filter to supported ABIs (GeckoView only ships arm64-v8a and x86_64)
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
