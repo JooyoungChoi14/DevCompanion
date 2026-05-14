@@ -7,8 +7,8 @@ import java.util.UUID
 
 data class Bookmark(
     val id: String = UUID.randomUUID().toString(),
-    val title: String,
-    val url: String,
+    val title: String?,
+    val url: String?,
     val faviconUrl: String? = null,
     val addedAt: Long = System.currentTimeMillis()
 )
@@ -32,7 +32,7 @@ class BookmarksStore(context: Context) {
     fun addBookmark(bookmark: Bookmark): Bookmark {
         val list = getBookmarks().toMutableList()
         // Avoid duplicate URLs
-        if (list.none { it.url == bookmark.url }) {
+        if (bookmark.url != null && list.none { it.url == bookmark.url }) {
             list.add(bookmark)
             saveList(list)
         }

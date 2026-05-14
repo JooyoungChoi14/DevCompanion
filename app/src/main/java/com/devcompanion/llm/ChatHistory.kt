@@ -12,7 +12,7 @@ import java.io.File
  */
 data class ConversationMeta(
     val id: String,
-    val title: String,
+    val title: String?,
     val createdAt: Long,
     val updatedAt: Long,
     val messageCount: Int

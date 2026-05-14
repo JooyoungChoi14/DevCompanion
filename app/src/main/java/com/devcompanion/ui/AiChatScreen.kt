@@ -1357,7 +1357,7 @@ private fun ConversationDrawer(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    conv.title,
+                                    conv.title ?: "Untitled",
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis

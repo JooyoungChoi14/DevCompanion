@@ -206,7 +206,7 @@ private fun BookmarkTile(
                 .fillMaxWidth(),
         ) {
             Text(
-                bookmark.title,
+                bookmark.title ?: bookmark.url,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -214,7 +214,7 @@ private fun BookmarkTile(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                bookmark.url,
+                bookmark.url ?: "",
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
