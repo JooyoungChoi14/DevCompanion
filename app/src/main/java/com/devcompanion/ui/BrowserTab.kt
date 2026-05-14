@@ -514,7 +514,7 @@ fun BrowserTab(
         StartPage(
             bookmarks = bookmarks,
             recentUrls = urlHistory.takeLast(5).reversed(),
-            onBookmarkClick = { url: String -> navigateFromStartPage(url) },
+            onBookmarkClick = { url: String? -> if (url != null) navigateFromStartPage(url) },
             onAddBookmark = {
                 val currentUrl = urlTextValue.text
                 val currentTitle = pageTitle

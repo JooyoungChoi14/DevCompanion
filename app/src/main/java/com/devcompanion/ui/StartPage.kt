@@ -28,7 +28,7 @@ import com.devcompanion.ui.theme.Spacing
 fun StartPage(
     bookmarks: List<Bookmark>,
     recentUrls: List<String>,
-    onBookmarkClick: (String) -> Unit,
+    onBookmarkClick: (String?) -> Unit,
     onAddBookmark: () -> Unit,
     onRemoveBookmark: (String) -> Unit,
     onRecentClick: (String) -> Unit,
@@ -206,7 +206,7 @@ private fun BookmarkTile(
                 .fillMaxWidth(),
         ) {
             Text(
-                bookmark.title ?: bookmark.url,
+                bookmark.title ?: bookmark.url ?: "Untitled",
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
