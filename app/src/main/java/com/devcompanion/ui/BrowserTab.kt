@@ -166,19 +166,32 @@ fun BrowserTab(
                         keyboardActions = KeyboardActions(
                             onGo = {
                                 val input = urlTextValue.text.trim()
+                                // Smart address bar logic:
+                                //   1. ?question          → AI (explicit prefix)
+                                //   2. Sentence ending with ? → AI (natural question)
+                                //   3. http(s)://...      → direct URL
+                                //   4. domain-like (has ., no spaces) → URL with https://
+                                //   5. Everything else    → DDG search
                                 when {
                                     input.startsWith("?") -> {
                                         val question = input.removePrefix("?").trim()
                                         onAskAi?.invoke(question)
                                         focusManager.clearFocus()
                                     }
-                                    input.contains(".") && !input.contains(" ") && !input.startsWith("http") -> {
-                                        val url = "https://$input"
-                                        urlTextValue = TextFieldValue(url, TextRange(url.length))
-                                        pendingAction = BrowserAction.Navigate(url)
+                                    input.endsWith("?") && !input.startsWith("http") && !input.contains(".") -> {
+                                        // Natural language question ending with ?
+                                        // e.g. "오늘 날씨어때?" → AI, not search
+                                        val question = input.removeSuffix("?").trim()
+                                        onAskAi?.invoke(question)
+                                        focusManager.clearFocus()
                                     }
                                     input.startsWith("http") -> {
                                         pendingAction = BrowserAction.Navigate(input)
+                                    }
+                                    input.contains(".") && !input.contains(" ") -> {
+                                        val url = "https://$input"
+                                        urlTextValue = TextFieldValue(url, TextRange(url.length))
+                                        pendingAction = BrowserAction.Navigate(url)
                                     }
                                     else -> {
                                         val searchUrl = "https://duckduckgo.com/?q=${java.net.URLEncoder.encode(input, "UTF-8")}"
