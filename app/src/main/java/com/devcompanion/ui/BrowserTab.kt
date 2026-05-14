@@ -778,12 +778,14 @@ private val KEYBOARD_FIX_INJECTION = """(function(){
 
             if (isKeyboardOpen) {
                 // Lock body scroll and adjust fixed elements
+                document.body.setAttribute('data-webview-scroll-lock', '');
                 document.body.style.setProperty('overflow', 'hidden', 'important');
                 document.querySelectorAll('header, footer, [style*="position: fixed"], [style*="position:fixed"]').forEach(function(el) {
                     el.dataset.originalPosition = el.style.position;
                     // Keep fixed but recalculate based on new viewport
                 });
             } else {
+                document.body.removeAttribute('data-webview-scroll-lock');
                 document.body.style.removeProperty('overflow');
                 originalViewportHeight = window.innerHeight;
             }
@@ -819,53 +821,50 @@ private val TEXT_SIZE_FIX_INJECTION = """(function(){
 })();"""
 
 /**
- * Fixes overflow:hidden on body being ignored in Android WebView.
- * When modals/drawers open and set body overflow:hidden, WebView may still
- * allow background scrolling. This polyfill forces scroll lock.
+ * Prevents background scrolling when keyboard fix sets overflow:hidden.
+ * Only applies when our own keyboard fix sets the overflow:hidden,
+ * using a data attribute marker to avoid breaking pages that legitimately
+ * use overflow:hidden (e.g., DuckDuckGo).
  */
 private val OVERFLOW_FIX_INJECTION = """(function(){
-    var scrollLockCount = 0;
     var savedScrollY = 0;
+    var locked = false;
 
-    function checkOverflowHidden() {
-        var bodyOverflow = window.getComputedStyle(document.body).overflow;
-        var htmlOverflow = window.getComputedStyle(document.documentElement).overflow;
-
-        if (bodyOverflow === 'hidden' || htmlOverflow === 'hidden') {
-            if (scrollLockCount === 0) {
-                savedScrollY = window.scrollY;
-                document.body.style.setProperty('position', 'fixed', 'important');
-                document.body.style.setProperty('top', '-' + savedScrollY + 'px', 'important');
-                document.body.style.setProperty('width', '100%', 'important');
-            }
-            scrollLockCount++;
-        } else if (scrollLockCount > 0) {
-            scrollLockCount = 0;
-            document.body.style.removeProperty('position');
-            document.body.style.removeProperty('top');
-            document.body.style.removeProperty('width');
-            window.scrollTo(0, savedScrollY);
-        }
+    function applyScrollLock() {
+        if (locked) return;
+        if (!document.body.hasAttribute('data-webview-scroll-lock')) return;
+        locked = true;
+        savedScrollY = window.scrollY;
+        document.body.style.setProperty('position', 'fixed', 'important');
+        document.body.style.setProperty('top', '-' + savedScrollY + 'px', 'important');
+        document.body.style.setProperty('width', '100%', 'important');
     }
 
-    // Observe style/class changes on body and html
+    function removeScrollLock() {
+        if (!locked) return;
+        locked = false;
+        document.body.style.removeProperty('position');
+        document.body.style.removeProperty('top');
+        document.body.style.removeProperty('width');
+        window.scrollTo(0, savedScrollY);
+    }
+
+    // Observe our marker attribute
     var observer = new MutationObserver(function() {
-        checkOverflowHidden();
+        if (document.body.hasAttribute('data-webview-scroll-lock')) {
+            applyScrollLock();
+        } else {
+            removeScrollLock();
+        }
     });
 
     observer.observe(document.body, {
         attributes: true,
-        attributeFilter: ['style', 'class']
-    });
-    observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['style', 'class']
+        attributeFilter: ['data-webview-scroll-lock']
     });
 
-    // Initial check after DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', checkOverflowHidden);
-    } else {
-        checkOverflowHidden();
+    // Initial check
+    if (document.body.hasAttribute('data-webview-scroll-lock')) {
+        applyScrollLock();
     }
 })();"""
