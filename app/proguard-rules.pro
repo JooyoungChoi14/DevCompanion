@@ -40,3 +40,14 @@
 -keep class com.devcompanion.bridge.BoreClientMessage$* { *; }
 -keep class com.devcompanion.bridge.BoreServerMessage { *; }
 -keep class com.devcompanion.bridge.BoreServerMessage$* { *; }
+
+# Data classes used with Gson — must preserve field names for serialization
+-keep class com.devcompanion.llm.ConversationMeta { *; }
+-keep class com.devcompanion.llm.ChatMessage { *; }
+-keep class com.devcompanion.data.Bookmark { *; }
+-keep class com.devcompanion.data.UrlHistoryStore { *; }
+
+# Gson TypeToken and generic type resolution
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep class com.google.gson.** { *; }
+-dontwarn com.google.gson.**
