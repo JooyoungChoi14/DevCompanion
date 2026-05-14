@@ -168,6 +168,19 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load saved provider", e)
         }
+
+        // Auto-restore last conversation on startup
+        try {
+            val conversations = ChatHistory.listConversations(application)
+            val lastConv = conversations.firstOrNull()
+            if (lastConv != null) {
+                currentConversationId = lastConv.id
+                _messages.value = ChatHistory.load(application, lastConv.id)
+                Log.d(TAG, "Restored last conversation: ${lastConv.id} (${lastConv.messageCount} msgs)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to restore last conversation", e)
+        }
     }
 
     /**
