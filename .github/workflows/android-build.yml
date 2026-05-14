@@ -2,7 +2,7 @@ name: Android Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/geckoview]
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-free:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -30,33 +30,76 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
-      - name: Build Debug APK
+      - name: Build Free Debug APK
         run: |
           chmod +x gradlew-real
-          ./gradlew-real assembleDebug
+          ./gradlew-real assembleFreeDebug
 
-      - name: Build Release APK
-        run: ./gradlew-real assembleRelease
+      - name: Build Free Release APK
+        run: ./gradlew-real assembleFreeRelease
 
-      - name: Upload Debug APK
+      - name: Upload Free Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: app-free-debug
+          path: app/build/outputs/apk/free/debug/app-free-debug.apk
 
-      - name: Upload Release APK
+      - name: Upload Free Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release
-          path: app/build/outputs/apk/release/app-release.apk
+          name: app-free-release
+          path: app/build/outputs/apk/free/release/app-free-release.apk
+
+  build-gecko:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Build Gecko Debug APK
+        run: |
+          chmod +x gradlew-real
+          ./gradlew-real assembleGeckoDebug
+
+      - name: Build Gecko Release APK
+        run: ./gradlew-real assembleGeckoRelease
+
+      - name: Upload Gecko Debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-gecko-debug
+          path: |
+            app/build/outputs/apk/gecko/debug/*-arm64-v8a-*.apk
+            app/build/outputs/apk/gecko/debug/*-x86_64-*.apk
+
+      - name: Upload Gecko Release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-gecko-release
+          path: |
+            app/build/outputs/apk/gecko/release/*-arm64-v8a-*.apk
+            app/build/outputs/apk/gecko/release/*-x86_64-*.apk
 
       - name: Create Release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/debug/app-debug.apk
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/free/release/app-free-release.apk
+            app/build/outputs/apk/gecko/release/*-arm64-v8a-*.apk
+            app/build/outputs/apk/gecko/release/*-x86_64-*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

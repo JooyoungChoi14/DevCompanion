@@ -16,6 +16,32 @@ android {
         versionName = "1.0.0"
     }
 
+    // ── Product Flavors ──────────────────────────────────────────
+    // `free`: system WebView (local build friendly, small APK)
+    // `gecko`: GeckoView engine (CI-only build, larger APK)
+    flavorDimensions += "engine"
+    productFlavors {
+        create("free") {
+            dimension = "engine"
+            // No GeckoView dependency — uses system WebView
+        }
+        create("gecko") {
+            dimension = "engine"
+            // GeckoView engine — ABI-specific AARs to reduce build memory
+            // Fat AAR (geckoview) is 226MB, ABI-specific is ~85MB
+        }
+    }
+
+    // ABI splits for GeckoView flavor to keep APK size reasonable
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     signingConfigs {
         getByName("debug") {
             storeFile = file("debug.keystore")
@@ -46,6 +72,13 @@ android {
         compose = true
     }
 
+    // GeckoView native libs need to be packaged without compression
+    packaging {
+        jniLibs {
+            // GeckoView .so files should not be compressed
+            useLegacyPackaging = true
+        }
+    }
 
 }
 
@@ -88,6 +121,12 @@ dependencies {
 
     // Encrypted SharedPreferences for secure API key storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // ── GeckoView (gecko flavor only) ────────────────────────────
+    // Using ABI-specific AARs (~85MB each) instead of fat AAR (226MB)
+    // to reduce D8/R8 memory pressure during build
+    "geckoImplementation"("org.mozilla.geckoview:geckoview-arm64-v8a:150.0.20260511200624")
+    "geckoImplementation"("org.mozilla.geckoview:geckoview-x86_64:150.0.20260511200624")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -1,19 +1,32 @@
 #!/bin/bash
-# ⚠️ LOCAL BUILD BLOCKED
-# GeckoView dependency causes OOM crash on WSL (5GB RAM).
-# Use GitHub Actions for builds instead.
-# 
-# To override: BUILD_FORCE=1 ./gradlew <command>
+# ⚠️ LOCAL BUILD GUIDE
+# - `free` flavor: System WebView — can build locally (default)
+# - `gecko` flavor: GeckoView — requires CI (221MB AAR, causes OOM on 5GB RAM WSL)
 #
-# GitHub Actions workflow: .github/workflows/android-build.yml
+# To build locally:
+#   ./gradlew assembleFreeDebug          # System WebView
+#   ./gradlew assembleFreeRelease        # System WebView (release)
+#
+# For GeckoView builds, use GitHub Actions (push to feature/geckoview branch)
+# or force with BUILD_FORCE=1:
+#   BUILD_FORCE=1 ./gradlew assembleGeckoDebug  # ⚠️ May OOM on low-RAM systems
 
-if [ "${BUILD_FORCE:-0}" != "1" ]; then
-    echo "⛔ Local build blocked. WSL 5GB RAM causes OOM crash with GeckoView."
-    echo "   Use GitHub Actions for builds, or set BUILD_FORCE=1 to override."
-    echo "   Example: BUILD_FORCE=1 ./gradlew assembleDebug"
-    exit 1
+if [[ "${BUILD_FORCE:-0}" == "1" ]]; then
+    export BUILD_FORCE=
+    exec "$(dirname "$0")/gradlew-real" "$@"
 fi
 
-# Strip BUILD_FORCE from args to avoid passing it to Gradle
-export BUILD_FORCE=
+# Block gecko flavor builds locally (OOM risk)
+for arg in "$@"; do
+    case "$arg" in
+        *Gecko*|*gecko*)
+            echo "⛔ GeckoView builds require CI or BUILD_FORCE=1 (OOM risk on low-RAM systems)."
+            echo "   Use: ./gradlew assembleFreeDebug for local builds."
+            echo "   Or:  BUILD_FORCE=1 ./gradlew assembleGeckoDebug"
+            exit 1
+            ;;
+    esac
+done
+
+# Allow free flavor and unspecified flavor builds
 exec "$(dirname "$0")/gradlew-real" "$@"
