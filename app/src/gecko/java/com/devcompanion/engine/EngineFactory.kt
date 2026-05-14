@@ -28,13 +28,11 @@ object EngineFactory {
 
     fun createGeckoView(context: Context): Pair<GeckoView, GeckoSession> {
         val geckoView = GeckoView(context.applicationContext)
-        val session = GeckoSession()
-
         val settings = GeckoSession.Settings.Builder()
             .useTrackingProtection(true)
             .userAgentMode(GeckoSession.USER_AGENT_MODE_MOBILE)
             .build()
-        session.settings = settings
+        val session = GeckoSession(settings)
 
         val rt = getOrCreateRuntime(context)
         session.open(rt)
