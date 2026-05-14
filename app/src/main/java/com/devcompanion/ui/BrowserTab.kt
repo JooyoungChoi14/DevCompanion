@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
@@ -64,7 +65,7 @@ fun BrowserTab(
     onAskAi: ((String) -> Unit)? = null,
     onNavigateHome: (() -> Unit)? = null,
 ) {
-    var urlTextValue by remember { mutableStateOf(TextFieldValue("https://example.com")) }
+    var urlTextValue by remember { mutableStateOf(TextFieldValue("about:blank")) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var pageTitle by remember { mutableStateOf("") }
@@ -104,7 +105,7 @@ fun BrowserTab(
     val context = LocalContext.current
     val bookmarksStore = remember { BookmarksStore(context) }
     var bookmarks by remember { mutableStateOf(bookmarksStore.getBookmarks()) }
-    var showStartPage by remember { mutableStateOf(urlTextValue.text == "about:blank" || urlTextValue.text == "https://example.com") }
+    var showStartPage by remember { mutableStateOf(true) }
 
     // Navigate away from start page
     val navigateFromStartPage: (String) -> Unit = { url ->
@@ -454,7 +455,7 @@ fun BrowserTab(
                         }
                     }, "__devCompanionPerf")
 
-                    loadUrl("https://example.com")
+                    loadUrl("about:blank")
                 }
             },
             update = { webView ->
@@ -506,6 +507,7 @@ fun BrowserTab(
             onRecentClick = { url: String -> navigateFromStartPage(url) },
             modifier = Modifier
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
         )
     }
 

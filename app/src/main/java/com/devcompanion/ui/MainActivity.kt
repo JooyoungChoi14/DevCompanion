@@ -208,7 +208,7 @@ fun MainApp(
                     onDismissRequest = { showAiChat = false },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = true
+                        skipPartiallyExpanded = false
                     ),
                 ) {
                     AiChatScreen(
@@ -226,7 +226,7 @@ fun MainApp(
                     onDismissRequest = { showDevTools = false },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = true
+                        skipPartiallyExpanded = false
                     ),
                 ) {
                     DevToolsPanel(
@@ -243,7 +243,7 @@ fun MainApp(
                     onDismissRequest = { showBridgeInfo = false },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = true
+                        skipPartiallyExpanded = false
                     ),
                 ) {
                     BridgeInfoPanel(
@@ -262,7 +262,7 @@ fun MainApp(
                     onDismissRequest = { showSettings = false },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = true
+                        skipPartiallyExpanded = false
                     ),
                 ) {
                     SettingsSheet(
