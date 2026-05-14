@@ -33,13 +33,15 @@ android {
     }
 
     // ── ABI configuration ────────────────────────────────────────
-    // GeckoView ships per-ABI AARs; restrict to arm64-v8a for release
-    // and include x86_64 for emulator testing.
-    // free flavor has no native libs, so no ABI split needed.
-    defaultConfig {
-        ndk {
-            // Filter to supported ABIs (GeckoView only ships arm64-v8a and x86_64)
-            abiFilters += listOf("arm64-v8a", "x86_64")
+    // free flavor: no native libs, no ABI split needed.
+    // gecko flavor: GeckoView ships native libs for arm64-v8a and x86_64;
+    // split into per-ABI APKs to keep size reasonable (~100MB vs ~230MB universal).
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -124,10 +126,10 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // ── GeckoView (gecko flavor only) ────────────────────────────
-    // Using ABI-specific AARs (~85MB each) instead of fat AAR (226MB)
-    // to reduce D8/R8 memory pressure during build
-    "geckoImplementation"("org.mozilla.geckoview:geckoview-arm64-v8a:150.0.20260511200624")
-    "geckoImplementation"("org.mozilla.geckoview:geckoview-x86_64:150.0.20260511200624")
+    // Fat AAR (226MB) — CI-only build. Per-ABI AARs conflict on
+    // the `geckoview` capability, so we use the fat AAR and split by ABI.
+    // ABI-specific AARs: arm64-v8a (~85MB), x86_64 (~89MB)
+    "geckoImplementation"("org.mozilla.geckoview:geckoview:150.0.20260511200624")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
