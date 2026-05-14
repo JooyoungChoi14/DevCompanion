@@ -250,18 +250,6 @@ fun AiChatScreen(
                             Text("Act", style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                    // Undo (agent mode)
-                    if (agentMode) {
-                        IconButton(
-                            onClick = {
-                                webView?.let { wv ->
-                                    scope.launch { viewModel.undoNavigation(wv) }
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Undo navigation")
-                        }
-                    }
                     // Capture
                     IconButton(
                         onClick = { if (webView != null) showCaptureDialog = true },

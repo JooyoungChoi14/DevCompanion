@@ -37,6 +37,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import android.webkit.JavascriptInterface
 import com.devcompanion.data.Bookmark
 import com.devcompanion.data.BookmarksStore
+import com.devcompanion.data.UrlHistoryStore
 import com.devcompanion.debug.WebViewDebugger
 import com.devcompanion.debug.WebViewDebuggerHolder
 import com.devcompanion.bridge.BridgeServer
@@ -104,8 +105,17 @@ fun BrowserTab(
     // ── Start page / Bookmarks state ──────────────────────────────────
     val context = LocalContext.current
     val bookmarksStore = remember { BookmarksStore(context) }
+    val urlHistoryStore = remember { UrlHistoryStore(context) }
     var bookmarks by remember { mutableStateOf(bookmarksStore.getBookmarks()) }
     var showStartPage by remember { mutableStateOf(true) }
+
+    // Initialize urlHistory from persistent store
+    LaunchedEffect(Unit) {
+        val persisted = urlHistoryStore.getUrls()
+        if (persisted.isNotEmpty()) {
+            debugger.restoreUrlHistory(persisted)
+        }
+    }
 
     // Navigate away from start page
     val navigateFromStartPage: (String) -> Unit = { url ->
@@ -397,6 +407,7 @@ fun BrowserTab(
                             isLoading = true
                             urlTextValue = TextFieldValue(pageUrl, TextRange(pageUrl.length))
                             debugger.addUrlToHistory(pageUrl)
+                            urlHistoryStore.addUrl(pageUrl)
                             debugger.markPageStart()
                         }
 

@@ -110,6 +110,11 @@ class WebViewDebugger {
         }
     }
 
+    /** Restore URL history from persistent storage (called on startup). */
+    fun restoreUrlHistory(urls: List<String>) {
+        _urlHistory.update { urls }
+    }
+
     // ── Console (unified timeline) ──────────────────────────────────────
     private val _consoleItems = MutableStateFlow<List<ConsoleItem>>(emptyList())
     val consoleItems: StateFlow<List<ConsoleItem>> = _consoleItems.asStateFlow()
