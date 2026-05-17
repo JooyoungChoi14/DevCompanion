@@ -268,11 +268,15 @@ Current fix filters `isToolResult` only in chat mode. Agent mode can still accum
 | `initialPromptSent` in ViewModel | ✅ Done |
 | Swipe dismiss clearing `pendingAiQuestion` | ✅ Done |
 | `newConversation()` resetting `initialPromptSent` | ✅ Done |
-| Dual `LaunchedEffect` ordering risk | ⚠️ Mitigated (ViewModel flag) but not architecturally resolved |
-| Context leak on `newConversation()` | 🔲 Open |
-| Save path race condition | 🔲 Open |
-| Conversation ID as `StateFlow` | 🔲 Open |
-| Single send entry point | 🔲 Open |
+| Dual `LaunchedEffect` ordering risk | ✅ Resolved — single `initializeWithPrompt()` entry point (`62fdb74`) |
+| Context leak on `newConversation()` | ✅ Fixed — `_lastContext.value = null` (`62fdb74`) |
+| Save path race condition | ✅ Fixed — `.debounce(500)` + `onCleared()` flush (`7eb820c`, `2be58fa`) |
+| Conversation ID as `StateFlow` | ✅ Done — `_conversationId` promoted to `StateFlow` (`c8e5ec8`) |
+| Single send entry point | ✅ Done — `initializeWithPrompt()` (`62fdb74`) |
+| Agent state reset on restore | ✅ Done — `AgentState.Idle` force (`7eb820c`) |
+| W1 (Title generation) | 📋 Designed — LOW priority, see `w1-w3-design-notes.md` |
+| W2 (Deep links) | 📋 Designed — LOW priority, M1 prerequisite done |
+| W3 (Sealed message type) | 📋 Designed — MEDIUM priority, v2 migration needed |
 
 ---
 
