@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -120,7 +121,7 @@ fun AiChatScreen(
     }
 
     // Auto-send initial prompt from address bar "?" prefix
-    val initialPromptSent = remember { mutableStateOf(false) }
+    val initialPromptSent = rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(initialPrompt) {
         if (initialPrompt != null && !initialPromptSent.value && initialPrompt.isNotBlank()) {
             inputText = initialPrompt
