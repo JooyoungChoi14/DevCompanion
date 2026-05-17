@@ -112,13 +112,17 @@ fun AiChatScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showCaptureDialog by remember { mutableStateOf(false) }
 
+    // Start a new conversation when opening AI chat (avoids context contamination)
+    LaunchedEffect(startNewConversation) {
+        if (startNewConversation) {
+            viewModel.newConversation()
+        }
+    }
+
     // Auto-send initial prompt from address bar "?" prefix
     val initialPromptSent = remember { mutableStateOf(false) }
     LaunchedEffect(initialPrompt) {
         if (initialPrompt != null && !initialPromptSent.value && initialPrompt.isNotBlank()) {
-            if (startNewConversation) {
-                viewModel.newConversation()
-            }
             inputText = initialPrompt
             initialPromptSent.value = true
             if (agentMode) {
