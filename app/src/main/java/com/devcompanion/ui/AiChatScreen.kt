@@ -627,8 +627,8 @@ fun AiChatScreen(
                     }
                 }
 
-                // Streaming indicator (no tokens yet) — hide in agent mode (state bar shows this)
-                if (isStreaming && currentResponse.isBlank() && !agentMode) {
+                // Streaming indicator (no tokens yet)
+                if (isStreaming && currentResponse.isBlank()) {
                     item {
                         StreamingIndicator()
                     }

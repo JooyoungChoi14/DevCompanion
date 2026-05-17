@@ -350,7 +350,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         val result = modeExecutor.execute(call, webView ?: return@collect)
                         toolResults.add("${call.name}: ${result.output}")
                     }
-                    // Append tool results as system context and re-stream
+                    // Append tool results as system context
                     val toolResultMsg = ChatMessage(
                         role = "system",
                         content = toolResults.joinToString("\n"),
@@ -358,6 +358,34 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         isToolResult = true
                     )
                     _messages.value = _messages.value + toolResultMsg
+
+                    // Re-stream with tool results so the LLM can produce a text response
+                    responseBuilder.clear()
+                    _currentResponse.value = ""
+                    try {
+                        repository.streamWithTools(
+                            _messages.value,
+                            capturedContext,
+                            systemPrompt,
+                            modeTools
+                        ).collect { event ->
+                            when (event) {
+                                is LlmStreamEvent.Token -> {
+                                    responseBuilder.append(event.content)
+                                    _currentResponse.value = responseBuilder.toString()
+                                }
+                                is LlmStreamEvent.Complete -> { /* handled below */ }
+                                is LlmStreamEvent.Start -> { /* no-op */ }
+                                is LlmStreamEvent.Error -> {
+                                    responseBuilder.append(event.message)
+                                    _currentResponse.value = responseBuilder.toString()
+                                }
+                                is LlmStreamEvent.ToolCalls -> {
+                                    // Ignore subsequent tool calls in re-stream
+                                }
+                            }
+                        }
+                    } catch (_: Exception) { /* best effort re-stream */ }
                 }
 
                 // Stream completed — finalize the assistant message
@@ -377,6 +405,18 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         tokenUsage = usage
                     )
                     _messages.value = _messages.value + assistantMessage
+                } else if (toolCallsToProcess.isNotEmpty()) {
+                    // LLM returned only tool calls without text — show tool result summary
+                    val lastMsg = _messages.value.lastOrNull()
+                    if (lastMsg?.isToolResult == true) {
+                        // Already have a tool result message, no need to add another
+                    } else {
+                        _messages.value = _messages.value + ChatMessage(
+                            role = "assistant",
+                            content = "⚙ Mode updated.",
+                            hasContext = false
+                        )
+                    }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Cancelled by user — partial response already handled in cancelStreaming()
