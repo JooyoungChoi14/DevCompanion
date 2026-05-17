@@ -42,6 +42,8 @@ import com.devcompanion.debug.WebViewDebugger
 import com.devcompanion.debug.WebViewDebuggerHolder
 import com.devcompanion.bridge.BridgeServer
 import com.devcompanion.DevCompanionApp
+import com.devcompanion.llm.routeUrlInput
+import com.devcompanion.llm.UrlRoute
 import com.devcompanion.ui.theme.Spacing
 
 private const val TAG = "BrowserTab"
@@ -166,37 +168,21 @@ fun BrowserTab(
                         keyboardActions = KeyboardActions(
                             onGo = {
                                 val input = urlTextValue.text.trim()
-                                // Smart address bar logic:
-                                //   1. ?question          → AI (explicit prefix)
-                                //   2. Sentence ending with ? → AI (natural question)
-                                //   3. http(s)://...      → direct URL
-                                //   4. domain-like (has ., no spaces) → URL with https://
-                                //   5. Everything else    → DDG search
-                                when {
-                                    input.startsWith("?") -> {
-                                        val question = input.removePrefix("?").trim()
-                                        onAskAi?.invoke(question)
+                                when (val route = routeUrlInput(input)) {
+                                    is UrlRoute.AiQuestion -> {
+                                        onAskAi?.invoke(route.question)
                                         focusManager.clearFocus()
                                     }
-                                    input.endsWith("?") && !input.startsWith("http") && !input.contains(".") -> {
-                                        // Natural language question ending with ?
-                                        // e.g. "오늘 날씨어때?" → AI, not search
-                                        val question = input.removeSuffix("?").trim()
-                                        onAskAi?.invoke(question)
-                                        focusManager.clearFocus()
+                                    is UrlRoute.Direct -> {
+                                        pendingAction = BrowserAction.Navigate(route.url)
                                     }
-                                    input.startsWith("http") -> {
-                                        pendingAction = BrowserAction.Navigate(input)
+                                    is UrlRoute.Url -> {
+                                        urlTextValue = TextFieldValue(route.url, TextRange(route.url.length))
+                                        pendingAction = BrowserAction.Navigate(route.url)
                                     }
-                                    input.contains(".") && !input.contains(" ") -> {
-                                        val url = "https://$input"
-                                        urlTextValue = TextFieldValue(url, TextRange(url.length))
-                                        pendingAction = BrowserAction.Navigate(url)
-                                    }
-                                    else -> {
-                                        val searchUrl = "https://duckduckgo.com/?q=${java.net.URLEncoder.encode(input, "UTF-8")}"
-                                        urlTextValue = TextFieldValue(searchUrl, TextRange(searchUrl.length))
-                                        pendingAction = BrowserAction.Navigate(searchUrl)
+                                    is UrlRoute.Search -> {
+                                        urlTextValue = TextFieldValue(route.url, TextRange(route.url.length))
+                                        pendingAction = BrowserAction.Navigate(route.url)
                                     }
                                 }
                                 urlExpanded = false
@@ -529,6 +515,22 @@ fun BrowserTab(
                 bookmarks = bookmarksStore.getBookmarks()
             },
             onRecentClick = { url: String -> navigateFromStartPage(url) },
+            onSearch = { query: String ->
+                when (val route = routeUrlInput(query)) {
+                    is UrlRoute.AiQuestion -> onAskAi?.invoke(route.question)
+                    is UrlRoute.Direct, is UrlRoute.Url, is UrlRoute.Search -> {
+                        val url = when (route) {
+                            is UrlRoute.Direct -> route.url
+                            is UrlRoute.Url -> route.url
+                            is UrlRoute.Search -> route.url
+                            else -> query
+                        }
+                        urlTextValue = TextFieldValue(url, TextRange(url.length))
+                        pendingAction = BrowserAction.Navigate(url)
+                        showStartPage = false
+                    }
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
