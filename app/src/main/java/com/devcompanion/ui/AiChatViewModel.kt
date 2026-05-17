@@ -398,7 +398,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     // ── Agent mode ──────────────────────────────────────────────────────
 
-    private val _agentMode = MutableStateFlow(false)
+    private val _agentMode = MutableStateFlow(LlmSettings.agentModeDefault)
     val agentMode: StateFlow<Boolean> = _agentMode.asStateFlow()
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
@@ -413,9 +413,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private var agentLoop: AgentLoop? = null
     private var agentJob: kotlinx.coroutines.Job? = null
 
-    /** Toggle agent mode on/off. */
+    /** Toggle agent mode on/off. Persists the preference. */
     fun setAgentMode(enabled: Boolean) {
         _agentMode.value = enabled
+        LlmSettings.agentModeDefault = enabled
         if (!enabled) {
             stopAgentLoop()
         }

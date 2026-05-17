@@ -25,6 +25,7 @@ object LlmSettings {
     private const val KEY_VERSION = "version"
     private const val KEY_CUSTOM_PROMPT = "custom_system_prompt"
     private const val KEY_MAX_ITERATIONS = "max_iterations"
+    private const val KEY_AGENT_MODE_DEFAULT = "agent_mode_default"
     const val DEFAULT_MAX_ITERATIONS = 10
     const val MIN_MAX_ITERATIONS = 3
     const val MAX_MAX_ITERATIONS = 30
@@ -161,7 +162,10 @@ object LlmSettings {
      * Clear all stored provider settings.
      */
     fun clear() {
+        val wasAgentModeDefault = requirePrefs().getBoolean(KEY_AGENT_MODE_DEFAULT, true)
         requirePrefs().edit().clear().apply()
+        // Preserve agent mode default preference after clear
+        requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, wasAgentModeDefault).apply()
         Log.d(TAG, "Provider settings cleared")
     }
 
@@ -182,6 +186,11 @@ object LlmSettings {
         val prompt = p.getString(KEY_CUSTOM_PROMPT, null)
         return if (prompt.isNullOrBlank()) null else prompt
     }
+
+    /** Default agent mode (true = Act, false = View). Persisted across sessions. */
+    var agentModeDefault: Boolean
+        get() = requirePrefs().getBoolean(KEY_AGENT_MODE_DEFAULT, true) // Act by default
+        set(value) = requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, value).apply()
 
     /** Maximum agent loop iterations (3-30, default 10). */
     var maxIterations: Int
