@@ -112,26 +112,14 @@ fun AiChatScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showCaptureDialog by remember { mutableStateOf(false) }
 
-    // Start a new conversation when opening AI chat via ?question URL
-    LaunchedEffect(startNewConversation) {
-        if (startNewConversation) {
+    // Initialize new conversation with prompt via single ViewModel entry point (M2).
+    // Replaces dual LaunchedEffect pattern to guarantee ordering:
+    // newConversation → resetInitialPromptSent → send prompt.
+    LaunchedEffect(startNewConversation, initialPrompt) {
+        if (startNewConversation && initialPrompt != null && !viewModel.initialPromptSent) {
+            viewModel.initializeWithPrompt(initialPrompt, webView, agentMode)
+        } else if (startNewConversation && initialPrompt == null) {
             viewModel.newConversation()
-            viewModel.resetInitialPromptSent()
-        }
-    }
-
-    // Auto-send initial prompt from address bar "?" prefix
-    // Uses ViewModel state to survive BottomSheet dismiss/recreate
-    LaunchedEffect(initialPrompt) {
-        if (initialPrompt != null && !viewModel.initialPromptSent && initialPrompt.isNotBlank()) {
-            inputText = initialPrompt
-            viewModel.markInitialPromptSent()
-            if (agentMode) {
-                viewModel.sendMessageAgent(initialPrompt, webView)
-            } else {
-                viewModel.sendMessage(initialPrompt, webView)
-            }
-            inputText = ""
         }
     }
 

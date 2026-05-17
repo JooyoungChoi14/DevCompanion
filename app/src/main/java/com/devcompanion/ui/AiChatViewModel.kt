@@ -113,6 +113,27 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _currentResponse.value = ""
         _isStreaming.value = false
         _agentState.value = AgentState.Idle
+        _lastContext.value = null  // N1: prevent context leak between conversations
+        initialPromptSent = false  // Reset so future initial prompts can fire
+    }
+
+    /**
+     * Single entry point for initializing a new conversation with a prompt.
+     * Replaces the dual LaunchedEffect pattern that had no ordering guarantee.
+     * M2: merges newConversation + resetInitialPromptSent + prompt sending
+     * into one atomic ViewModel operation.
+     */
+    fun initializeWithPrompt(prompt: String, webView: WebView?, isAgentMode: Boolean) {
+        newConversation()
+        resetInitialPromptSent()
+        if (prompt.isNotBlank()) {
+            markInitialPromptSent()
+            if (isAgentMode) {
+                sendMessageAgent(prompt, webView)
+            } else {
+                sendMessage(prompt, webView)
+            }
+        }
     }
 
     /** List available conversation IDs. */
