@@ -894,4 +894,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun String.jsonEscape(): String =
         replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+    override fun onCleared() {
+        super.onCleared()
+        // Flush any debounced messages that haven't been persisted yet.
+        // ChatHistory.save() is synchronous (file I/O), so safe to call here.
+        val msgs = _messages.value
+        if (msgs.isNotEmpty()) {
+            ChatHistory.save(getApplication<Application>(), _conversationId.value, msgs)
+        }
+    }
 }
