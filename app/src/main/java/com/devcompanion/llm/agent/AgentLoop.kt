@@ -6,6 +6,8 @@ import com.devcompanion.llm.ChatMessage
 import com.devcompanion.llm.CaptureMode
 import com.devcompanion.llm.WebContextBuilder
 import com.devcompanion.llm.WebContextPacket
+import com.devcompanion.logging.EventType
+import com.devcompanion.logging.SessionLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,6 +114,7 @@ class AgentLoop(
         emit: (AgentEvent) -> Unit
     ) {
         _state.value = AgentState.Thinking(0)
+        SessionLog.log(EventType.AGENT_START, mapOf("userMessage" to userMessage.take(200)))
 
         val messages = mutableListOf<ChatMessage>()
         // Include prior conversation context for multi-turn
@@ -170,14 +173,13 @@ class AgentLoop(
 
             // Capture context (full screenshot only on first iteration of each round)
             val context = try {
-                if (iteration == 0) {
-                    WebContextBuilder.buildContext(webView, CaptureMode.Standard)
-                } else {
-                    val full = WebContextBuilder.buildContext(webView, CaptureMode.Standard)
-                    full.copy(screenshotBase64 = "", screenshotMimeType = "")
-                }
+                val mode = if (iteration == 0) CaptureMode.Standard else CaptureMode.Quick
+                val ctx = WebContextBuilder.buildContext(webView, mode)
+                SessionLog.capture(mode.name, ctx.url, ctx.screenshotBase64.isNotEmpty())
+                ctx
             } catch (e: Exception) {
                 Log.w(TAG, "Context capture failed, continuing without context", e)
+                SessionLog.log(EventType.ERROR, mapOf("what" to "capture_failed", "error" to (e.message ?: "unknown")))
                 null
             }
 
@@ -207,6 +209,11 @@ class AgentLoop(
 
             // Process response
             if (response.toolCalls.isNotEmpty()) {
+                SessionLog.log(EventType.LLM_RESPONSE, mapOf(
+                    "hasToolCalls" to "true",
+                    "toolCount" to response.toolCalls.size.toString(),
+                    "iteration" to iteration.toString()
+                ))
                 // Add assistant message with tool_calls to history
                 messages.add(ChatMessage(
                     role = "assistant",
@@ -232,6 +239,7 @@ class AgentLoop(
 
                     // Permission check
                     _state.value = AgentState.CheckingPermission(call, iteration + 1)
+                    SessionLog.toolCall(call.name, call.arguments.toString(), call.id)
                     val risk = permissionGate.classify(call, webView)
 
                     if (risk == ActionRisk.SENSITIVE) {
@@ -248,6 +256,7 @@ class AgentLoop(
 
                         if (!approved) {
                             emit(AgentEvent.Rejected(call))
+                            SessionLog.confirmation(call.id, call.name, details.action, details.riskLevel.name, false)
                             messages.add(ChatMessage(
                                 role = "tool",
                                 content = "User rejected action: ${call.name}",
@@ -262,6 +271,7 @@ class AgentLoop(
 
                     // Execute tool
                     _state.value = AgentState.ExecutingTool(call.name, iteration + 1)
+                    SessionLog.stateChange("CheckingPermission", "ExecutingTool", iteration + 1)
 
                     // Push current URL to undo stack before navigation/submission
                     if (call.name == "navigate" || call.name == "submit_form") {
@@ -279,6 +289,7 @@ class AgentLoop(
                     // Error tracking
                     if (result.isError) {
                         consecutiveErrors++
+                        SessionLog.toolResult(call.id, result.output, true)
                         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
                             emit(AgentEvent.Error("Too many consecutive errors ($consecutiveErrors)"))
                             _state.value = AgentState.Error("Max errors")
@@ -286,6 +297,7 @@ class AgentLoop(
                         }
                     } else {
                         consecutiveErrors = 0
+                        SessionLog.toolResult(call.id, result.output, false)
                     }
 
                     emit(AgentEvent.ToolExecuted(call, result))
@@ -309,6 +321,7 @@ class AgentLoop(
                     ))
                 }
                 emit(AgentEvent.TextResponse(response.content))
+                SessionLog.log(EventType.AGENT_END, mapOf("reason" to "text_response", "iterations" to iteration.toString()))
                 _state.value = AgentState.Idle
                 return true // completed
             }

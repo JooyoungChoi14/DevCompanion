@@ -16,9 +16,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.devcompanion.cdp.CdpClient
 import com.devcompanion.github.ui.GitHubPatSection
 import com.devcompanion.llm.LlmSettings
+import com.devcompanion.logging.SessionLog
 import com.devcompanion.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -248,6 +250,73 @@ fun SettingsSheet(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.md))
+
+        // ── Session Log section ────────────────────────────────
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(Spacing.md)) {
+                val logContext = LocalContext.current
+                Text("Session Log", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                Text(
+                    "${SessionLog.bufferSize()} events in current session buffer.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                SessionLog.flush(logContext)
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Flush")
+                    }
+                    Button(
+                        onClick = {
+                            val logText = SessionLog.exportFullHistory(logContext)
+                            // Share via standard Android share sheet
+                            val sendIntent = android.content.Intent().apply {
+                                action = android.content.Intent.ACTION_SEND
+                                putExtra(android.content.Intent.EXTRA_TEXT, logText)
+                                type = "application/jsonl"
+                                putExtra(android.content.Intent.EXTRA_TITLE, "devcompanion-session-log.jsonl")
+                            }
+                            logContext.startActivity(android.content.Intent.createChooser(sendIntent, "Export Session Log"))
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null)
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Export")
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                TextButton(
+                    onClick = {
+                        val deleted = SessionLog.clearLogs(logContext)
+                        SessionLog.startSession() // start fresh
+                    }
+                ) {
+                    Text("Clear all logs", color = MaterialTheme.colorScheme.error)
                 }
             }
         }

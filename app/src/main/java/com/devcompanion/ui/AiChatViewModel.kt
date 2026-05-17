@@ -20,6 +20,8 @@ import com.devcompanion.llm.agent.ToolCall
 import com.devcompanion.llm.agent.ToolConfirmationDetails
 import com.devcompanion.llm.agent.ToolExecutor
 import com.devcompanion.llm.agent.WebViewTools
+import com.devcompanion.logging.EventType
+import com.devcompanion.logging.SessionLog
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.job
@@ -247,6 +249,8 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, _messages.value.size, hasTools = false)
+
         // If no manually captured context and auto-capture is on, capture from WebView
         val context = _lastContext.value ?: run {
             if (_autoCaptureEnabled.value && webView != null) {
@@ -312,6 +316,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         _totalInputTokens.value += it.inputTokens
                         _totalOutputTokens.value += it.outputTokens
                     }
+                    SessionLog.llmResponse(currentProvider.displayName, hasToolCalls = false, usage?.inputTokens, usage?.outputTokens, null)
                     val assistantMessage = ChatMessage(
                         role = "assistant",
                         content = response,
@@ -325,12 +330,15 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 Log.d(TAG, "Streaming cancelled by user")
             } catch (e: LlmException) {
                 Log.e(TAG, "LLM error: ${e.message}", e)
+                SessionLog.llmError(currentProvider.displayName, e.message ?: "Unknown LLM error", e.code)
                 _error.value = e.message ?: "Unknown LLM error"
             } catch (e: UnsupportedOperationException) {
                 Log.w(TAG, "Provider not supported: ${e.message}")
+                SessionLog.llmError(currentProvider.displayName, e.message ?: "Provider not supported")
                 _error.value = e.message ?: "Provider not yet supported"
             } catch (e: Exception) {
                 Log.e(TAG, "Unexpected error during streaming", e)
+                SessionLog.llmError(currentProvider.displayName, e.message ?: "Unexpected error")
                 _error.value = "Error: ${e.message}"
             } finally {
                 _isStreaming.value = false
@@ -502,6 +510,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         // Wire LLM caller — streams tokens to UI in real-time
         loop.llmCaller = { messages, context, tools ->
             val repository = LlmRepositoryImpl(currentProvider)
+            SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, messages.size, hasTools = tools.isNotEmpty())
             val sb = StringBuilder()
             var toolCallsList: List<ToolCall>? = null
             var streamError: String? = null
@@ -579,6 +588,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         // Start agent loop
         agentJob = viewModelScope.launch {
             _isStreaming.value = true
+            SessionLog.log(EventType.AGENT_START, mapOf("command" to commandText.take(100), "mode" to "agent"))
             try {
                 loop.start(commandText, wv, history = _messages.value.dropLast(1)).collect { event ->
                     when (event) {
@@ -652,6 +662,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 _agentState.value = AgentState.Idle
                 agentLoop = null
                 agentJob = null
+                SessionLog.log(EventType.AGENT_END, mapOf("reason" to "loop_finished"))
                 // Stop foreground service when agent finishes
                 getApplication<Application>().stopService(
                     Intent(getApplication<Application>(), AgentService::class.java)

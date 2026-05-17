@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.OnBackPressedCallback
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -37,8 +38,12 @@ import com.devcompanion.ui.theme.Spacing
 import android.webkit.WebView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
+
+import com.devcompanion.logging.SessionLog
+import com.devcompanion.logging.EventType
 
 class MainActivity : ComponentActivity() {
 
@@ -48,9 +53,21 @@ class MainActivity : ComponentActivity() {
 
     private var webViewCanGoBack: (() -> Boolean)? = null
 
+    override fun onPause() {
+        super.onPause()
+        lifecycleScope.launch { SessionLog.flush(this@MainActivity) }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        SessionLog.log(EventType.SESSION_END, mapOf("reason" to "onStop"))
+        lifecycleScope.launch { SessionLog.flush(this@MainActivity) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate: starting")
+        SessionLog.startSession()
 
         try {
             try {

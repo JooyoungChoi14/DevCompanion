@@ -192,7 +192,7 @@ private class MarkdownBridge(
  */
 private fun normalizeMarkdown(text: String): String {
     // Step 1: Ensure blank line after headings
-    val lines = content.lines()
+    val lines = text.lines()
     val step1 = mutableListOf<String>()
     for (i in lines.indices) {
         step1.add(lines[i])
@@ -444,7 +444,7 @@ private class CommonMarkHtmlVisitor : AbstractVisitor() {
 // ── Streaming fallback (custom parser) ──────────────────────────────────────
 
 private fun markdownToHtmlCustom(text: String): String {
-    val blocks = parseMarkdown(content)
+    val blocks = parseMarkdown(text)
     val sb = StringBuilder()
     var codeBlockIndex = 0
 

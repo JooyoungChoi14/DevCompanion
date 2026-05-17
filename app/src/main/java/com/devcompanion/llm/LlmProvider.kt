@@ -18,6 +18,9 @@ sealed class LlmProvider {
     /** Human-readable label for display in UI. */
     abstract val displayName: String
 
+    /** The model identifier used by this provider. */
+    abstract val model: String
+
     /** Whether this provider has a usable API key configured.
      *  For Ollama, the key is optional so this is always true.
      *  For others, the key must be non-blank. */
@@ -34,7 +37,7 @@ sealed class LlmProvider {
         val apiKey: String,
         val baseUrl: String = "https://api.anthropic.com",
         val version: String = "2023-06-01",
-        val model: String = "claude-sonnet-4-20250514"
+        override val model: String = "claude-sonnet-4-20250514"
     ) : LlmProvider() {
         override val providerType = TYPE
         override val displayName = "Anthropic"
@@ -55,7 +58,7 @@ sealed class LlmProvider {
         val apiKey: String,
         val baseUrl: String = "https://api.openai.com",
         val organization: String? = null,
-        val model: String = "gpt-4o"
+        override val model: String = "gpt-4o"
     ) : LlmProvider() {
         override val providerType = TYPE
         override val displayName = "OpenAI"
@@ -75,7 +78,7 @@ sealed class LlmProvider {
     data class Ollama(
         val apiKey: String = "",
         val baseUrl: String = "https://ollama.com",
-        val model: String = "glm-5.1"
+        override val model: String = "glm-5.1"
     ) : LlmProvider() {
         override val providerType = TYPE
         override val displayName = "Ollama"
@@ -95,7 +98,7 @@ sealed class LlmProvider {
     data class Gemini(
         val apiKey: String,
         val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
-        val model: String = "gemini-2.5-flash"
+        override val model: String = "gemini-2.5-flash"
     ) : LlmProvider() {
         override val providerType = TYPE
         override val displayName = "Gemini"
