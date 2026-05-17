@@ -9,6 +9,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.devcompanion.AgentService
+import com.devcompanion.data.UrlHistoryStore
 import com.devcompanion.llm.*
 import com.devcompanion.llm.agent.ActionRisk
 import com.devcompanion.llm.agent.AgentEvent
@@ -40,15 +41,20 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         private const val TAG = "AiChatViewModel"
     }
 
-    /** Build system prompt with WebView URL context. */
+    /** Build system prompt with WebView URL context and URL history. */
     private fun buildSystemPrompt(mode: String, webView: WebView? = null): String {
         val url = try { webView?.url } catch (_: Exception) { null }
         val customPrompt = try {
             LlmSettings.loadCustomPrompt()
         } catch (_: Exception) { null }
+        val recentUrls = try {
+            val store = UrlHistoryStore(getApplication<Application>())
+            store.getUrls().take(10)
+        } catch (_: Exception) { emptyList() }
         return SystemPromptBuilder.build(
             mode = mode,
             currentUrl = url,
+            recentUrls = recentUrls,
             customInstructions = customPrompt
         )
     }

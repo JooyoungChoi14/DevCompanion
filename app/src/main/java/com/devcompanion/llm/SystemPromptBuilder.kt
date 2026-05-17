@@ -21,6 +21,7 @@ object SystemPromptBuilder {
     fun build(
         mode: String,
         currentUrl: String? = null,
+        recentUrls: List<String> = emptyList(),
         customInstructions: String? = null
     ): String {
         val sb = StringBuilder()
@@ -55,6 +56,17 @@ object SystemPromptBuilder {
             sb.appendLine()
         }
 
+        // ── Recent URLs (context for navigation requests) ─────────────
+        if (recentUrls.isNotEmpty()) {
+            sb.appendLine("## Recently Visited Pages")
+            recentUrls.take(10).forEachIndexed { i, url ->
+                sb.appendLine("${i + 1}. $url")
+            }
+            sb.appendLine()
+            sb.appendLine("When the user asks to 'go back to a previous site' or 'navigate to a page I was on', match their description against this list and use the navigate tool.")
+            sb.appendLine()
+        }
+
         // ── Tool reference (agent mode only) ──────────────────────────
         if (mode == "agent") {
             sb.appendLine("## Available Tools")
@@ -72,7 +84,12 @@ object SystemPromptBuilder {
             sb.appendLine("| submit_form | Submit a form | Sensitive (needs confirmation) |")
             sb.appendLine("| get_console_logs | Read browser console logs | Moderate |")
             sb.appendLine()
-            sb.appendLine("Use tools proactively to verify changes. For example, after set_style, use get_computed_style or screenshot to confirm the result.")
+            sb.appendLine("## Tool Usage Guidelines")
+            sb.appendLine("- **Selector strategy**: Prefer `data-*` attributes, then ARIA roles (`[role='button']`), then text content, then CSS classes. Avoid fragile auto-generated class names.")
+            sb.appendLine("- **Prefer specific tools over eval_js**: Use click, type, and scroll for DOM interactions. Only use eval_js as a last resort when no specific tool fits.")
+            sb.appendLine("- **Verify after action**: After navigate/click/type/set_style, use screenshot or get_dom to confirm the result.")
+            sb.appendLine("- **Navigate directly**: When the user asks to go to a URL, use the navigate tool — do not just list URLs.")
+            sb.appendLine("- **Summarize when done**: Once the task is complete, provide a concise markdown summary without further tool calls.")
             sb.appendLine()
         }
 
