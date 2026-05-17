@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
  * and web context capture. Confirmation prompts for context capture
  * are delegated to the UI layer.
  */
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 class AiChatViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
@@ -167,9 +168,12 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     init {
-        // Auto-save messages whenever they change
+        // Auto-save messages whenever they change (debounced)
+        // N2: Replaces immediate collect with 500ms debounce to prevent
+        // race with saveMessages() and reduce disk I/O on rapid updates.
         viewModelScope.launch {
             _messages
+                .debounce(500)
                 .collect {
                     if (it.isNotEmpty()) {
                         ChatHistory.save(getApplication<Application>(), _conversationId.value, it)
@@ -228,6 +232,11 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) {
             Log.w(TAG, "Failed to restore last conversation", e)
         }
+
+        // N3: Force idle on restore. Streaming/agent state is not persisted,
+        // so partial states would leave the UI in an inconsistent state.
+        // Dispatched to ensure _agentState is fully initialized.
+        viewModelScope.launch { _agentState.value = AgentState.Idle }
     }
 
     /**
