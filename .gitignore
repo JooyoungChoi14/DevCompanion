@@ -9,3 +9,4 @@ app/build/
 *.aab
 *.jks
 .envr8-mapping/
+r8-mapping/

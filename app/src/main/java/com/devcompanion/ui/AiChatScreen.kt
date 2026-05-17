@@ -164,7 +164,7 @@ fun AiChatScreen(
         drawerContent = {
             ConversationDrawer(
                 conversations = conversations,
-                currentConversationId = viewModel.currentConversationId,
+                currentConversationId = viewModel.conversationId.value,
                 onSelect = { id ->
                     viewModel.loadConversation(id)
                     scope.launch { drawerState.close() }
@@ -181,7 +181,7 @@ fun AiChatScreen(
                     val json = viewModel.exportCurrentConversation()
                     if (json != null) {
                         val exportCtx = exportContext
-                        val file = File(exportCtx.cacheDir, "conversation_${viewModel.currentConversationId}.json")
+                        val file = File(exportCtx.cacheDir, "conversation_${viewModel.conversationId.value}.json")
                         file.writeText(json)
                         val uri = FileProvider.getUriForFile(
                             exportCtx,

@@ -74,7 +74,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     // ── Conversation persistence ────────────────────────────────────────
 
-    internal var currentConversationId: String = ChatHistory.newConversationId()
+    // M1: Promoted from internal var to StateFlow for UI observability
+    private val _conversationId = MutableStateFlow(ChatHistory.newConversationId())
+    val conversationId: StateFlow<String> = _conversationId.asStateFlow()
     private var saveJob: kotlinx.coroutines.Job? = null
 
     /** Save messages to disk (debounced). Called after each message mutation. */
@@ -82,13 +84,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             kotlinx.coroutines.delay(500) // debounce 500ms
-            ChatHistory.save(getApplication<Application>(), currentConversationId, _messages.value)
+            ChatHistory.save(getApplication<Application>(), _conversationId.value, _messages.value)
         }
     }
 
     /** Load a previous conversation. */
     fun loadConversation(conversationId: String) {
-        currentConversationId = conversationId
+        _conversationId.value = conversationId
         _messages.value = ChatHistory.load(getApplication<Application>(), conversationId)
     }
 
@@ -108,7 +110,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Start a new conversation. */
     fun newConversation() {
-        currentConversationId = ChatHistory.newConversationId()
+        _conversationId.value = ChatHistory.newConversationId()
         _messages.value = emptyList()
         _currentResponse.value = ""
         _isStreaming.value = false
@@ -120,12 +122,11 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Single entry point for initializing a new conversation with a prompt.
      * Replaces the dual LaunchedEffect pattern that had no ordering guarantee.
-     * M2: merges newConversation + resetInitialPromptSent + prompt sending
-     * into one atomic ViewModel operation.
+     * M2: merges newConversation + prompt sending into one atomic ViewModel operation.
+     * Internal: only called from AiChatScreen's LaunchedEffect.
      */
-    fun initializeWithPrompt(prompt: String, webView: WebView?, isAgentMode: Boolean) {
-        newConversation()
-        resetInitialPromptSent()
+    internal fun initializeWithPrompt(prompt: String, webView: WebView?, isAgentMode: Boolean) {
+        newConversation()  // already resets initialPromptSent
         if (prompt.isNotBlank()) {
             markInitialPromptSent()
             if (isAgentMode) {
@@ -150,14 +151,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     fun deleteConversation(conversationId: String) {
         ChatHistory.delete(getApplication<Application>(), conversationId)
         // If deleting current conversation, start fresh
-        if (conversationId == currentConversationId) {
+        if (conversationId == _conversationId.value) {
             newConversation()
         }
     }
 
     /** Export current conversation as JSON string. */
     fun exportCurrentConversation(): String? {
-        return ChatHistory.exportToJson(getApplication<Application>(), currentConversationId)
+        return ChatHistory.exportToJson(getApplication<Application>(), _conversationId.value)
     }
 
     /** Import a conversation from JSON string. Returns new conversation ID or null. */
@@ -171,7 +172,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             _messages
                 .collect {
                     if (it.isNotEmpty()) {
-                        ChatHistory.save(getApplication<Application>(), currentConversationId, it)
+                        ChatHistory.save(getApplication<Application>(), _conversationId.value, it)
                     }
                 }
         }
@@ -220,7 +221,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             val conversations = ChatHistory.listConversations(application)
             val lastConv = conversations.firstOrNull()
             if (lastConv != null) {
-                currentConversationId = lastConv.id
+                _conversationId.value = lastConv.id
                 _messages.value = ChatHistory.load(application, lastConv.id)
                 Log.d(TAG, "Restored last conversation: ${lastConv.id} (${lastConv.messageCount} msgs)")
             }
@@ -525,7 +526,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _totalInputTokens.value = 0
         _totalOutputTokens.value = 0
         // Start a new conversation ID for the fresh chat
-        currentConversationId = ChatHistory.newConversationId()
+        _conversationId.value = ChatHistory.newConversationId()
     }
 
     /**
