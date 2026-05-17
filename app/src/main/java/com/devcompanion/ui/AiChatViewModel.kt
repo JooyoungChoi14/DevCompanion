@@ -78,18 +78,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     // M1: Promoted from internal var to StateFlow for UI observability
     private val _conversationId = MutableStateFlow(ChatHistory.newConversationId())
     val conversationId: StateFlow<String> = _conversationId.asStateFlow()
-    private var saveJob: kotlinx.coroutines.Job? = null
 
-    /** Save messages to disk (debounced). Called after each message mutation. */
-    private fun saveMessages() {
-        saveJob?.cancel()
-        saveJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(500) // debounce 500ms
-            ChatHistory.save(getApplication<Application>(), _conversationId.value, _messages.value)
-        }
-    }
-
-    /** Load a previous conversation. */
     fun loadConversation(conversationId: String) {
         _conversationId.value = conversationId
         _messages.value = ChatHistory.load(getApplication<Application>(), conversationId)
@@ -233,10 +222,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             Log.w(TAG, "Failed to restore last conversation", e)
         }
 
-        // N3: Force idle on restore. Streaming/agent state is not persisted,
-        // so partial states would leave the UI in an inconsistent state.
-        // Dispatched to ensure _agentState is fully initialized.
-        viewModelScope.launch { _agentState.value = AgentState.Idle }
+        viewModelScope.launch { _agentState.value = AgentState.Idle } // N3: dispatched because _agentState is declared after this init block
     }
 
     /**
