@@ -345,9 +345,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
                 // Process any mode-switch tool calls
                 if (toolCallsToProcess.isNotEmpty()) {
+                    val wv = webView ?: return@launch
                     val toolResults = mutableListOf<String>()
                     for (call in toolCallsToProcess) {
-                        val result = modeExecutor.execute(call, webView ?: return@collect)
+                        val result = modeExecutor.execute(call, wv)
                         toolResults.add("${call.name}: ${result.output}")
                     }
                     // Append tool results as system context
