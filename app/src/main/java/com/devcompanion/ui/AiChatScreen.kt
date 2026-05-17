@@ -91,6 +91,7 @@ fun AiChatScreen(
     viewModel: AiChatViewModel = viewModel(),
     webView: WebView?,
     initialPrompt: String? = null,
+    startNewConversation: Boolean = false,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -115,6 +116,9 @@ fun AiChatScreen(
     val initialPromptSent = remember { mutableStateOf(false) }
     LaunchedEffect(initialPrompt) {
         if (initialPrompt != null && !initialPromptSent.value && initialPrompt.isNotBlank()) {
+            if (startNewConversation) {
+                viewModel.newConversation()
+            }
             inputText = initialPrompt
             initialPromptSent.value = true
             if (agentMode) {
