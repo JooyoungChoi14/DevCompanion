@@ -692,7 +692,6 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         // Start agent loop
         agentJob = viewModelScope.launch {
             _isStreaming.value = true
-            SessionLog.log(EventType.AGENT_START, mapOf("command" to commandText.take(100), "mode" to "agent"))
             try {
                 loop.start(commandText, wv, history = _messages.value.dropLast(1)).collect { event ->
                     when (event) {

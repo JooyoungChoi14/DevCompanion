@@ -172,9 +172,12 @@ class AgentLoop(
             }
 
             // Capture context — screenshot every iteration (Quick mode after 1st for token efficiency)
+            // WebView methods MUST run on the main thread
             val context = try {
                 val mode = if (iteration == 0) CaptureMode.Standard else CaptureMode.Quick
-                val ctx = WebContextBuilder.buildContext(webView, mode)
+                val ctx = withContext(Dispatchers.Main) {
+                    WebContextBuilder.buildContext(webView, mode)
+                }
                 SessionLog.capture(mode.name, ctx.url, ctx.screenshotBase64.isNotEmpty())
                 ctx
             } catch (e: Exception) {
