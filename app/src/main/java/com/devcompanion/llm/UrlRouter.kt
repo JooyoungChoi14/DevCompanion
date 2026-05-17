@@ -21,15 +21,17 @@ sealed class UrlRoute {
 
 fun routeUrlInput(input: String): UrlRoute {
     val trimmed = input.trim()
+    // Normalize full-width question mark (Korean IME) to half-width
+    val normalized = trimmed.replace('\uff1f', '?')
     return when {
-        trimmed.startsWith("?") -> UrlRoute.AiQuestion(trimmed.removePrefix("?").trim())
-        trimmed.endsWith("?") && !trimmed.startsWith("http") && !trimmed.contains(".") ->
-            UrlRoute.AiQuestion(trimmed.removeSuffix("?").trim())
-        trimmed.startsWith("http") -> UrlRoute.Direct(trimmed)
-        trimmed.contains(".") && !trimmed.contains(" ") ->
-            UrlRoute.Url("https://$trimmed")
+        normalized.startsWith("?") -> UrlRoute.AiQuestion(normalized.removePrefix("?").trim())
+        normalized.endsWith("?") && !normalized.startsWith("http") && !normalized.contains("/") ->
+            UrlRoute.AiQuestion(normalized.removeSuffix("?").trim())
+        normalized.startsWith("http") -> UrlRoute.Direct(normalized)
+        normalized.contains(".") && !normalized.contains(" ") ->
+            UrlRoute.Url("https://$normalized")
         else -> UrlRoute.Search(
-            "https://duckduckgo.com/?q=${URLEncoder.encode(trimmed, "UTF-8")}"
+            "https://duckduckgo.com/?q=${URLEncoder.encode(normalized, "UTF-8")}"
         )
     }
 }
