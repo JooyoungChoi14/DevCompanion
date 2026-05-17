@@ -184,6 +184,18 @@ class OllamaAdapter(
         for (msg in messages) {
             val isContextMessage = ctx != null && msg.hasContext && msg.role == "user"
 
+            // Agent-mode tool results stored as role="system" with isToolResult=true
+            // Convert to proper tool role for LLM API consumption
+            if (msg.isToolResult) {
+                apiMessages.add(JsonObject().apply {
+                    addProperty("role", "tool")
+                    addProperty("content", msg.content)
+                    msg.toolCallId?.let { addProperty("tool_call_id", it) }
+                    msg.toolName?.let { addProperty("name", it) }
+                })
+                continue
+            }
+
             if (msg.role == "tool") {
                 // Tool result message — Ollama format
                 apiMessages.add(JsonObject().apply {

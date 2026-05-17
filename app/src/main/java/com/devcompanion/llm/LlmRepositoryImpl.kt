@@ -80,8 +80,12 @@ class LlmRepositoryImpl(override val provider: LlmProvider) : LlmRepository {
             messages
         }
 
+        // Filter out tool result messages in chat mode — they are agent-mode artifacts
+        // that confuse LLMs in normal conversation (treated as system instructions)
+        val chatMessages = trimmedMessages.filter { !it.isToolResult }
+
         return flow {
-            adapter.stream(trimmedMessages, context, effectivePrompt).collect { event ->
+            adapter.stream(chatMessages, context, effectivePrompt).collect { event ->
                 when (event) {
                     is LlmStreamEvent.Token -> emit(event.content)
                     is LlmStreamEvent.Error -> throw LlmException(event.message, event.code)

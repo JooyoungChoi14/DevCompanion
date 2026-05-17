@@ -231,7 +231,7 @@ fun MainApp(
                     AiChatScreen(
                         webView = webViewRef,
                         initialPrompt = pendingAiQuestion,
-                        startNewConversation = true,
+                        startNewConversation = pendingAiQuestion != null,
                         onDismiss = { showAiChat = false; pendingAiQuestion = null },
                         modifier = Modifier.imePadding()
                     )

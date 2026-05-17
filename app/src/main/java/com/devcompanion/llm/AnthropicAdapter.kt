@@ -161,8 +161,17 @@ class AnthropicAdapter(
             // Find the user message that carries web context
             val isContextMessage = ctx != null && msg.hasContext && msg.role == "user"
 
-            // Tool result message — Anthropic uses role=user with tool_result content block
-            if (msg.role == "tool") {
+            // Agent-mode tool results stored as role="system" with isToolResult=true
+            // Convert to proper tool role for LLM API consumption
+            if (msg.isToolResult) {
+                val toolResultBlock = JsonObject().apply {
+                    addProperty("type", "tool_result")
+                    addProperty("tool_use_id", msg.toolCallId ?: msg.id)
+                    addProperty("content", msg.content)
+                }
+                mapOf("role" to "user", "content" to listOf(toolResultBlock))
+            } else if (msg.role == "tool") {
+                // Tool result message — Anthropic uses role=user with tool_result content block
                 val toolResultBlock = JsonObject().apply {
                     addProperty("type", "tool_result")
                     addProperty("tool_use_id", msg.toolCallId ?: msg.id)

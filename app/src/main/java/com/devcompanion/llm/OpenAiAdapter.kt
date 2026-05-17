@@ -131,6 +131,17 @@ class OpenAiAdapter(
         for (msg in messages) {
             val isContextMessage = ctx != null && msg.hasContext && msg.role == "user"
 
+            // Agent-mode tool results stored as role="system" with isToolResult=true
+            // Convert to proper tool role for LLM API consumption
+            if (msg.isToolResult) {
+                apiMessages.add(mapOf(
+                    "role" to "tool",
+                    "tool_call_id" to (msg.toolCallId ?: msg.id),
+                    "content" to msg.content
+                ))
+                continue
+            }
+
             // Tool result message
             if (msg.role == "tool") {
                 apiMessages.add(mapOf(

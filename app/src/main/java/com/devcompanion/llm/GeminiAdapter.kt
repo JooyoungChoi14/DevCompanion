@@ -140,6 +140,21 @@ class GeminiAdapter(
 
             val isContextMessage = ctx != null && msg.hasContext && msg.role == "user"
 
+            // Agent-mode tool results stored as role="system" with isToolResult=true
+            // Convert to proper function response for Gemini API
+            if (msg.isToolResult) {
+                apiContents.add(mapOf(
+                    "role" to "function",
+                    "parts" to listOf(mapOf(
+                        "functionResponse" to mapOf(
+                            "name" to (msg.toolName ?: msg.toolCallId ?: msg.id),
+                            "response" to mapOf("result" to msg.content)
+                        )
+                    ))
+                ))
+                continue
+            }
+
             // Tool result message — Gemini function response
             if (msg.role == "tool") {
                 apiContents.add(mapOf(
