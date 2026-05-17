@@ -8,4 +8,4 @@ app/build/
 *.apk
 *.aab
 *.jks
-.env
+.envr8-mapping/
