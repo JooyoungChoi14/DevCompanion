@@ -37,6 +37,7 @@ fun SettingsSheet(
     var hostInput by remember { mutableStateOf(cdpClient.discoveryHost) }
     var portInput by remember { mutableStateOf(cdpClient.discoveryPort) }
     var connecting by remember { mutableStateOf(false) }
+    var showClearLogDialog by remember { mutableStateOf(false) }
 
     val currentPreset by themePrefs.preset.collectAsState(initial = ColorPreset.DRACULA)
     val currentDarkMode by themePrefs.darkMode.collectAsState(initial = "system")
@@ -274,65 +275,69 @@ fun SettingsSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(Spacing.sm))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            scope.launch {
-                                SessionLog.flush(logContext)
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Save, contentDescription = null)
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text("Flush")
-                    }
-                    Button(
-                        onClick = {
-                            val logText = SessionLog.exportFullHistory(logContext)
-                            // Share via standard Android share sheet
-                            val sendIntent = android.content.Intent().apply {
-                                action = android.content.Intent.ACTION_SEND
-                                putExtra(android.content.Intent.EXTRA_TEXT, logText)
-                                type = "application/jsonl"
-                                putExtra(android.content.Intent.EXTRA_TITLE, "devcompanion-session-log.jsonl")
-                            }
-                            logContext.startActivity(android.content.Intent.createChooser(sendIntent, "Export Session Log"))
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = null)
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text("Export")
-                    }
-                }
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                OutlinedButton(
+                // Single Export button — writes to temp file, shares via system sheet
+                // (Telegram, Drive, Files, etc. all handle .jsonl)
+                Button(
                     onClick = {
-                        val uri = SessionLog.saveToDownloads(logContext)
-                        if (uri != null) {
-                            android.widget.Toast.makeText(logContext, "Log saved to Downloads", android.widget.Toast.LENGTH_SHORT).show()
-                        } else {
-                            android.widget.Toast.makeText(logContext, "Failed to save log", android.widget.Toast.LENGTH_SHORT).show()
+                        scope.launch {
+                            SessionLog.flush(logContext) // ensure disk is up to date
+                            val logText = SessionLog.exportFullHistory(logContext)
+                            if (logText.isBlank()) {
+                                android.widget.Toast.makeText(logContext, "No logs to export", android.widget.Toast.LENGTH_SHORT).show()
+                                return@launch
+                            }
+                            // Write to app cache, share via FileProvider
+                            val dateStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                                .format(java.util.Date())
+                            val file = java.io.File(logContext.cacheDir, "devcompanion-log-$dateStr.jsonl")
+                            file.writeText(logText)
+                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                logContext,
+                                "${logContext.packageName}.fileprovider",
+                                file
+                            )
+                            val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "application/jsonl"
+                                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            logContext.startActivity(
+                                android.content.Intent.createChooser(sendIntent, "Export Session Log")
+                            )
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(Icons.Default.Download, contentDescription = null)
+                    Icon(Icons.Default.Share, contentDescription = null)
                     Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Save to Downloads")
+                    Text("Export Log")
                 }
                 Spacer(modifier = Modifier.height(Spacing.xs))
                 TextButton(
                     onClick = {
-                        val deleted = SessionLog.clearLogs(logContext)
-                        SessionLog.startSession() // start fresh
+                        showClearLogDialog = true
                     }
                 ) {
                     Text("Clear all logs", color = MaterialTheme.colorScheme.error)
+                }
+                if (showClearLogDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showClearLogDialog = false },
+                        title = { Text("Clear all logs?") },
+                        text = { Text("This permanently deletes all session log history. This cannot be undone.") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    SessionLog.clearLogs(logContext)
+                                    SessionLog.startSession()
+                                    showClearLogDialog = false
+                                }
+                            ) { Text("Clear", color = MaterialTheme.colorScheme.error) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showClearLogDialog = false }) { Text("Cancel") }
+                        }
+                    )
                 }
             }
         }
