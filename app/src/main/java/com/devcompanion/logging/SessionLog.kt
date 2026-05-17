@@ -1,10 +1,13 @@
 package com.devcompanion.logging
 
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -68,30 +71,38 @@ object SessionLog {
 
     // ── Convenience methods for common event types ──────────────────────
 
-    fun llmRequest(provider: String, model: String, messageCount: Int, hasTools: Boolean) {
+    fun llmRequest(provider: String, model: String, messageCount: Int, hasTools: Boolean,
+                    systemPromptLength: Int? = null, toolNames: String? = null) {
         log(EventType.LLM_REQUEST, mapOf(
             "provider" to provider,
             "model" to model,
             "messageCount" to messageCount.toString(),
-            "hasTools" to hasTools.toString()
+            "hasTools" to hasTools.toString(),
+            "systemPromptLength" to (systemPromptLength?.toString() ?: ""),
+            "toolNames" to (toolNames ?: "")
         ))
     }
 
-    fun llmResponse(provider: String, hasToolCalls: Boolean, inputTokens: Int?, outputTokens: Int?, latencyMs: Long?) {
+    fun llmResponse(provider: String, hasToolCalls: Boolean, inputTokens: Int?, outputTokens: Int?, latencyMs: Long?,
+                     model: String? = null, iteration: Int? = null) {
         log(EventType.LLM_RESPONSE, mapOf(
             "provider" to provider,
+            "model" to (model ?: ""),
             "hasToolCalls" to hasToolCalls.toString(),
             "inputTokens" to (inputTokens?.toString() ?: ""),
             "outputTokens" to (outputTokens?.toString() ?: ""),
-            "latencyMs" to (latencyMs?.toString() ?: "")
+            "latencyMs" to (latencyMs?.toString() ?: ""),
+            "iteration" to (iteration?.toString() ?: "")
         ))
     }
 
-    fun llmError(provider: String, error: String, code: Int? = null) {
+    fun llmError(provider: String, model: String, error: String, code: Int? = null, iteration: Int? = null) {
         log(EventType.LLM_ERROR, mapOf(
             "provider" to provider,
+            "model" to model,
             "error" to error,
-            "code" to (code?.toString() ?: "")
+            "code" to (code?.toString() ?: ""),
+            "iteration" to (iteration?.toString() ?: "")
         ))
     }
 
@@ -129,11 +140,28 @@ object SessionLog {
         ))
     }
 
-    fun capture(mode: String, url: String?, hasScreenshot: Boolean) {
+    fun capture(mode: String, url: String?, hasScreenshot: Boolean, screenshotStripped: Boolean = false) {
         log(EventType.CAPTURE, mapOf(
             "mode" to mode,
             "url" to (url ?: ""),
-            "hasScreenshot" to hasScreenshot.toString()
+            "hasScreenshot" to hasScreenshot.toString(),
+            "screenshotStripped" to screenshotStripped.toString()
+        ))
+    }
+
+    fun urlChange(from: String, to: String, trigger: String) {
+        log(EventType.URL_CHANGE, mapOf(
+            "from" to from,
+            "to" to to,
+            "trigger" to trigger
+        ))
+    }
+
+    fun providerChange(from: String, to: String, model: String) {
+        log(EventType.PROVIDER_CHANGE, mapOf(
+            "from" to from,
+            "to" to to,
+            "model" to model
         ))
     }
 
@@ -212,6 +240,47 @@ object SessionLog {
         return sb.toString()
     }
 
+    /**
+     * Save session log to Downloads folder via MediaStore.
+     * Returns the content URI on success, null on failure.
+     */
+    fun saveToDownloads(context: Context): Uri? {
+        val content = exportFullHistory(context)
+        if (content.isBlank()) return null
+
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(sessionStartTime))
+        val fileName = "devcompanion-log-$dateStr-$currentSessionId.jsonl"
+
+        return try {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, "application/jsonl")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+            }
+
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                ?: return null
+
+            context.contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(content.toByteArray(Charsets.UTF_8))
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                context.contentResolver.update(uri, contentValues, null, null)
+            }
+
+            Log.d(TAG, "Saved log to Downloads: $fileName")
+            uri
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save log to Downloads", e)
+            null
+        }
+    }
+
     /** List all saved session log files. */
     fun listLogFiles(context: Context): List<File> {
         val logDir = File(context.filesDir, LOG_DIR)
@@ -247,6 +316,8 @@ enum class EventType(val key: String) {
     CONFIRMATION("confirmation"),
     STATE_CHANGE("state_change"),
     CAPTURE("capture"),
+    URL_CHANGE("url_change"),
+    PROVIDER_CHANGE("provider_change"),
     STREAM("stream"),
     ERROR("error")
 }

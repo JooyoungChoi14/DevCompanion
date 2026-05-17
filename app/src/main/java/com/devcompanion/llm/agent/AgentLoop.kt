@@ -54,6 +54,15 @@ class AgentLoop(
 
     private var currentJob: Job? = null
 
+    /** Whether the current provider supports vision (image input). Set by ViewModel. */
+    var supportsVision: Boolean = true
+
+    /** Current provider name for logging. Set by ViewModel. */
+    var providerName: String = "Unknown"
+
+    /** Current model name for logging. Set by ViewModel. */
+    var modelName: String = "Unknown"
+
     /** Callback for requesting user confirmation of sensitive actions. */
     var confirmationHandler: suspend (ToolCall, ToolConfirmationDetails) -> Boolean = { _, _ -> false }
 
@@ -114,7 +123,12 @@ class AgentLoop(
         emit: (AgentEvent) -> Unit
     ) {
         _state.value = AgentState.Thinking(0)
-        SessionLog.log(EventType.AGENT_START, mapOf("userMessage" to userMessage.take(200)))
+        SessionLog.log(EventType.AGENT_START, mapOf(
+            "userMessage" to userMessage.take(200),
+            "provider" to providerName,
+            "model" to modelName,
+            "supportsVision" to supportsVision.toString()
+        ))
 
         val messages = mutableListOf<ChatMessage>()
         // Include prior conversation context for multi-turn
@@ -171,15 +185,25 @@ class AgentLoop(
                 else -> null
             }
 
+            // Capture URL before any tool execution for URL_CHANGE tracking
+            val urlBefore = withContext(Dispatchers.Main) { webView.url ?: "" }
+
             // Capture context — screenshot every iteration (Quick mode after 1st for token efficiency)
             // WebView methods MUST run on the main thread
-            val context = try {
+            var context = try {
                 val mode = if (iteration == 0) CaptureMode.Standard else CaptureMode.Quick
                 val ctx = withContext(Dispatchers.Main) {
                     WebContextBuilder.buildContext(webView, mode)
                 }
-                SessionLog.capture(mode.name, ctx.url, ctx.screenshotBase64.isNotEmpty())
-                ctx
+                // Strip screenshot for non-vision models to avoid API errors
+                val stripped = if (!supportsVision && ctx.screenshotBase64.isNotEmpty()) {
+                    SessionLog.capture(mode.name, ctx.url, true, screenshotStripped = true)
+                    ctx.copy(screenshotBase64 = "", screenshotMimeType = "")
+                } else {
+                    SessionLog.capture(mode.name, ctx.url, ctx.screenshotBase64.isNotEmpty())
+                    ctx
+                }
+                stripped
             } catch (e: Exception) {
                 Log.w(TAG, "Context capture failed, continuing without context", e)
                 SessionLog.log(EventType.ERROR, mapOf("what" to "capture_failed", "error" to (e.message ?: "unknown")))
@@ -196,15 +220,19 @@ class AgentLoop(
             }
 
             // Call LLM
+            val requestStartMs = System.currentTimeMillis()
             val response = try {
                 llmCaller(effectiveMessages, context, effectiveTools)
             } catch (e: Exception) {
+                val latencyMs = System.currentTimeMillis() - requestStartMs
+                SessionLog.llmError(providerName, modelName, e.message ?: "Unknown LLM error", iteration = iteration)
                 emit(AgentEvent.Error("LLM call failed: ${e.message}"))
                 _state.value = AgentState.Error(e.message ?: "LLM error")
                 return false
             }
 
             if (response == null) {
+                SessionLog.llmError(providerName, modelName, "No response from LLM", iteration = iteration)
                 emit(AgentEvent.Error("No response from LLM"))
                 _state.value = AgentState.Error("No response")
                 return false
@@ -212,11 +240,11 @@ class AgentLoop(
 
             // Process response
             if (response.toolCalls.isNotEmpty()) {
-                SessionLog.log(EventType.LLM_RESPONSE, mapOf(
-                    "hasToolCalls" to "true",
-                    "toolCount" to response.toolCalls.size.toString(),
-                    "iteration" to iteration.toString()
-                ))
+                SessionLog.llmResponse(providerName, hasToolCalls = true,
+                    inputTokens = response.inputTokens, outputTokens = response.outputTokens,
+                    latencyMs = System.currentTimeMillis() - requestStartMs,
+                    model = modelName, iteration = iteration)
+
                 // Add assistant message with tool_calls to history
                 messages.add(ChatMessage(
                     role = "assistant",
@@ -289,6 +317,14 @@ class AgentLoop(
                         ToolResult(call.id, "Error: ${e.message}", isError = true)
                     }
 
+                    // Track URL changes after navigation/submission/eval
+                    if (call.name == "navigate" || call.name == "submit_form" || call.name == "eval_js") {
+                        val urlAfter = withContext(Dispatchers.Main) { webView.url ?: "" }
+                        if (urlAfter != urlBefore) {
+                            SessionLog.urlChange(urlBefore, urlAfter, call.name)
+                        }
+                    }
+
                     // Error tracking
                     if (result.isError) {
                         consecutiveErrors++
@@ -317,6 +353,11 @@ class AgentLoop(
                 // Continue loop for next LLM decision
             } else {
                 // Text-only response → done
+                val latencyMs = System.currentTimeMillis() - requestStartMs
+                SessionLog.llmResponse(providerName, hasToolCalls = false,
+                    inputTokens = response.inputTokens, outputTokens = response.outputTokens,
+                    latencyMs = latencyMs, model = modelName, iteration = iteration)
+
                 if (response.content.isNotBlank()) {
                     messages.add(ChatMessage(
                         role = "assistant",
@@ -339,5 +380,7 @@ class AgentLoop(
 data class LlmResponse(
     val content: String = "",
     val toolCalls: List<ToolCall> = emptyList(),
-    val hasToolCalls: Boolean = toolCalls.isNotEmpty()
+    val hasToolCalls: Boolean = toolCalls.isNotEmpty(),
+    val inputTokens: Int? = null,
+    val outputTokens: Int? = null
 )

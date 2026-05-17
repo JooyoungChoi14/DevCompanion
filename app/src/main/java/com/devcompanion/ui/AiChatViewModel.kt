@@ -195,11 +195,15 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
      * Set the active LLM provider and persist it.
      */
     fun setProvider(provider: LlmProvider) {
+        val oldName = _provider.value?.displayName ?: "None"
         _provider.value = provider
         try {
             LlmSettings.saveProvider(provider)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save provider", e)
+        }
+        if (oldName != provider.displayName) {
+            SessionLog.providerChange(oldName, provider.displayName, provider.model)
         }
     }
 
@@ -255,7 +259,8 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, _messages.value.size, hasTools = false)
+        SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, _messages.value.size,
+            hasTools = false, systemPromptLength = buildSystemPrompt("chat", webView).length)
 
         // If no manually captured context and auto-capture is on, capture from WebView
         val context = _lastContext.value ?: run {
@@ -398,7 +403,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         _totalInputTokens.value += it.inputTokens
                         _totalOutputTokens.value += it.outputTokens
                     }
-                    SessionLog.llmResponse(currentProvider.displayName, hasToolCalls = false, usage?.inputTokens, usage?.outputTokens, null)
+                    SessionLog.llmResponse(currentProvider.displayName, hasToolCalls = false,
+                        inputTokens = usage?.inputTokens, outputTokens = usage?.outputTokens,
+                        latencyMs = null, model = currentProvider.model)
                     val assistantMessage = ChatMessage(
                         role = "assistant",
                         content = response,
@@ -424,15 +431,15 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 Log.d(TAG, "Streaming cancelled by user")
             } catch (e: LlmException) {
                 Log.e(TAG, "LLM error: ${e.message}", e)
-                SessionLog.llmError(currentProvider.displayName, e.message ?: "Unknown LLM error", e.code)
+                SessionLog.llmError(currentProvider.displayName, currentProvider.model, e.message ?: "Unknown LLM error", code = e.code)
                 _error.value = e.message ?: "Unknown LLM error"
             } catch (e: UnsupportedOperationException) {
                 Log.w(TAG, "Provider not supported: ${e.message}")
-                SessionLog.llmError(currentProvider.displayName, e.message ?: "Provider not supported")
+                SessionLog.llmError(currentProvider.displayName, currentProvider.model, e.message ?: "Provider not supported")
                 _error.value = e.message ?: "Provider not yet supported"
             } catch (e: Exception) {
                 Log.e(TAG, "Unexpected error during streaming", e)
-                SessionLog.llmError(currentProvider.displayName, e.message ?: "Unexpected error")
+                SessionLog.llmError(currentProvider.displayName, currentProvider.model, e.message ?: "Unexpected error")
                 _error.value = "Error: ${e.message}"
             } finally {
                 _isStreaming.value = false
@@ -562,6 +569,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         )
         val gate = PermissionGate()
         val loop = AgentLoop(executor, gate, maxIterations = LlmSettings.maxIterations)
+        loop.supportsVision = currentProvider.supportsVision
+        loop.providerName = currentProvider.displayName
+        loop.modelName = currentProvider.model
         agentLoop = loop
 
         // Wire continuation handler — ask user when max iterations is reached
@@ -614,16 +624,22 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         // Wire LLM caller — streams tokens to UI in real-time
         loop.llmCaller = { messages, context, tools ->
             val repository = LlmRepositoryImpl(currentProvider)
-            SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, messages.size, hasTools = tools.isNotEmpty())
+            val systemPrompt = buildSystemPrompt("agent", wv)
+            SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, messages.size,
+                hasTools = tools.isNotEmpty(),
+                systemPromptLength = systemPrompt.length,
+                toolNames = tools.joinToString(",") { it.name })
             val sb = StringBuilder()
             var toolCallsList: List<ToolCall>? = null
             var streamError: String? = null
+            var streamErrorCode: Int? = null
+            var lastUsage: TokenUsage? = null
 
             // Clear previous streaming content for this iteration
             _currentResponse.value = ""
 
             try {
-                repository.streamWithTools(messages, context, buildSystemPrompt("agent", wv), tools).collect { event ->
+                repository.streamWithTools(messages, context, systemPrompt, tools).collect { event ->
                     when (event) {
                         is LlmStreamEvent.Token -> {
                             sb.append(event.content)
@@ -633,11 +649,15 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         is LlmStreamEvent.Start -> Unit
                         is LlmStreamEvent.Complete -> {
                             event.usage?.let {
+                                lastUsage = it
                                 _totalInputTokens.value += it.inputTokens
                                 _totalOutputTokens.value += it.outputTokens
                             }
                         }
-                        is LlmStreamEvent.Error -> streamError = event.message
+                        is LlmStreamEvent.Error -> {
+                            streamError = event.message
+                            streamErrorCode = event.code
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -648,9 +668,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             _currentResponse.value = ""
 
             if (streamError != null) {
-                LlmResponse(content = "Error: $streamError", toolCalls = emptyList())
+                SessionLog.llmError(currentProvider.displayName, currentProvider.model,
+                    streamError, code = streamErrorCode)
+                LlmResponse(content = "Error: $streamError", toolCalls = emptyList(),
+                    inputTokens = lastUsage?.inputTokens, outputTokens = lastUsage?.outputTokens)
             } else {
-                LlmResponse(content = sb.toString(), toolCalls = toolCallsList ?: emptyList())
+                LlmResponse(content = sb.toString(), toolCalls = toolCallsList ?: emptyList(),
+                    inputTokens = lastUsage?.inputTokens, outputTokens = lastUsage?.outputTokens)
             }
         }
 

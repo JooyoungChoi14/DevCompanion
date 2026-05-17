@@ -310,6 +310,22 @@ fun SettingsSheet(
                     }
                 }
                 Spacer(modifier = Modifier.height(Spacing.xs))
+                OutlinedButton(
+                    onClick = {
+                        val uri = SessionLog.saveToDownloads(logContext)
+                        if (uri != null) {
+                            android.widget.Toast.makeText(logContext, "Log saved to Downloads", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(logContext, "Failed to save log", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null)
+                    Spacer(modifier = Modifier.width(Spacing.xs))
+                    Text("Save to Downloads")
+                }
+                Spacer(modifier = Modifier.height(Spacing.xs))
                 TextButton(
                     onClick = {
                         val deleted = SessionLog.clearLogs(logContext)
