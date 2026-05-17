@@ -222,7 +222,6 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             Log.w(TAG, "Failed to restore last conversation", e)
         }
 
-        viewModelScope.launch { _agentState.value = AgentState.Idle } // N3: dispatched because _agentState is declared after this init block
     }
 
     /**
