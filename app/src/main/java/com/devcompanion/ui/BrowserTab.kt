@@ -67,6 +67,8 @@ fun BrowserTab(
     onWebViewCreated: ((WebView) -> Unit)? = null,
     onAskAi: ((String) -> Unit)? = null,
     onNavigateHome: (() -> Unit)? = null,
+    startPageVisible: Boolean = true,
+    onStartPageVisibleChange: ((Boolean) -> Unit)? = null,
 ) {
     var urlTextValue by remember { mutableStateOf(TextFieldValue("about:blank")) }
     var canGoBack by remember { mutableStateOf(false) }
@@ -109,7 +111,10 @@ fun BrowserTab(
     val bookmarksStore = remember { BookmarksStore(context) }
     val urlHistoryStore = remember { UrlHistoryStore(context) }
     var bookmarks by remember { mutableStateOf(bookmarksStore.getBookmarks()) }
-    var showStartPage by remember { mutableStateOf(true) }
+    var showStartPage by remember { mutableStateOf(startPageVisible) }
+    val startPageSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = false
+    )
 
     // Initialize urlHistory from persistent store
     LaunchedEffect(Unit) {
@@ -122,6 +127,7 @@ fun BrowserTab(
     // Navigate away from start page
     val navigateFromStartPage: (String) -> Unit = { url ->
         showStartPage = false
+        onStartPageVisibleChange?.invoke(false)
         urlTextValue = TextFieldValue(url, TextRange(url.length))
         pendingAction = BrowserAction.Navigate(url)
     }
@@ -284,6 +290,7 @@ fun BrowserTab(
                     IconButton(
                         onClick = {
                             showStartPage = true
+                            onStartPageVisibleChange?.invoke(true)
                             onNavigateHome?.invoke()
                         },
                         modifier = Modifier.size(28.dp)
@@ -495,46 +502,53 @@ fun BrowserTab(
         )
     }
 
-    // ── Start page overlay ──────────────────────────────────────────
+    // ── Start page bottom sheet ──────────────────────────────────────
     if (showStartPage) {
-        StartPage(
-            bookmarks = bookmarks,
-            recentUrls = urlHistory.takeLast(5).reversed(),
-            onBookmarkClick = { url: String? -> if (url != null) navigateFromStartPage(url) },
-            onAddBookmark = {
-                val currentUrl = urlTextValue.text
-                val currentTitle = pageTitle
-                if (currentUrl.isNotBlank() && currentUrl != "about:blank") {
-                    val bm = Bookmark(title = currentTitle.ifBlank { currentUrl }, url = currentUrl)
-                    bookmarksStore.addBookmark(bm)
-                    bookmarks = bookmarksStore.getBookmarks()
-                }
+        ModalBottomSheet(
+            onDismissRequest = {
+                showStartPage = false
+                onStartPageVisibleChange?.invoke(false)
             },
-            onRemoveBookmark = { id: String ->
-                bookmarksStore.removeBookmark(id)
-                bookmarks = bookmarksStore.getBookmarks()
-            },
-            onRecentClick = { url: String -> navigateFromStartPage(url) },
-            onSearch = { query: String ->
-                when (val route = routeUrlInput(query)) {
-                    is UrlRoute.AiQuestion -> onAskAi?.invoke(route.question)
-                    is UrlRoute.Direct, is UrlRoute.Url, is UrlRoute.Search -> {
-                        val url = when (route) {
-                            is UrlRoute.Direct -> route.url
-                            is UrlRoute.Url -> route.url
-                            is UrlRoute.Search -> route.url
-                            else -> query
-                        }
-                        urlTextValue = TextFieldValue(url, TextRange(url.length))
-                        pendingAction = BrowserAction.Navigate(url)
-                        showStartPage = false
+            sheetState = startPageSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            StartPage(
+                bookmarks = bookmarks,
+                recentUrls = urlHistory.takeLast(5).reversed(),
+                onBookmarkClick = { url: String? -> if (url != null) navigateFromStartPage(url) },
+                onAddBookmark = {
+                    val currentUrl = urlTextValue.text
+                    val currentTitle = pageTitle
+                    if (currentUrl.isNotBlank() && currentUrl != "about:blank") {
+                        val bm = Bookmark(title = currentTitle.ifBlank { currentUrl }, url = currentUrl)
+                        bookmarksStore.addBookmark(bm)
+                        bookmarks = bookmarksStore.getBookmarks()
                     }
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-        )
+                },
+                onRemoveBookmark = { id: String ->
+                    bookmarksStore.removeBookmark(id)
+                    bookmarks = bookmarksStore.getBookmarks()
+                },
+                onRecentClick = { url: String -> navigateFromStartPage(url) },
+                onSearch = { query: String ->
+                    when (val route = routeUrlInput(query)) {
+                        is UrlRoute.AiQuestion -> onAskAi?.invoke(route.question)
+                        is UrlRoute.Direct, is UrlRoute.Url, is UrlRoute.Search -> {
+                            val url = when (route) {
+                                is UrlRoute.Direct -> route.url
+                                is UrlRoute.Url -> route.url
+                                is UrlRoute.Search -> route.url
+                                else -> query
+                            }
+                            urlTextValue = TextFieldValue(url, TextRange(url.length))
+                            pendingAction = BrowserAction.Navigate(url)
+                            showStartPage = false
+                            onStartPageVisibleChange?.invoke(false)
+                        }
+                    }
+                },
+            )
+        }
     }
 
     } // Box

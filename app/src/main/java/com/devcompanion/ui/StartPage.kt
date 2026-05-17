@@ -27,8 +27,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devcompanion.data.Bookmark
-import com.devcompanion.llm.routeUrlInput
-import com.devcompanion.llm.UrlRoute
 import com.devcompanion.ui.theme.Spacing
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -48,8 +46,9 @@ fun StartPage(
     var searchQuery by remember { mutableStateOf("") }
     val searchFocusRequester = remember { FocusRequester() }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier) {
         LazyVerticalGrid(
+            modifier = Modifier.weight(1f),
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(
                 start = Spacing.md,
@@ -181,16 +180,21 @@ fun StartPage(
             }
         }
 
-        // FAB: Add bookmark
-        FloatingActionButton(
+        // Add bookmark button (inline, not FAB — inside bottom sheet)
+        OutlinedButton(
             onClick = { showAddDialog = true },
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(Spacing.md),
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            shape = RoundedCornerShape(12.dp),
         ) {
-            Icon(Icons.Default.Add, contentDescription = "Add bookmark")
+            Icon(
+                Icons.Default.Add,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(Spacing.xs))
+            Text("Add Bookmark")
         }
     }
 
