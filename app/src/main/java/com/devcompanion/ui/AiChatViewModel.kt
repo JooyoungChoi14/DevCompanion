@@ -308,9 +308,56 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 val repository = LlmRepositoryImpl(currentProvider)
                 // Pass conversation history for multi-turn context.
                 // The repository trims to MAX_HISTORY_MESSAGES internally.
-                repository.stream(_messages.value, capturedContext, buildSystemPrompt("chat", webView)).collect { token ->
-                    responseBuilder.append(token)
-                    _currentResponse.value = responseBuilder.toString()
+                // Chat mode also gets mode-aware tools (switch_mode, get_current_mode)
+                val modeTools = listOf(
+                    com.devcompanion.llm.agent.WebViewTools.SWITCH_MODE,
+                    com.devcompanion.llm.agent.WebViewTools.GET_CURRENT_MODE
+                )
+                val modeExecutor = com.devcompanion.llm.agent.ToolExecutor(
+                    onSwitchMode = { mode ->
+                        val isAgent = mode == "agent"
+                        if (_agentMode.value != isAgent) {
+                            _agentMode.value = isAgent
+                            LlmSettings.agentModeDefault = isAgent
+                        }
+                    },
+                    getCurrentMode = { if (_agentMode.value) "agent" else "chat" }
+                )
+                val systemPrompt = buildSystemPrompt("chat", webView)
+                var toolCallsToProcess = listOf<com.devcompanion.llm.agent.ToolCall>()
+                repository.streamWithTools(_messages.value, capturedContext, systemPrompt, modeTools).collect { event ->
+                    when (event) {
+                        is LlmStreamEvent.Token -> {
+                            responseBuilder.append(event.content)
+                            _currentResponse.value = responseBuilder.toString()
+                        }
+                        is LlmStreamEvent.ToolCalls -> {
+                            toolCallsToProcess = event.calls
+                        }
+                        is LlmStreamEvent.Complete -> { /* handled below */ }
+                        is LlmStreamEvent.Start -> { /* no-op */ }
+                        is LlmStreamEvent.Error -> {
+                            responseBuilder.append(event.message)
+                            _currentResponse.value = responseBuilder.toString()
+                        }
+                    }
+                }
+
+                // Process any mode-switch tool calls
+                if (toolCallsToProcess.isNotEmpty()) {
+                    val toolResults = mutableListOf<String>()
+                    for (call in toolCallsToProcess) {
+                        val result = modeExecutor.execute(call, webView ?: return@collect)
+                        toolResults.add("${call.name}: ${result.output}")
+                    }
+                    // Append tool results as system context and re-stream
+                    val toolResultMsg = ChatMessage(
+                        role = "system",
+                        content = toolResults.joinToString("\n"),
+                        hasContext = false,
+                        isToolResult = true
+                    )
+                    _messages.value = _messages.value + toolResultMsg
                 }
 
                 // Stream completed — finalize the assistant message
@@ -462,7 +509,16 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _error.value = null
 
         // Setup agent loop components
-        val executor = ToolExecutor()
+        val executor = ToolExecutor(
+            onSwitchMode = { mode ->
+                val isAgent = mode == "agent"
+                if (_agentMode.value != isAgent) {
+                    _agentMode.value = isAgent
+                    LlmSettings.agentModeDefault = isAgent
+                }
+            },
+            getCurrentMode = { if (_agentMode.value) "agent" else "chat" }
+        )
         val gate = PermissionGate()
         val loop = AgentLoop(executor, gate, maxIterations = LlmSettings.maxIterations)
         agentLoop = loop

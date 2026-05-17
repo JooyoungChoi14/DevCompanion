@@ -67,7 +67,7 @@ object SystemPromptBuilder {
             sb.appendLine()
         }
 
-        // ── Tool reference (agent mode only) ──────────────────────────
+        // ── Tool reference ──────────────────────────────────────────────────
         if (mode == "agent") {
             sb.appendLine("## Available Tools")
             sb.appendLine("| Tool | Purpose | Risk |")
@@ -83,13 +83,27 @@ object SystemPromptBuilder {
             sb.appendLine("| screenshot | Capture the current page as an image | Moderate |")
             sb.appendLine("| submit_form | Submit a form | Sensitive (needs confirmation) |")
             sb.appendLine("| get_console_logs | Read browser console logs | Moderate |")
+            sb.appendLine("| switch_mode | Switch between Chat and Act mode | Safe |")
+            sb.appendLine("| get_current_mode | Check which mode you're currently in | Safe |")
             sb.appendLine()
             sb.appendLine("## Tool Usage Guidelines")
             sb.appendLine("- **Selector strategy**: Prefer `data-*` attributes, then ARIA roles (`[role='button']`), then text content, then CSS classes. Avoid fragile auto-generated class names.")
-            sb.appendLine("- **Prefer specific tools over eval_js**: Use click, type, and scroll for DOM interactions. Only use eval_js as a last resort when no specific tool fits.")
+            sb.appendLine("- **Prefer specific tools over eval_js**: Use click, type, and scroll for DOM interactions. Only use_js as a last resort when no specific tool fits.")
             sb.appendLine("- **Verify after action**: After navigate/click/type/set_style, use screenshot or get_dom to confirm the result.")
             sb.appendLine("- **Navigate directly**: When the user asks to go to a URL, use the navigate tool — do not just list URLs.")
+            sb.appendLine("- **Switch mode when needed**: If the user's request doesn't require page interaction (e.g., general questions), use switch_mode to change to Chat mode. If they want to interact with the page, switch to Agent mode.")
             sb.appendLine("- **Summarize when done**: Once the task is complete, provide a concise markdown summary without further tool calls.")
+            sb.appendLine()
+        } else {
+            // Chat mode — only mode awareness tools
+            sb.appendLine("## Available Tools")
+            sb.appendLine("| Tool | Purpose | Risk |")
+            sb.appendLine("|------|---------|------|")
+            sb.appendLine("| switch_mode | Switch between Chat and Act mode | Safe |")
+            sb.appendLine("| get_current_mode | Check which mode you're currently in | Safe |")
+            sb.appendLine()
+            sb.appendLine("You are in Chat mode and cannot interact with the WebView directly.")
+            sb.appendLine("If the user asks you to perform actions on the page (click, navigate, type, etc.), use switch_mode to switch to Agent mode first.")
             sb.appendLine()
         }
 

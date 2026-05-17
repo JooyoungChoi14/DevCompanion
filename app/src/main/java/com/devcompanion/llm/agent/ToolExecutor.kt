@@ -18,6 +18,8 @@ import kotlinx.coroutines.withContext
  * Uses [WebView.evalJs] for async JavaScript execution with coroutine support.
  */
 class ToolExecutor(
+    private val onSwitchMode: ((String) -> Unit)? = null,
+    private val getCurrentMode: (() -> String)? = null,
 ) {
 
     companion object {
@@ -45,6 +47,8 @@ class ToolExecutor(
                 "screenshot" -> executeScreenshot(call, webView)
                 "submit_form" -> executeSubmit(call, webView)
                 "get_console_logs" -> executeGetConsoleLogs(call, webView)
+                "switch_mode" -> executeSwitchMode(call)
+                "get_current_mode" -> executeGetCurrentMode(call)
                 else -> ToolResult(call.id, "Unknown tool: ${call.name}", isError = true)
             }
         } catch (e: Exception) {
@@ -316,6 +320,28 @@ class ToolExecutor(
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────
+
+    private suspend fun executeSwitchMode(call: ToolCall): ToolResult {
+        val mode = call.arguments.getAsJsonPrimitive("mode")?.asString
+            ?: return ToolResult(call.id, "Missing 'mode' parameter", isError = true)
+
+        if (mode != "chat" && mode != "agent") {
+            return ToolResult(call.id, "Invalid mode: '$mode'. Must be 'chat' or 'agent'.", isError = true)
+        }
+
+        return try {
+            onSwitchMode?.invoke(mode)
+            ToolResult(call.id, "Switched to ${if (mode == "agent") "Act" else "Chat"} mode.")
+        } catch (e: Exception) {
+            ToolResult(call.id, "Failed to switch mode: ${e.message}", isError = true)
+        }
+    }
+
+    private suspend fun executeGetCurrentMode(call: ToolCall): ToolResult {
+        val current = getCurrentMode?.invoke() ?: "unknown"
+        val displayName = if (current == "agent") "Act" else "Chat"
+        return ToolResult(call.id, "Current mode: $displayName ($current)")
+    }
 
     /**
      * Escape a string for safe embedding in a JavaScript string literal.

@@ -284,8 +284,34 @@ object WebViewTools {
         }
     )
 
+    val SWITCH_MODE = ToolDefinition(
+        name = "switch_mode",
+        description = "Switch between Chat and Act (agent) mode. Use this when the current mode doesn't match the user's intent — e.g., user asks to interact with the page but you're in Chat mode, or user asks a general question but you're in Act mode.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("mode", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Target mode: 'chat' for general Q\u0026A, 'agent' for WebView interaction")
+                    add("enum", com.google.gson.JsonArray().apply { add("chat"); add("agent") })
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("mode") })
+        }
+    )
+
+    val GET_CURRENT_MODE = ToolDefinition(
+        name = "get_current_mode",
+        description = "Get the current interaction mode (Chat or Act/Agent). Use this when you're unsure which mode you're in.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {})
+        }
+    )
+
     /** All available WebView tools. */
     val ALL = listOf(
-        NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS
+        NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
+        SWITCH_MODE, GET_CURRENT_MODE
     )
 }

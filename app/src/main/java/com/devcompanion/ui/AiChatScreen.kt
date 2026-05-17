@@ -117,7 +117,11 @@ fun AiChatScreen(
         if (initialPrompt != null && !initialPromptSent.value && initialPrompt.isNotBlank()) {
             inputText = initialPrompt
             initialPromptSent.value = true
-            viewModel.sendMessage(initialPrompt, webView)
+            if (agentMode) {
+                viewModel.sendMessageAgent(initialPrompt, webView)
+            } else {
+                viewModel.sendMessage(initialPrompt, webView)
+            }
             inputText = ""
         }
     }
