@@ -171,7 +171,7 @@ class AgentLoop(
                 else -> null
             }
 
-            // Capture context (full screenshot only on first iteration of each round)
+            // Capture context — screenshot every iteration (Quick mode after 1st for token efficiency)
             val context = try {
                 val mode = if (iteration == 0) CaptureMode.Standard else CaptureMode.Quick
                 val ctx = WebContextBuilder.buildContext(webView, mode)
