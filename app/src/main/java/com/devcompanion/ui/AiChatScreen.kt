@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -113,19 +112,20 @@ fun AiChatScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showCaptureDialog by remember { mutableStateOf(false) }
 
-    // Start a new conversation when opening AI chat (avoids context contamination)
+    // Start a new conversation when opening AI chat via ?question URL
     LaunchedEffect(startNewConversation) {
         if (startNewConversation) {
             viewModel.newConversation()
+            viewModel.resetInitialPromptSent()
         }
     }
 
     // Auto-send initial prompt from address bar "?" prefix
-    val initialPromptSent = rememberSaveable { mutableStateOf(false) }
+    // Uses ViewModel state to survive BottomSheet dismiss/recreate
     LaunchedEffect(initialPrompt) {
-        if (initialPrompt != null && !initialPromptSent.value && initialPrompt.isNotBlank()) {
+        if (initialPrompt != null && !viewModel.initialPromptSent && initialPrompt.isNotBlank()) {
             inputText = initialPrompt
-            initialPromptSent.value = true
+            viewModel.markInitialPromptSent()
             if (agentMode) {
                 viewModel.sendMessageAgent(initialPrompt, webView)
             } else {

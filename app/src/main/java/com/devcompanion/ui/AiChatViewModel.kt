@@ -5,6 +5,9 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import android.webkit.WebView
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -87,6 +90,20 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     fun loadConversation(conversationId: String) {
         currentConversationId = conversationId
         _messages.value = ChatHistory.load(getApplication<Application>(), conversationId)
+    }
+
+    /** Whether the initial prompt from address bar has been sent (prevents re-send on recomposition). */
+    var initialPromptSent by mutableStateOf(false)
+        private set
+
+    /** Mark initial prompt as sent. */
+    fun markInitialPromptSent() {
+        initialPromptSent = true
+    }
+
+    /** Reset initial prompt state when starting a new conversation via address bar. */
+    fun resetInitialPromptSent() {
+        initialPromptSent = false
     }
 
     /** Start a new conversation. */

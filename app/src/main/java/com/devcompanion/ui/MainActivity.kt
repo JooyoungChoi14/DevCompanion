@@ -222,7 +222,7 @@ fun MainApp(
             // AI Chat as bottom sheet — WebView stays visible behind
             if (showAiChat) {
                 ModalBottomSheet(
-                    onDismissRequest = { showAiChat = false },
+                    onDismissRequest = { showAiChat = false; pendingAiQuestion = null },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false
