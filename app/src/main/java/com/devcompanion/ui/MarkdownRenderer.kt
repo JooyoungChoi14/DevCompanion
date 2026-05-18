@@ -139,10 +139,6 @@ fun MarkdownText(
                                 onCssRevert?.invoke(styleId)
                             }
                         },
-                        onCopyRaw = {
-                            val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("markdown", text))
-                        }
                     ),
                     "MarkdownBridge"
                 )
@@ -167,13 +163,11 @@ fun MarkdownText(
 private class MarkdownBridge(
     private val onCopy: (String) -> Unit,
     private val onCssInject: (Int) -> Unit,
-    private val onCssRevert: (Int) -> Unit,
-    private val onCopyRaw: (String) -> Unit
+    private val onCssRevert: (Int) -> Unit
 ) {
     @JavascriptInterface fun copyCode(code: String) = onCopy(code)
     @JavascriptInterface fun cssInject(index: Int) = onCssInject(index)
     @JavascriptInterface fun cssRevert(index: Int) = onCssRevert(index)
-    @JavascriptInterface fun copyRawText() = onCopyRaw("")
 }
 
 // ── CommonMark → HTML ──────────────────────────────────────────────────────
@@ -676,27 +670,6 @@ private fun wrapHtml(bodyHtml: String, isDark: Boolean): String {
     |      if (toast) { toast.classList.add('show'); setTimeout(function(){ toast.classList.remove('show'); }, 1500); }
     |    }
     |  }
-    |  // Long press: copy raw markdown to clipboard
-    |  var longPressTimer = null;
-    |  var longPressTriggered = false;
-    |  document.body.addEventListener('touchstart', function(e) {
-    |    longPressTriggered = false;
-    |    longPressTimer = setTimeout(function() {
-    |      longPressTriggered = true;
-    |      MarkdownBridge.copyRawText();
-    |      var toast = document.getElementById('toast');
-    |      if (toast) {
-    |        toast.textContent = 'Raw markdown copied!';
-    |        toast.classList.add('show');
-    |        setTimeout(function() { toast.classList.remove('show'); toast.textContent = 'Copied!'; }, 1500);
-    |      }
-    |    }, 500);
-    |  }, { passive: true });
-    |  document.body.addEventListener('touchend', function() { clearTimeout(longPressTimer); }, { passive: true });
-    |  document.body.addEventListener('touchmove', function() { clearTimeout(longPressTimer); }, { passive: true });
-    |  document.body.addEventListener('contextmenu', function(e) {
-    |    if (longPressTriggered) { e.preventDefault(); longPressTriggered = false; }
-    |  });
     |</script>
     |</body>
     |</html>
