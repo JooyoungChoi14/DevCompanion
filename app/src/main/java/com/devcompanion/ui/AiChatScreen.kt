@@ -127,6 +127,11 @@ fun AiChatScreen(
         }
     }
 
+    // Reset message selection when conversation changes
+    LaunchedEffect(viewModel.conversationId.value) {
+        selectedMessageIds = emptySet()
+    }
+
     // Track CSS styles injected from chat responses (styleId -> css)
     val injectedStyles = remember { mutableStateMapOf<String, String>() }
 
@@ -207,7 +212,7 @@ fun AiChatScreen(
                 onExportMultiple = { ids ->
                     val json = viewModel.exportMultipleConversations(ids)
                     val exportCtx = exportContext
-                    val file = File(exportCtx.cacheDir, "conversations_export.json")
+                    val file = File(exportCtx.cacheDir, "conversations_${System.currentTimeMillis()}.json")
                     file.writeText(json)
                     val uri = FileProvider.getUriForFile(
                         exportCtx,
@@ -444,7 +449,7 @@ fun AiChatScreen(
                         TextButton(onClick = {
                             val json = viewModel.exportSelectedMessages(selectedMessageIds)
                             if (json != null) {
-                                val file = File(exportContext.cacheDir, "messages_export.json")
+                                val file = File(exportContext.cacheDir, "messages_${System.currentTimeMillis()}.json")
                                 file.writeText(json)
                                 val uri = FileProvider.getUriForFile(
                                     exportContext,
@@ -688,7 +693,11 @@ fun AiChatScreen(
                             ),
                             isStreaming = true,
                             webView = webView,
-                            injectedStyles = injectedStyles
+                            injectedStyles = injectedStyles,
+                            // Streaming messages cannot be selected
+                            isSelected = false,
+                            isSelectMode = false,
+                            onSelect = {}
                         )
                     }
                 }
@@ -1448,7 +1457,7 @@ private fun ConversationDrawer(
                             isSelectMode = true
                         }
                     }) {
-                        Icon(Icons.Default.Checklist, contentDescription = "Select")
+                        Icon(Icons.Default.SelectAll, contentDescription = "Select")
                     }
                     IconButton(onClick = onNew) {
                         Icon(Icons.Default.Add, contentDescription = "New chat")
