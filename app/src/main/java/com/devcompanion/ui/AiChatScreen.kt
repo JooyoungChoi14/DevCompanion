@@ -107,10 +107,16 @@ fun AiChatScreen(
     val agentMode by viewModel.agentMode.collectAsState()
     val agentState by viewModel.agentState.collectAsState()
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
+    val conversationId by viewModel.conversationId.collectAsState()
 
     // Message selection mode for export (no delete)
     var selectedMessageIds by remember { mutableStateOf<Set<String>(emptySet()) }
     val isSelectingMessages = selectedMessageIds.isNotEmpty()
+
+    // Reset message selection when conversation changes
+    LaunchedEffect(conversationId) {
+        selectedMessageIds = emptySet()
+    }
 
     var inputText by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
@@ -125,11 +131,6 @@ fun AiChatScreen(
         } else if (startNewConversation && initialPrompt == null) {
             viewModel.newConversation()
         }
-    }
-
-    // Reset message selection when conversation changes
-    LaunchedEffect(viewModel.conversationId.value) {
-        selectedMessageIds = emptySet()
     }
 
     // Track CSS styles injected from chat responses (styleId -> css)
@@ -173,7 +174,7 @@ fun AiChatScreen(
         drawerContent = {
             ConversationDrawer(
                 conversations = conversations,
-                currentConversationId = viewModel.conversationId.value,
+                currentConversationId = conversationId,
                 onSelect = { id ->
                     viewModel.loadConversation(id)
                     scope.launch { drawerState.close() }
@@ -194,8 +195,9 @@ fun AiChatScreen(
                     val json = viewModel.exportCurrentConversation()
                     if (json != null) {
                         val exportCtx = exportContext
-                        val file = File(exportCtx.cacheDir, "conversation_${viewModel.conversationId.value}.json")
+                        val file = File(exportCtx.cacheDir, "conversation_${System.currentTimeMillis()}.json")
                         file.writeText(json)
+                        file.deleteOnExit()
                         val uri = FileProvider.getUriForFile(
                             exportCtx,
                             "${exportCtx.packageName}.fileprovider",
@@ -214,6 +216,7 @@ fun AiChatScreen(
                     val exportCtx = exportContext
                     val file = File(exportCtx.cacheDir, "conversations_${System.currentTimeMillis()}.json")
                     file.writeText(json)
+                    file.deleteOnExit()
                     val uri = FileProvider.getUriForFile(
                         exportCtx,
                         "${exportCtx.packageName}.fileprovider",
@@ -451,6 +454,7 @@ fun AiChatScreen(
                             if (json != null) {
                                 val file = File(exportContext.cacheDir, "messages_${System.currentTimeMillis()}.json")
                                 file.writeText(json)
+                                file.deleteOnExit()
                                 val uri = FileProvider.getUriForFile(
                                     exportContext,
                                     "${exportContext.packageName}.fileprovider",
