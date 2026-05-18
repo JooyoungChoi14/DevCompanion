@@ -42,8 +42,9 @@
 -keep class com.devcompanion.bridge.BoreServerMessage$* { *; }
 
 # Data classes used with Gson — must preserve field names for serialization
--keep class com.devcompanion.llm.ConversationMeta { *; }
 -keep class com.devcompanion.llm.ChatMessage { *; }
+-keep class com.devcompanion.llm.ConversationExport { *; }
+-keep class com.devcompanion.llm.ConversationMeta { *; }
 -keep class com.devcompanion.data.Bookmark { *; }
 -keep class com.devcompanion.data.UrlHistoryStore { *; }
 
