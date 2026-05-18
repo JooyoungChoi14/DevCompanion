@@ -5,7 +5,7 @@ import android.webkit.WebView
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +21,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -862,6 +866,25 @@ private fun MessageBubble(
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
                     MaterialTheme.shapes.medium
                 ) else Modifier
+            )
+            .then(
+                // Long-press: select for export; consumes gesture to prevent OS clipboard
+                Modifier.pointerInput(isSelectMode, isStreaming) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        down.consume()
+                        val longPress = viewConfiguration.longPressTimeoutMillis
+                        val up = withTimeoutOrNull(longPress) {
+                            waitForUpOrCancellation()
+                        }
+                        if (up == null) {
+                            if (!isStreaming) onSelect(message.id)
+                            waitForUpOrCancellation()?.consume()
+                        } else {
+                            up.consume()
+                        }
+                    }
+                }
             ),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
@@ -926,13 +949,10 @@ private fun MessageBubble(
                         injectedStyles.containsKey(globalStyleId)
                     }
 
-                    // Double-tap: toggle raw markdown; Long-press: select for export
-                    Box(modifier = Modifier.pointerInput(isSelectMode) {
+                    // Double-tap: toggle raw markdown
+                    Box(modifier = Modifier.pointerInput(Unit) {
                         detectTapGestures(
-                            onDoubleTap = { showRawMarkdown = !showRawMarkdown },
-                            onLongPress = {
-                                if (!isStreaming) onSelect(message.id)
-                            }
+                            onDoubleTap = { showRawMarkdown = !showRawMarkdown }
                         )
                     }) {
                         if (showRawMarkdown) {
