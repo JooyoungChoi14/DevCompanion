@@ -110,7 +110,7 @@ fun AiChatScreen(
     val conversationId by viewModel.conversationId.collectAsState()
 
     // Message selection mode for export (no delete)
-    var selectedMessageIds by remember { mutableStateOf<Set<String>(emptySet()) }
+    var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
     val isSelectingMessages = selectedMessageIds.isNotEmpty()
 
     // Reset message selection when conversation changes
@@ -989,7 +989,6 @@ private fun MessageBubble(
         }
     }
 }
-}
 
 /**
  * Animated streaming indicator shown while waiting for first token.
@@ -1416,7 +1415,7 @@ private fun ConversationDrawer(
 ) {
     val dateFormat = remember { java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault()) }
     var conversationToDelete by remember { mutableStateOf<String?>(null) }
-    var selectedIds by remember { mutableStateOf<Set<String>(emptySet()) }
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
     var isSelectMode by remember { mutableStateOf(false) }
 
     ModalDrawerSheet(modifier = modifier) {
