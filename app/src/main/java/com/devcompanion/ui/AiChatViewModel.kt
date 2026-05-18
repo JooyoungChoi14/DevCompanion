@@ -146,9 +146,32 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Delete multiple conversations. Returns count of deleted. */
+    fun deleteMultipleConversations(conversationIds: List<String>): Int {
+        val count = ChatHistory.deleteMultiple(getApplication<Application>(), conversationIds)
+        if (_conversationId.value in conversationIds) {
+            newConversation()
+        }
+        return count
+    }
+
     /** Export current conversation as JSON string. */
     fun exportCurrentConversation(): String? {
         return ChatHistory.exportToJson(getApplication<Application>(), _conversationId.value)
+    }
+
+    /** Export multiple conversations as a JSON array string. */
+    fun exportMultipleConversations(conversationIds: List<String>): String {
+        return ChatHistory.exportMultipleToJson(getApplication<Application>(), conversationIds)
+    }
+
+    /** Export selected messages from the current conversation as JSON string. */
+    fun exportSelectedMessages(messageIds: Set<String>): String? {
+        return ChatHistory.exportMessagesToJson(
+            getApplication<Application>(),
+            _conversationId.value,
+            messageIds
+        )
     }
 
     /** Import a conversation from JSON string. Returns new conversation ID or null. */

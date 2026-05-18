@@ -196,6 +196,50 @@ object ChatHistory {
         return gson.toJson(export)
     }
 
+    /** Export multiple conversations as a JSON array string. */
+    fun exportMultipleToJson(context: Context, conversationIds: List<String>): String {
+        val exports = conversationIds.mapNotNull { id ->
+            exportConversation(context, id)
+        }
+        return gson.toJson(mapOf("conversations" to exports))
+    }
+
+    /** Delete multiple conversations. Returns count of deleted. */
+    fun deleteMultiple(context: Context, conversationIds: List<String>): Int {
+        var count = 0
+        for (id in conversationIds) {
+            val file = File(historyDir(context), "$id.json")
+            if (file.exists()) {
+                file.delete()
+                count++
+            }
+        }
+        return count
+    }
+
+    /** Export selected messages from a conversation as JSON string. */
+    fun exportMessagesToJson(context: Context, conversationId: String, messageIds: Set<String>): String? {
+        val allMessages = load(context, conversationId)
+        if (allMessages.isEmpty()) return null
+        val selected = allMessages.filter { it.id in messageIds }
+        if (selected.isEmpty()) return null
+
+        val file = File(historyDir(context), "$conversationId.json")
+        val json = file.readText()
+        val map = gson.fromJson(json, Map::class.java) as? Map<*, *>
+        val title = map?.get("title") as? String ?: deriveTitle(allMessages)
+
+        val export = ConversationExport(
+            id = conversationId,
+            title = title,
+            createdAt = selected.firstOrNull()?.timestamp ?: 0L,
+            updatedAt = selected.lastOrNull()?.timestamp ?: 0L,
+            messages = selected,
+            openaiFormat = selected.map { mapOf("role" to it.role, "content" to it.content) }
+        )
+        return gson.toJson(export)
+    }
+
     /** Import a conversation from JSON string.
      * Supports DevCompanion native format, OpenAI format, and Anthropic format.
      * Returns the new conversation ID or null on failure.

@@ -108,6 +108,10 @@ fun AiChatScreen(
     val agentState by viewModel.agentState.collectAsState()
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
 
+    // Message selection mode for export (no delete)
+    var selectedMessageIds by remember { mutableStateOf<Set<String>(emptySet()) }
+    val isSelectingMessages = selectedMessageIds.isNotEmpty()
+
     var inputText by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
     var showCaptureDialog by remember { mutableStateOf(false) }
@@ -177,6 +181,10 @@ fun AiChatScreen(
                     viewModel.deleteConversation(id)
                     conversations = viewModel.listConversationMetas()
                 },
+                onDeleteMultiple = { ids ->
+                    viewModel.deleteMultipleConversations(ids)
+                    conversations = viewModel.listConversationMetas()
+                },
                 onExport = {
                     val json = viewModel.exportCurrentConversation()
                     if (json != null) {
@@ -195,6 +203,23 @@ fun AiChatScreen(
                         }
                         exportCtx.startActivity(Intent.createChooser(shareIntent, "Export conversation"))
                     }
+                },
+                onExportMultiple = { ids ->
+                    val json = viewModel.exportMultipleConversations(ids)
+                    val exportCtx = exportContext
+                    val file = File(exportCtx.cacheDir, "conversations_export.json")
+                    file.writeText(json)
+                    val uri = FileProvider.getUriForFile(
+                        exportCtx,
+                        "${exportCtx.packageName}.fileprovider",
+                        file
+                    )
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/json"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    exportCtx.startActivity(Intent.createChooser(shareIntent, "Export ${ids.size} conversations"))
                 },
                 modifier = Modifier
                     .fillMaxHeight()
@@ -400,6 +425,52 @@ fun AiChatScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            // Message selection action bar (export only, no delete)
+            AnimatedVisibility(visible = isSelectingMessages) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "${selectedMessageIds.size} selected",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            val json = viewModel.exportSelectedMessages(selectedMessageIds)
+                            if (json != null) {
+                                val file = File(exportContext.cacheDir, "messages_export.json")
+                                file.writeText(json)
+                                val uri = FileProvider.getUriForFile(
+                                    exportContext,
+                                    "${exportContext.packageName}.fileprovider",
+                                    file
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/json"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                exportContext.startActivity(Intent.createChooser(shareIntent, "Export selected messages"))
+                            }
+                            selectedMessageIds = emptySet()
+                        }) {
+                            Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(Spacing.xs))
+                            Text("Export", style = MaterialTheme.typography.labelMedium)
+                        }
+                        IconButton(onClick = { selectedMessageIds = emptySet() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel selection", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+
             // Context badge
             AnimatedVisibility(visible = lastContext != null) {
                 Surface(
@@ -595,7 +666,15 @@ fun AiChatScreen(
                     MessageBubble(
                             message = message,
                             webView = webView,
-                            injectedStyles = injectedStyles
+                            injectedStyles = injectedStyles,
+                            isSelected = message.id in selectedMessageIds,
+                            isSelectMode = isSelectingMessages,
+                            onSelect = { id ->
+                                selectedMessageIds = if (id in selectedMessageIds)
+                                    selectedMessageIds - id
+                                else
+                                    selectedMessageIds + id
+                            }
                         )
                 }
 
@@ -677,7 +756,10 @@ private fun MessageBubble(
     message: ChatMessage,
     isStreaming: Boolean = false,
     webView: WebView?,
-    injectedStyles: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>
+    injectedStyles: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
+    isSelected: Boolean = false,
+    isSelectMode: Boolean = false,
+    onSelect: (String) -> Unit = {}
 ) {
     val isUser = message.role == "user"
     val isSystem = message.role == "system"
@@ -760,14 +842,31 @@ private fun MessageBubble(
     }
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isSelectMode && isSelected) Modifier.background(
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    MaterialTheme.shapes.medium
+                ) else Modifier
+            ),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
+        // Selection indicator
+        if (isSelectMode) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onSelect(message.id) },
+                modifier = Modifier.size(32.dp)
+            )
+        }
         Card(
             modifier = Modifier.widthIn(max = 320.dp),
             colors = CardDefaults.cardColors(
                 containerColor = if (isUser)
                     MaterialTheme.colorScheme.primaryContainer
+                else if (isSelected)
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                 else
                     MaterialTheme.colorScheme.surfaceVariant
             )
@@ -814,28 +913,30 @@ private fun MessageBubble(
                         injectedStyles.containsKey(globalStyleId)
                     }
 
-                    // Double-tap to toggle raw markdown; SelectionContainer for copy/select
-                    Box(modifier = Modifier.pointerInput(Unit) {
+                    // Double-tap: toggle raw markdown; Long-press: select for export
+                    Box(modifier = Modifier.pointerInput(isSelectMode) {
                         detectTapGestures(
-                            onDoubleTap = { showRawMarkdown = !showRawMarkdown }
+                            onDoubleTap = { showRawMarkdown = !showRawMarkdown },
+                            onLongPress = {
+                                if (!isStreaming) onSelect(message.id)
+                            }
                         )
                     }) {
-                        SelectionContainer {
-                            if (showRawMarkdown) {
-                                Text(
-                                    message.content,
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                MarkdownText(
-                                    text = message.content,
-                                    onCssInject = onCssInject,
-                                    onCssRevert = onCssRevert,
-                                    isCssInjected = isCssInjected
-                                )
+                        if (showRawMarkdown) {
+                            Text(
+                                message.content,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            MarkdownText(
+                                text = message.content,
+                                onCssInject = onCssInject,
+                                onCssRevert = onCssRevert,
+                                isCssInjected = isCssInjected
+                            )
                         }
                     }
                 }
@@ -1285,8 +1386,9 @@ private fun formatTokenCount(count: Int): String = when {
 }
 
 /**
- * Drawer showing conversation history list.
+ * Drawer showing conversation history list with multi-select for batch delete/export.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConversationDrawer(
     conversations: List<ConversationMeta>,
@@ -1294,28 +1396,63 @@ private fun ConversationDrawer(
     onSelect: (String) -> Unit,
     onNew: () -> Unit,
     onDelete: (String) -> Unit,
+    onDeleteMultiple: (List<String>) -> Unit,
     onExport: () -> Unit,
+    onExportMultiple: (List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = remember { java.text.SimpleDateFormat("MMM dd", java.util.Locale.getDefault()) }
     var conversationToDelete by remember { mutableStateOf<String?>(null) }
+    var selectedIds by remember { mutableStateOf<Set<String>(emptySet()) }
+    var isSelectMode by remember { mutableStateOf(false) }
 
     ModalDrawerSheet(modifier = modifier) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header
+            // Header with select mode toggle
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(Spacing.md),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    "Conversations",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onNew) {
-                    Icon(Icons.Default.Add, contentDescription = "New chat")
+                if (isSelectMode) {
+                    // Select mode header
+                    TextButton(onClick = {
+                        selectedIds = if (selectedIds.size == conversations.size) emptySet() else conversations.map { it.id }.toSet()
+                    }) {
+                        Text(
+                            if (selectedIds.size == conversations.size) "Deselect all" else "Select all",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        "${selectedIds.size}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    IconButton(onClick = {
+                        isSelectMode = false
+                        selectedIds = emptySet()
+                    }) {
+                        Icon(Icons.Default.Close, contentDescription = "Exit select mode")
+                    }
+                } else {
+                    Text(
+                        "Conversations",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = {
+                        if (conversations.isNotEmpty()) {
+                            isSelectMode = true
+                        }
+                    }) {
+                        Icon(Icons.Default.Checklist, contentDescription = "Select")
+                    }
+                    IconButton(onClick = onNew) {
+                        Icon(Icons.Default.Add, contentDescription = "New chat")
+                    }
                 }
             }
             HorizontalDivider()
@@ -1328,16 +1465,27 @@ private fun ConversationDrawer(
             ) {
                 items(conversations) { conv ->
                     val isSelected = conv.id == currentConversationId
+                    val isChecked = conv.id in selectedIds
+
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = Spacing.sm, vertical = Spacing.xxs)
-                            .clickable { onSelect(conv.id) },
+                            .then(
+                                if (isSelectMode) Modifier.clickable {
+                                    selectedIds = if (conv.id in selectedIds)
+                                        selectedIds - conv.id
+                                    else
+                                        selectedIds + conv.id
+                                }
+                                else Modifier.clickable { onSelect(conv.id) }
+                            ),
                         colors = CardDefaults.cardColors(
-                            containerColor = if (isSelected)
-                                MaterialTheme.colorScheme.primaryContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceVariant
+                            containerColor = when {
+                                isChecked -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            }
                         )
                     ) {
                         Row(
@@ -1346,6 +1494,17 @@ private fun ConversationDrawer(
                                 .padding(Spacing.sm),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Checkbox in select mode
+                            if (isSelectMode) {
+                                Checkbox(
+                                    checked = isChecked,
+                                    onCheckedChange = {
+                                        selectedIds = if (it) selectedIds + conv.id else selectedIds - conv.id
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.xs))
+                            }
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     conv.title ?: "Untitled",
@@ -1370,17 +1529,19 @@ private fun ConversationDrawer(
                                     )
                                 }
                             }
-                            // Delete button
-                            IconButton(
-                                onClick = { conversationToDelete = conv.id },
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.DeleteOutline,
-                                    contentDescription = "Delete",
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.outline
-                                )
+                            // Delete button (only in non-select mode)
+                            if (!isSelectMode) {
+                                IconButton(
+                                    onClick = { conversationToDelete = conv.id },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.DeleteOutline,
+                                        contentDescription = "Delete",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.outline
+                                    )
+                                }
                             }
                         }
                     }
@@ -1406,20 +1567,58 @@ private fun ConversationDrawer(
 
             HorizontalDivider()
 
-            // Footer actions
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(Spacing.sm),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                OutlinedButton(
-                    onClick = onExport,
-                    modifier = Modifier.weight(1f).padding(end = Spacing.xs)
+            // Footer: contextual actions
+            if (isSelectMode && selectedIds.isNotEmpty()) {
+                // Batch action bar in select mode
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.sm),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
-                    Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Export", style = MaterialTheme.typography.labelMedium)
+                    OutlinedButton(
+                        onClick = {
+                            onExportMultiple(selectedIds.toList())
+                            selectedIds = emptySet()
+                            isSelectMode = false
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Export ${selectedIds.size}", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Button(
+                        onClick = {
+                            // Confirm before batch delete
+                            conversationToDelete = "__batch__${selectedIds.size}"
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Delete ${selectedIds.size}", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            } else {
+                // Normal mode footer
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.sm),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    OutlinedButton(
+                        onClick = onExport,
+                        modifier = Modifier.weight(1f).padding(end = Spacing.xs)
+                    ) {
+                        Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text("Export", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
         }
@@ -1427,23 +1626,49 @@ private fun ConversationDrawer(
 
     // Delete confirmation dialog
     conversationToDelete?.let { id ->
-        AlertDialog(
-            onDismissRequest = { conversationToDelete = null },
-            title = { Text("Delete conversation?") },
-            text = { Text("This cannot be undone.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(id)
-                    conversationToDelete = null
-                }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
+        if (id.startsWith("__batch__")) {
+            // Batch delete confirmation
+            val count = id.removePrefix("__batch__").toIntOrNull() ?: return@let
+            AlertDialog(
+                onDismissRequest = { conversationToDelete = null },
+                title = { Text("Delete $count conversations?") },
+                text = { Text("This cannot be undone. All selected conversations will be permanently deleted.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDeleteMultiple(selectedIds.toList())
+                        selectedIds = emptySet()
+                        isSelectMode = false
+                        conversationToDelete = null
+                    }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { conversationToDelete = null }) {
+                        Text("Cancel")
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { conversationToDelete = null }) {
-                    Text("Cancel")
+            )
+        } else {
+            // Single delete confirmation
+            AlertDialog(
+                onDismissRequest = { conversationToDelete = null },
+                title = { Text("Delete conversation?") },
+                text = { Text("This cannot be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onDelete(id)
+                        conversationToDelete = null
+                    }) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { conversationToDelete = null }) {
+                        Text("Cancel")
+                    }
                 }
-            }
-        )
+            )
+        }
     }
 }
