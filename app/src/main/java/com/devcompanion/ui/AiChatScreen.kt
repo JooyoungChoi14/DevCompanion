@@ -21,7 +21,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -782,7 +781,6 @@ private fun MessageBubble(
     val isSystem = message.role == "system"
     val isToolResult = message.isToolResult
     val isError = message.isError
-    var showRawMarkdown by remember { mutableStateOf(false) }
 
     // System messages: tool results vs regular system messages
     if (isSystem) {
@@ -949,29 +947,12 @@ private fun MessageBubble(
                         injectedStyles.containsKey(globalStyleId)
                     }
 
-                    // Double-tap: toggle raw markdown
-                    Box(modifier = Modifier.pointerInput(Unit) {
-                        detectTapGestures(
-                            onDoubleTap = { showRawMarkdown = !showRawMarkdown }
-                        )
-                    }) {
-                        if (showRawMarkdown) {
-                            Text(
-                                message.content,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                ),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            MarkdownText(
-                                text = message.content,
-                                onCssInject = onCssInject,
-                                onCssRevert = onCssRevert,
-                                isCssInjected = isCssInjected
-                            )
-                        }
-                    }
+                    MarkdownText(
+                        text = message.content,
+                        onCssInject = onCssInject,
+                        onCssRevert = onCssRevert,
+                        isCssInjected = isCssInjected
+                    )
                 }
 
                 // Context badge
