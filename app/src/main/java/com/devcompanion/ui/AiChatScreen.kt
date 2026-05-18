@@ -207,24 +207,14 @@ fun AiChatScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { scope.launch { drawerState.open() } }
-                    ) {
-                        Icon(
-                            Icons.Default.Menu,
-                            contentDescription = "Conversations",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text(
-                            if (agentMode) "Act" else "Chat",
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    Icon(
+                        Icons.Default.Menu,
+                        contentDescription = "Conversations",
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable { scope.launch { drawerState.open() } },
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onDismiss) {
