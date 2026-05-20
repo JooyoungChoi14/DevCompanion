@@ -112,12 +112,19 @@ fun AiChatScreen(
     val pendingConfirmation by viewModel.pendingConfirmation.collectAsState()
     val conversationId by viewModel.conversationId.collectAsState()
 
-    // Message selection mode for export (no delete)
+    // Message selection mode — independent from selection state (Gmail pattern)
+    var isInSelectMode by remember { mutableStateOf(false) }
     var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
-    val isSelectingMessages = selectedMessageIds.isNotEmpty()
 
-    // Reset message selection when conversation changes
+    // System back exits select mode
+    BackHandler(enabled = isInSelectMode) {
+        isInSelectMode = false
+        selectedMessageIds = emptySet()
+    }
+
+    // Reset select mode when conversation changes
     LaunchedEffect(conversationId) {
+        isInSelectMode = false
         selectedMessageIds = emptySet()
     }
 
@@ -378,7 +385,7 @@ fun AiChatScreen(
                         ) },
                         textStyle = MaterialTheme.typography.bodyMedium,
                         maxLines = 4,
-                        enabled = !isStreaming && provider != null,
+                        enabled = !isStreaming && provider != null && !isInSelectMode,
                         colors = if (agentMode) OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
                             unfocusedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.08f),
@@ -436,8 +443,8 @@ fun AiChatScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Message selection action bar (export only, no delete)
-            AnimatedVisibility(visible = isSelectingMessages) {
+            // Message selection action bar — independent mode lifecycle
+            AnimatedVisibility(visible = isInSelectMode) {
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.fillMaxWidth()
@@ -452,6 +459,17 @@ fun AiChatScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Spacer(modifier = Modifier.weight(1f))
+                        // Select all / Deselect all
+                        TextButton(onClick = {
+                            val selectableIds = messages.map { it.id }.toSet()
+                            selectedMessageIds = if (selectedMessageIds.size == selectableIds.size) emptySet() else selectableIds
+                        }) {
+                            Text(
+                                if (selectedMessageIds.size == messages.size) "Deselect all" else "Select all",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                        // Export
                         TextButton(onClick = {
                             val json = viewModel.exportSelectedMessages(selectedMessageIds)
                             if (json != null) {
@@ -470,14 +488,19 @@ fun AiChatScreen(
                                 }
                                 exportContext.startActivity(Intent.createChooser(shareIntent, "Export selected messages"))
                             }
+                            isInSelectMode = false
                             selectedMessageIds = emptySet()
                         }) {
                             Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(Spacing.xs))
                             Text("Export", style = MaterialTheme.typography.labelMedium)
                         }
-                        IconButton(onClick = { selectedMessageIds = emptySet() }) {
-                            Icon(Icons.Default.Close, contentDescription = "Cancel selection", modifier = Modifier.size(18.dp))
+                        // Exit select mode
+                        IconButton(onClick = {
+                            isInSelectMode = false
+                            selectedMessageIds = emptySet()
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Exit select mode", modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -680,8 +703,9 @@ fun AiChatScreen(
                             webView = webView,
                             injectedStyles = injectedStyles,
                             isSelected = message.id in selectedMessageIds,
-                            isSelectMode = isSelectingMessages,
+                            isSelectMode = isInSelectMode,
                             onSelect = { id ->
+                                if (!isInSelectMode) isInSelectMode = true
                                 selectedMessageIds = if (id in selectedMessageIds)
                                     selectedMessageIds - id
                                 else
