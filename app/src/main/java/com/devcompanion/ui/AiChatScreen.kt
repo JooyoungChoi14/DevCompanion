@@ -673,8 +673,8 @@ fun AiChatScreen(
                     }
                 }
 
-                // Message items
-                items(messages) { message ->
+                // Message items — key stabilizes LazyColumn recycling (prevents checkbox flicker)
+                items(messages, key = { message -> message.id }) { message ->
                     MessageBubble(
                             message = message,
                             webView = webView,
@@ -866,31 +866,43 @@ private fun MessageBubble(
                 ) else Modifier
             )
             .then(
-                // Long-press: select for export; consumes gesture to prevent OS clipboard
+                // Selection gesture: tap toggles in select mode, long-press enters select mode
                 Modifier.pointerInput(isSelectMode, isStreaming) {
                     awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        down.consume()
-                        val longPress = viewConfiguration.longPressTimeoutMillis
-                        val up = withTimeoutOrNull(longPress) {
-                            waitForUpOrCancellation()
-                        }
-                        if (up == null) {
-                            if (!isStreaming) onSelect(message.id)
-                            waitForUpOrCancellation()?.consume()
+                        if (isSelectMode) {
+                            // Select mode: tap to toggle, scroll not blocked
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            // Don't consume down — let LazyColumn detect scroll drag
+                            val up = waitForUpOrCancellation()
+                            if (up != null && !isStreaming) {
+                                up.consume()
+                                onSelect(message.id)
+                            }
                         } else {
-                            up.consume()
+                            // Normal mode: long-press enters selection
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            val longPress = viewConfiguration.longPressTimeoutMillis
+                            val up = withTimeoutOrNull(longPress) {
+                                waitForUpOrCancellation()
+                            }
+                            if (up == null) {
+                                if (!isStreaming) onSelect(message.id)
+                                waitForUpOrCancellation()?.consume()
+                            } else {
+                                up.consume()
+                            }
                         }
                     }
                 }
             ),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        // Selection indicator
+        // Selection indicator — display-only; toggling handled by pointerInput to avoid double-toggle
         if (isSelectMode) {
             Checkbox(
                 checked = isSelected,
-                onCheckedChange = { onSelect(message.id) },
+                onCheckedChange = null,
                 modifier = Modifier.size(32.dp)
             )
         }
