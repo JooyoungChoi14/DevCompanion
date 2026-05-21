@@ -2,6 +2,7 @@ package com.devcompanion.ui
 
 import android.util.Log
 import android.webkit.WebView
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
