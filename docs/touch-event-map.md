@@ -43,8 +43,8 @@ MessageBubble
 
 | Mode | Gesture | Threshold | Event Consumed | Action | Side Effects |
 |------|---------|-----------|----------------|--------|-------------|
-| Normal | Short tap (< 400ms) | `longPressTimeoutMillis` | No | None | — |
-| Normal | Long press (≥ 400ms) | `longPressTimeoutMillis` | Up only | `onEnterSelectMode(id)` | `isInSelectMode = true`, `selectedMessageIds + id` |
+| Normal | Short tap (< longPressTimeoutMs) | `longPressTimeoutMs` | No | None | — |
+| Normal | Long press (≥ longPressTimeoutMs) | `longPressTimeoutMs` | Up only | `onEnterSelectMode(id)` | `isInSelectMode = true`, `selectedMessageIds + id` |
 | Select | Tap (any duration) | None | Up only | `onToggleSelect(id)` | `selectedMessageIds ± id` |
 | Select | Scroll drag | — | No (down not consumed) | LazyColumn scroll | — |
 | Normal | Scroll drag | — | No (down not consumed) | LazyColumn scroll | — |
@@ -61,7 +61,7 @@ MessageBubble
 
 ### Known Issues (current)
 
-1. **`longPressTimeoutMillis` = 400ms (Android default)** — users perceive "short tap" as < 1s, so 400ms threshold causes false long-press detection on intentional short taps
+1. **`longPressTimeoutMs` default = 1500ms (configurable)** — users can adjust in Settings (0.3s–5s); 400ms Android default was too short, causing accidental mode entry
 2. **No haptic/audio feedback on long-press** — user has no signal that the threshold was crossed until the UI state changes
 
 ---
@@ -102,6 +102,7 @@ MessageBubble
 3. **`Checkbox.onCheckedChange = null`** — display-only, prevents double-toggle with `pointerInput`
 4. **`isInSelectMode` independent from `selectedMessageIds`** — Gmail pattern, mode persists at 0 selections
 5. **No `combinedClickable`** — avoids Compose's built-in long-press handling which conflicts with custom `pointerInput` gesture detection
+6. **Long-press timeout is user-configurable** — `UiPreferences.longPressTimeoutMs` (default 1.5s, range 0.3-5s) via SettingsSheet slider
 
 ---
 
@@ -115,3 +116,4 @@ MessageBubble
 | 2026-05-21 | `875e7a3` | Export timestamp fix (conversation metadata, not selected range) |
 | 2026-05-21 | `737fbe7` | Select-all set equality + remember(selectableIds) |
 | 2026-05-21 | `4be19b4` | Split onSelect → onEnterSelectMode + onToggleSelect |
+| 2026-05-21 | `04c16ca` | Configurable long-press timeout (default 1.5s) + Settings UI + SSOT doc |
