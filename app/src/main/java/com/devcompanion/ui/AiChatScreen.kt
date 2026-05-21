@@ -40,6 +40,7 @@ import com.devcompanion.llm.ConversationMeta
 import com.devcompanion.llm.LlmProvider
 import com.devcompanion.llm.LlmRepositoryImpl
 import com.devcompanion.logging.SessionLog
+import com.devcompanion.logging.SessionLog.EventType
 import com.devcompanion.llm.LlmSettings
 import com.devcompanion.llm.WebContextBuilder
 import com.devcompanion.llm.agent.ActionRisk
@@ -915,7 +916,7 @@ private fun MessageBubble(
                             val up = waitForUpOrCancellation()
                             if (up != null && !isStreaming) {
                                 up.consume()
-                                SessionLog.log(SessionLog.EventType.GESTURE, mapOf(
+                                SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "select_tap",
                                     "msgId" to message.id,
                                     "isSelected" to (message.id in selectedMessageIds).toString()
@@ -933,7 +934,7 @@ private fun MessageBubble(
                             val elapsed = System.currentTimeMillis() - downTime
                             if (up == null) {
                                 // Long-press detected → enter select mode
-                                SessionLog.log(SessionLog.EventType.GESTURE, mapOf(
+                                SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "long_press_enter",
                                     "msgId" to message.id,
                                     "elapsedMs" to elapsed.toString(),
@@ -942,7 +943,7 @@ private fun MessageBubble(
                                 if (!isStreaming) onEnterSelectMode(message.id)
                                 waitForUpOrCancellation()?.consume()
                             } else {
-                                SessionLog.log(SessionLog.EventType.GESTURE, mapOf(
+                                SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "short_tap_ignored",
                                     "msgId" to message.id,
                                     "elapsedMs" to elapsed.toString(),
