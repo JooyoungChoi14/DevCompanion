@@ -936,7 +936,6 @@ private fun MessageBubble(
                     // - detects long-press via viewConfiguration.longPressTimeoutMillis
                     // - cancels on drag (scroll)
                     Modifier.combinedClickable(
-                        indication = null,
                         onClickLabel = "Select message",
                         onLongClickLabel = "Enter select mode",
                         onLongClick = {
@@ -944,7 +943,7 @@ private fun MessageBubble(
                                 SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "long_press_enter",
                                     "msgId" to message.id,
-                                    "timeoutMs" to viewConfiguration.longPressTimeoutMillis.toString()
+                                    "timeoutMs" to longPressTimeoutMs.toString()
                                 ))
                                 onEnterSelectMode(message.id)
                             }
