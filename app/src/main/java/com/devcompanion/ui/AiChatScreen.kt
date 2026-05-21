@@ -925,15 +925,17 @@ private fun MessageBubble(
                             }
                         } else {
                             // Normal mode: long-press enters select mode
-                            val down = awaitFirstDown(requireUnconsumed = false)
+                            // Use detectTapGestures-style approach: consume down to prevent
+                            // LazyColumn from stealing pointer and causing false long-press
+                            val down = awaitFirstDown()
+                            down.consume()
                             val downTime = System.currentTimeMillis()
-                            // Don't consume down — allow LazyColumn scroll
                             val up = withTimeoutOrNull(longPressTimeoutMs) {
                                 waitForUpOrCancellation()
                             }
                             val elapsed = System.currentTimeMillis() - downTime
                             if (up == null) {
-                                // Long-press detected → enter select mode
+                                // Timeout → long-press detected → enter select mode
                                 SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "long_press_enter",
                                     "msgId" to message.id,
@@ -941,8 +943,8 @@ private fun MessageBubble(
                                     "timeoutMs" to longPressTimeoutMs.toString()
                                 ))
                                 if (!isStreaming) onEnterSelectMode(message.id)
-                                waitForUpOrCancellation()?.consume()
                             } else {
+                                up.consume()
                                 SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "short_tap_ignored",
                                     "msgId" to message.id,
@@ -950,7 +952,6 @@ private fun MessageBubble(
                                     "timeoutMs" to longPressTimeoutMs.toString()
                                 ))
                             }
-                            // Short tap in normal mode: do nothing
                         }
                     }
                 }

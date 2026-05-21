@@ -103,6 +103,7 @@ MessageBubble
 4. **`isInSelectMode` independent from `selectedMessageIds`** — Gmail pattern, mode persists at 0 selections
 5. **No `combinedClickable`** — avoids Compose's built-in long-press handling which conflicts with custom `pointerInput` gesture detection
 6. **Long-press timeout is user-configurable** — `UiPreferences.longPressTimeoutMs` (default 1.5s, range 0.3-5s) via SettingsSheet slider
+7. **`down.consume()` in normal mode** — prevents LazyColumn from stealing the pointer, which caused `waitForUpOrCancellation()` to return null (false long-press). Scroll still works via other touch areas and the LazyColumn's own gesture detection on unconsumed regions.
 
 ---
 
