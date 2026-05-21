@@ -228,12 +228,14 @@ object ChatHistory {
         val json = file.readText()
         val map = gson.fromJson(json, Map::class.java) as? Map<*, *>
         val title = map?.get("title") as? String ?: deriveTitle(allMessages)
+        val createdAt = (map?.get("createdAt") as? Number)?.toLong() ?: allMessages.firstOrNull()?.timestamp ?: 0L
+        val updatedAt = (map?.get("updatedAt") as? Number)?.toLong() ?: allMessages.lastOrNull()?.timestamp ?: 0L
 
         val export = ConversationExport(
             id = conversationId,
             title = title,
-            createdAt = selected.firstOrNull()?.timestamp ?: 0L,
-            updatedAt = selected.lastOrNull()?.timestamp ?: 0L,
+            createdAt = createdAt,
+            updatedAt = updatedAt,
             messages = selected,
             openaiFormat = selected.map { mapOf("role" to it.role, "content" to it.content) }
         )
