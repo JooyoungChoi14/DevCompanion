@@ -453,7 +453,7 @@ fun AiChatScreen(
                         modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val selectableCount = messages.map { it.id }.toSet().size
+                        val selectableIds = remember(messages) { messages.map { it.id }.toSet() }
                         Text(
                             if (selectedMessageIds.isEmpty()) "Select messages to export"
                             else "${selectedMessageIds.size} selected",
@@ -463,11 +463,10 @@ fun AiChatScreen(
                         Spacer(modifier = Modifier.weight(1f))
                         // Select all / Deselect all
                         TextButton(onClick = {
-                            val selectableIds = messages.map { it.id }.toSet()
-                            selectedMessageIds = if (selectedMessageIds.size == selectableIds.size) emptySet() else selectableIds
+                            selectedMessageIds = if (selectedMessageIds == selectableIds) emptySet() else selectableIds
                         }) {
                             Text(
-                                if (selectedMessageIds.size == selectableCount) "Deselect all" else "Select all",
+                                if (selectedMessageIds == selectableIds) "Deselect all" else "Select all",
                                 style = MaterialTheme.typography.labelMedium
                             )
                         }
