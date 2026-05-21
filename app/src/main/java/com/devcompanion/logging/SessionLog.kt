@@ -319,7 +319,8 @@ enum class EventType(val key: String) {
     URL_CHANGE("url_change"),
     PROVIDER_CHANGE("provider_change"),
     STREAM("stream"),
-    ERROR("error")
+    ERROR("error"),
+    GESTURE("gesture")
 }
 
 data class LogEvent(

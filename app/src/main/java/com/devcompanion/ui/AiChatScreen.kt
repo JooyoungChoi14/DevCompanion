@@ -39,6 +39,7 @@ import com.devcompanion.llm.ChatMessage
 import com.devcompanion.llm.ConversationMeta
 import com.devcompanion.llm.LlmProvider
 import com.devcompanion.llm.LlmRepositoryImpl
+import com.devcompanion.logging.SessionLog
 import com.devcompanion.llm.LlmSettings
 import com.devcompanion.llm.WebContextBuilder
 import com.devcompanion.llm.agent.ActionRisk
@@ -914,24 +915,39 @@ private fun MessageBubble(
                             val up = waitForUpOrCancellation()
                             if (up != null && !isStreaming) {
                                 up.consume()
-                                Log.d("AiChatGesture", "SELECT-MODE tap: id=${message.id}")
+                                SessionLog.log(SessionLog.EventType.GESTURE, mapOf(
+                                    "action" to "select_tap",
+                                    "msgId" to message.id,
+                                    "isSelected" to (message.id in selectedMessageIds).toString()
+                                ))
                                 onToggleSelect(message.id)
                             }
                         } else {
                             // Normal mode: long-press enters select mode
                             val down = awaitFirstDown(requireUnconsumed = false)
-                            Log.d("AiChatGesture", "NORMAL down: id=${message.id}")
+                            val downTime = System.currentTimeMillis()
                             // Don't consume down — allow LazyColumn scroll
                             val up = withTimeoutOrNull(longPressTimeoutMs) {
                                 waitForUpOrCancellation()
                             }
+                            val elapsed = System.currentTimeMillis() - downTime
                             if (up == null) {
                                 // Long-press detected → enter select mode
-                                Log.d("AiChatGesture", "NORMAL long-press detected: id=${message.id}, timeout=${longPressTimeoutMs}ms")
+                                SessionLog.log(SessionLog.EventType.GESTURE, mapOf(
+                                    "action" to "long_press_enter",
+                                    "msgId" to message.id,
+                                    "elapsedMs" to elapsed.toString(),
+                                    "timeoutMs" to longPressTimeoutMs.toString()
+                                ))
                                 if (!isStreaming) onEnterSelectMode(message.id)
                                 waitForUpOrCancellation()?.consume()
                             } else {
-                                Log.d("AiChatGesture", "NORMAL short tap: id=${message.id}, up=$up")
+                                SessionLog.log(SessionLog.EventType.GESTURE, mapOf(
+                                    "action" to "short_tap_ignored",
+                                    "msgId" to message.id,
+                                    "elapsedMs" to elapsed.toString(),
+                                    "timeoutMs" to longPressTimeoutMs.toString()
+                                ))
                             }
                             // Short tap in normal mode: do nothing
                         }
