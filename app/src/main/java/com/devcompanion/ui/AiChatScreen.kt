@@ -914,19 +914,24 @@ private fun MessageBubble(
                             val up = waitForUpOrCancellation()
                             if (up != null && !isStreaming) {
                                 up.consume()
+                                Log.d("AiChatGesture", "SELECT-MODE tap: id=${message.id}")
                                 onToggleSelect(message.id)
                             }
                         } else {
                             // Normal mode: long-press enters select mode
                             val down = awaitFirstDown(requireUnconsumed = false)
+                            Log.d("AiChatGesture", "NORMAL down: id=${message.id}")
                             // Don't consume down — allow LazyColumn scroll
                             val up = withTimeoutOrNull(longPressTimeoutMs) {
                                 waitForUpOrCancellation()
                             }
                             if (up == null) {
                                 // Long-press detected → enter select mode
+                                Log.d("AiChatGesture", "NORMAL long-press detected: id=${message.id}, timeout=${longPressTimeoutMs}ms")
                                 if (!isStreaming) onEnterSelectMode(message.id)
                                 waitForUpOrCancellation()?.consume()
+                            } else {
+                                Log.d("AiChatGesture", "NORMAL short tap: id=${message.id}, up=$up")
                             }
                             // Short tap in normal mode: do nothing
                         }
