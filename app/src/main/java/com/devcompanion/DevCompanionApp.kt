@@ -46,6 +46,9 @@ class DevCompanionApp : Application() {
         // Initialize GitHub settings (encrypted preferences)
         com.devcompanion.github.GitHubSettings.initialize(this)
 
+        // Initialize UI preferences (non-encrypted, for UI settings)
+        com.devcompanion.ui.UiPreferences.initialize(this)
+
         // Start BridgeServer for AI agent access
         bridgeAuthToken = generateAuthToken()
         bridgeServer = BridgeServer(authToken = bridgeAuthToken)

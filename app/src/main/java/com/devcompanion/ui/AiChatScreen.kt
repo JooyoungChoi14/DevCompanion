@@ -116,6 +116,8 @@ fun AiChatScreen(
     // Message selection mode — independent from selection state (Gmail pattern)
     var isInSelectMode by remember { mutableStateOf(false) }
     var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
+    val longPressTimeoutMs = UiPreferences.longPressTimeoutMs
+        .coerceIn(UiPreferences.MIN_LONG_PRESS_TIMEOUT_MS, UiPreferences.MAX_LONG_PRESS_TIMEOUT_MS)
 
     // System back exits select mode
     BackHandler(enabled = isInSelectMode) {
@@ -709,6 +711,7 @@ fun AiChatScreen(
                             injectedStyles = injectedStyles,
                             isSelected = message.id in selectedMessageIds,
                             isSelectMode = isInSelectMode,
+                            longPressTimeoutMs = longPressTimeoutMs,
                             onEnterSelectMode = { id ->
                                 isInSelectMode = true
                                 selectedMessageIds = selectedMessageIds + id
@@ -808,6 +811,7 @@ private fun MessageBubble(
     injectedStyles: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
     isSelected: Boolean = false,
     isSelectMode: Boolean = false,
+    longPressTimeoutMs: Long = UiPreferences.DEFAULT_LONG_PRESS_TIMEOUT_MS,
     onEnterSelectMode: (String) -> Unit = {},
     onToggleSelect: (String) -> Unit = {}
 ) {
@@ -901,7 +905,7 @@ private fun MessageBubble(
             )
             .then(
                 // Selection gesture: tap toggles in select mode, long-press enters select mode
-                Modifier.pointerInput(isSelectMode, isStreaming) {
+                Modifier.pointerInput(isSelectMode, isStreaming, longPressTimeoutMs) {
                     awaitEachGesture {
                         if (isSelectMode) {
                             // Select mode: tap toggles, scroll not blocked
@@ -916,8 +920,7 @@ private fun MessageBubble(
                             // Normal mode: long-press enters select mode
                             val down = awaitFirstDown(requireUnconsumed = false)
                             // Don't consume down — allow LazyColumn scroll
-                            val longPress = viewConfiguration.longPressTimeoutMillis
-                            val up = withTimeoutOrNull(longPress) {
+                            val up = withTimeoutOrNull(longPressTimeoutMs) {
                                 waitForUpOrCancellation()
                             }
                             if (up == null) {
