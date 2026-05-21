@@ -453,8 +453,10 @@ fun AiChatScreen(
                         modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val selectableCount = messages.map { it.id }.toSet().size
                         Text(
-                            "${selectedMessageIds.size} selected",
+                            if (selectedMessageIds.isEmpty()) "Select messages to export"
+                            else "${selectedMessageIds.size} selected",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -465,32 +467,35 @@ fun AiChatScreen(
                             selectedMessageIds = if (selectedMessageIds.size == selectableIds.size) emptySet() else selectableIds
                         }) {
                             Text(
-                                if (selectedMessageIds.size == messages.size) "Deselect all" else "Select all",
+                                if (selectedMessageIds.size == selectableCount) "Deselect all" else "Select all",
                                 style = MaterialTheme.typography.labelMedium
                             )
                         }
-                        // Export
-                        TextButton(onClick = {
-                            val json = viewModel.exportSelectedMessages(selectedMessageIds)
-                            if (json != null) {
-                                val file = File(exportContext.cacheDir, "messages_${System.currentTimeMillis()}.json")
-                                file.writeText(json)
-                                file.deleteOnExit()
-                                val uri = FileProvider.getUriForFile(
-                                    exportContext,
-                                    "${exportContext.packageName}.fileprovider",
-                                    file
-                                )
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/json"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        // Export (disabled when nothing selected)
+                        TextButton(
+                            onClick = {
+                                val json = viewModel.exportSelectedMessages(selectedMessageIds)
+                                if (json != null) {
+                                    val file = File(exportContext.cacheDir, "messages_${System.currentTimeMillis()}.json")
+                                    file.writeText(json)
+                                    file.deleteOnExit()
+                                    val uri = FileProvider.getUriForFile(
+                                        exportContext,
+                                        "${exportContext.packageName}.fileprovider",
+                                        file
+                                    )
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/json"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    exportContext.startActivity(Intent.createChooser(shareIntent, "Export selected messages"))
                                 }
-                                exportContext.startActivity(Intent.createChooser(shareIntent, "Export selected messages"))
-                            }
-                            isInSelectMode = false
-                            selectedMessageIds = emptySet()
-                        }) {
+                                isInSelectMode = false
+                                selectedMessageIds = emptySet()
+                            },
+                            enabled = selectedMessageIds.isNotEmpty()
+                        ) {
                             Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(Spacing.xs))
                             Text("Export", style = MaterialTheme.typography.labelMedium)
