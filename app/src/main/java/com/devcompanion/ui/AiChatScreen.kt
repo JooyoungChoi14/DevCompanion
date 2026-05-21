@@ -709,8 +709,11 @@ fun AiChatScreen(
                             injectedStyles = injectedStyles,
                             isSelected = message.id in selectedMessageIds,
                             isSelectMode = isInSelectMode,
-                            onSelect = { id ->
-                                if (!isInSelectMode) isInSelectMode = true
+                            onEnterSelectMode = { id ->
+                                isInSelectMode = true
+                                selectedMessageIds = selectedMessageIds + id
+                            },
+                            onToggleSelect = { id ->
                                 selectedMessageIds = if (id in selectedMessageIds)
                                     selectedMessageIds - id
                                 else
@@ -733,7 +736,8 @@ fun AiChatScreen(
                             // Streaming messages cannot be selected
                             isSelected = false,
                             isSelectMode = false,
-                            onSelect = {}
+                            onEnterSelectMode = {},
+                            onToggleSelect = {}
                         )
                     }
                 }
@@ -804,7 +808,8 @@ private fun MessageBubble(
     injectedStyles: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
     isSelected: Boolean = false,
     isSelectMode: Boolean = false,
-    onSelect: (String) -> Unit = {}
+    onEnterSelectMode: (String) -> Unit = {},
+    onToggleSelect: (String) -> Unit = {}
 ) {
     val isUser = message.role == "user"
     val isSystem = message.role == "system"
@@ -899,28 +904,28 @@ private fun MessageBubble(
                 Modifier.pointerInput(isSelectMode, isStreaming) {
                     awaitEachGesture {
                         if (isSelectMode) {
-                            // Select mode: tap to toggle, scroll not blocked
+                            // Select mode: tap toggles, scroll not blocked
                             val down = awaitFirstDown(requireUnconsumed = false)
                             // Don't consume down — let LazyColumn detect scroll drag
                             val up = waitForUpOrCancellation()
                             if (up != null && !isStreaming) {
                                 up.consume()
-                                onSelect(message.id)
+                                onToggleSelect(message.id)
                             }
                         } else {
-                            // Normal mode: long-press enters selection
+                            // Normal mode: long-press enters select mode
                             val down = awaitFirstDown(requireUnconsumed = false)
-                            down.consume()
+                            // Don't consume down — allow LazyColumn scroll
                             val longPress = viewConfiguration.longPressTimeoutMillis
                             val up = withTimeoutOrNull(longPress) {
                                 waitForUpOrCancellation()
                             }
                             if (up == null) {
-                                if (!isStreaming) onSelect(message.id)
+                                // Long-press detected → enter select mode
+                                if (!isStreaming) onEnterSelectMode(message.id)
                                 waitForUpOrCancellation()?.consume()
-                            } else {
-                                up.consume()
                             }
+                            // Short tap in normal mode: do nothing
                         }
                     }
                 }
