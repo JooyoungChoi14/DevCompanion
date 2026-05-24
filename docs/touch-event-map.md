@@ -1,7 +1,7 @@
 # Touch Event Map — DevCompanion
 
 > SSOT for all touch/click interactions on chat messages.
-> Last updated: 2026-05-21 (commit `4be19b4`)
+> Last updated: 2026-05-24 (commit `9ea2edf`)
 
 ## MessageBubble Touch Events
 
@@ -11,21 +11,34 @@
 MessageBubble
 ├── Outer Row
 │   ├── Background (if selected in select mode)
-│   └── pointerInput(isSelectMode, isStreaming)
-│       ├── [Select Mode]  awaitFirstDown → waitForUpOrCancellation → onToggleSelect
-│       └── [Normal Mode]   awaitFirstDown → withTimeout(longPressTimeout) → waitForUpOrCancellation
-│           ├── up == null (timeout) → onEnterSelectMode  [LONG-PRESS]
-│           └── up != null (short tap) → do nothing       [SHORT TAP]
+│   └── Modifier.clickable (select mode only — tap toggles selection)
+│       ├── [Select Mode]  clickable → onToggleSelect(message.id)
+│       └── [Normal Mode]  no touch handler — scroll works naturally
 ├── Checkbox (select mode only, onCheckedChange = null — display-only)
 ├── Message content Column
 │   └── (no touch handlers — content is static text/rendered markdown)
 └── TokenUsage badge (no touch)
 ```
 
+### Select Mode Entry/Exit
+
+**Entry**: TopAppBar `SelectAll` icon → `isInSelectMode = true`, `frozenSelectableIds = messages.map { it.id }.toSet()`
+**Exit**:
+- TopAppBar `Close` icon (replaces SelectAll in select mode)
+- Bottom action bar `Close` button (redundant but discoverable)
+- System Back button
+- Export complete
+- Conversation change
+
+> **Design decision**: Select mode is entered via explicit toggle, NOT long-press gesture.
+> Compose's pointer event pass architecture (Initial → Main → Final) makes reliable
+> long-press/short-tap disambiguation inside LazyColumn fundamentally broken.
+> 4 build/test cycles confirmed this is a platform constraint, not a bug.
+
 ### State Transitions
 
 ```
-                    long-press
+                    ☑ icon tap
   ┌──────────┐ ──────────────► ┌──────────────┐
   │ Normal   │                 │ Select Mode   │
   │ Mode     │ ◄────────────── │               │
@@ -41,28 +54,30 @@ MessageBubble
 
 ### Touch Behavior Matrix
 
-| Mode | Gesture | Threshold | Event Consumed | Action | Side Effects |
-|------|---------|-----------|----------------|--------|-------------|
-| Normal | Short tap (< longPressTimeoutMs) | `longPressTimeoutMs` | No | None | — |
-| Normal | Long press (≥ longPressTimeoutMs) | `longPressTimeoutMs` | Up only | `onEnterSelectMode(id)` | `isInSelectMode = true`, `selectedMessageIds + id` |
-| Select | Tap (any duration) | None | Up only | `onToggleSelect(id)` | `selectedMessageIds ± id` |
-| Select | Scroll drag | — | No (down not consumed) | LazyColumn scroll | — |
-| Normal | Scroll drag | — | No (down not consumed) | LazyColumn scroll | — |
-| Any | Tap during streaming | — | Up only | No action (`!isStreaming` guard) | — |
+| Mode | Gesture | Action | Side Effects |
+|------|---------|--------|-------------|
+| Normal | Tap | None | — |
+| Normal | Scroll | LazyColumn scroll | — |
+| Select | Tap | `onToggleSelect(id)` | `selectedMessageIds ± id` |
+| Select | Scroll | LazyColumn scroll | — |
+| Any | TopAppBar ☑ icon | Toggle select mode | `isInSelectMode`, `frozenSelectableIds` |
+
+### Frozen Selectable IDs
+
+When select mode is entered, `frozenSelectableIds` captures the current message IDs.
+This prevents "Select all" from breaking when new streaming messages arrive.
+New messages during streaming will NOT have checkboxes until the user exits and re-enters select mode.
+This matches Gmail's behavior (new emails don't auto-appear in selection).
 
 ### Exit Select Mode Triggers
 
-| Trigger | `isInSelectMode` | `selectedMessageIds` |
-|---------|------------------|---------------------|
-| ✕ button | `false` | `emptySet()` |
-| System Back | `false` | `emptySet()` |
-| Export complete | `false` | `emptySet()` |
-| Conversation change | `false` | `emptySet()` |
-
-### Known Issues (current)
-
-1. **`longPressTimeoutMs` default = 1500ms (configurable)** — users can adjust in Settings (0.3s–5s); 400ms Android default was too short, causing accidental mode entry
-2. **No haptic/audio feedback on long-press** — user has no signal that the threshold was crossed until the UI state changes
+| Trigger | `isInSelectMode` | `selectedMessageIds` | `frozenSelectableIds` |
+|---------|------------------|---------------------|----------------------|
+| TopAppBar ✕ | `false` | `emptySet()` | `null` |
+| Bottom bar ✕ | `false` | `emptySet()` | `null` |
+| System Back | `false` | `emptySet()` | `null` |
+| Export complete | `false` | `emptySet()` | `null` |
+| Conversation change | `false` | `emptySet()` | `null` |
 
 ---
 
@@ -71,8 +86,13 @@ MessageBubble
 | Mode | Target | Gesture | Action |
 |------|--------|---------|--------|
 | Normal | Conversation card | Tap | `onSelect(conv.id)` → load conversation |
+| Normal | SelectAll icon | Tap | Enter select mode |
 | Select | Conversation card | Tap | Toggle `selectedIds ± conv.id` |
+| Select | Checkbox | Tap | Toggle `selectedIds ± conv.id` |
 | Any | Delete icon | Tap | Set `conversationToDelete = conv.id` |
+
+> **Consistency**: Both ConversationDrawer and MessageBubble now use explicit
+> `SelectAll` icon for entering select mode. No gesture-based entry anywhere.
 
 ---
 
@@ -81,12 +101,13 @@ MessageBubble
 | Target | Gesture | Action |
 |--------|---------|--------|
 | Drawer menu button | Tap | Open drawer |
+| Select mode toggle (☑/✕) | Tap | Toggle `isInSelectMode` |
 | Agent/Normal mode toggle | Tap | `viewModel.toggleAgentMode()` |
-| Capture button | Tap | Show capture dialog |
+| Capture button (hidden in select mode) | Tap | Show capture dialog |
 | Send button | Tap | Send message |
 | Cancel (streaming) | Tap | Cancel streaming / stop agent |
 | Export selected | Tap | Export + exit select mode |
-| Select all/Deselect all | Tap | Toggle all message IDs |
+| Select all/Deselect all | Tap | Toggle all message IDs (frozen set) |
 | Close select mode (✕) | Tap | Exit select mode |
 | Auto-capture banner | Tap | Disable auto-capture |
 | Confirmation buttons | Tap | Respond to agent confirmation |
@@ -97,13 +118,13 @@ MessageBubble
 
 ## Design Decisions
 
-1. **`onSelect` split into `onEnterSelectMode` + `onToggleSelect`** — prevents short tap from accidentally entering select mode
-2. **`down` not consumed in normal mode** — allows LazyColumn to detect scroll drag
-3. **`Checkbox.onCheckedChange = null`** — display-only, prevents double-toggle with `pointerInput`
-4. **`isInSelectMode` independent from `selectedMessageIds`** — Gmail pattern, mode persists at 0 selections
-5. **No `combinedClickable`** — avoids Compose's built-in long-press handling which conflicts with custom `pointerInput` gesture detection
-6. **Long-press timeout is user-configurable** — `UiPreferences.longPressTimeoutMs` (default 1.5s, range 0.3-5s) via SettingsSheet slider
-7. **`down.consume()` in normal mode** — prevents LazyColumn from stealing the pointer, which caused `waitForUpOrCancellation()` to return null (false long-press). Scroll still works via other touch areas and the LazyColumn's own gesture detection on unconsumed regions.
+1. **Explicit toggle over gesture**: Long-press/short-tap disambiguation in LazyColumn is broken on Compose. 4 attempts (combinedClickable, manual pointerInput + down.consume, Initial pass intercept, detectTapGestures) all failed. Explicit toggle is the correct UX.
+2. **Consistent with ConversationDrawer**: Both use `SelectAll` icon for entry, `Close` for exit.
+3. **`frozenSelectableIds`**: Prevents "Select all" from breaking during streaming. Gmail pattern.
+4. **Camera hidden during select mode**: Select and capture are mutually exclusive actions.
+5. **`Checkbox.onCheckedChange = null`**: Display-only, prevents double-toggle with clickable modifier.
+6. **No touch handler in normal mode**: Scroll works naturally without gesture conflicts.
+7. **`clickable` in select mode only**: Simple tap toggle, no gesture disambiguation needed.
 
 ---
 
@@ -111,10 +132,8 @@ MessageBubble
 
 | Date | Commit | Change |
 |------|--------|--------|
-| 2026-05-21 | `e45f416` | Fix checkbox flicker (key stabilization) + tap-to-toggle in select mode |
-| 2026-05-21 | `f5eaa59` | Decouple select mode state (Gmail pattern) + BackHandler + Select All |
-| 2026-05-21 | `5a13f0d` | Review fixes: "0 selected" text, Export disabled, selectableCount |
-| 2026-05-21 | `875e7a3` | Export timestamp fix (conversation metadata, not selected range) |
-| 2026-05-21 | `737fbe7` | Select-all set equality + remember(selectableIds) |
+| 2026-05-24 | `9ea2edf` | Replace gesture-based select mode with explicit SelectAll toggle |
+| 2026-05-24 | `9ea2edf` | Remove longPressTimeoutMs setting, EventType.GESTURE |
+| 2026-05-24 | `9ea2edf` | Freeze selectable IDs at mode entry |
 | 2026-05-21 | `4be19b4` | Split onSelect → onEnterSelectMode + onToggleSelect |
-| 2026-05-21 | `04c16ca` | Configurable long-press timeout (default 1.5s) + Settings UI + SSOT doc |
+| 2026-05-21 | `04c16ca` | Configurable long-press timeout (now removed) |
