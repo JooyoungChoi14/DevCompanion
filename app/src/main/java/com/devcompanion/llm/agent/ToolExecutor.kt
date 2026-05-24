@@ -509,14 +509,7 @@ class ToolExecutor(
                     val preview = entry.rawOutput.take(300).replace("\n", " ")
                     appendLine("#${entry.index} ${entry.toolName}" +
                         "${if (entry.selector != null) " selector=${entry.selector}" else ""}" +
-                        "${if (entry.truncated) " [TRUNCATED]" else "}" +
-                        "${if (entry.errorType != null) " [ERROR: ${entry.errorType}]" else ""}" +
-                        " → ${preview}")
-                }
-                appendLine("\nUse recall with index=N to get full content of a specific entry.")
-            })
-        }
-    }
+                        "${if (entry.truncated) " [TRUNCATED]" else ""} +
                         "${if (entry.errorType != null) " [ERROR: ${entry.errorType}]" else ""}" +
                         " → ${preview}")
                 }
