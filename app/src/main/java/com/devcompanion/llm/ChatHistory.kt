@@ -48,8 +48,7 @@ data class AgentMeta(
 /** Minimal tool definition info for export (no parameter details). */
 data class ToolMeta(
     val name: String,
-    val description: String
-)
+    val description: String,
     // OpenAI-compatible format for easy import
     val openaiFormat: List<Map<String, String>> = emptyList()
 )
