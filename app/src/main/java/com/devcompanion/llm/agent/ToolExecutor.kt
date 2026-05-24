@@ -20,10 +20,16 @@ import kotlinx.coroutines.withContext
 class ToolExecutor(
     private val onSwitchMode: ((String) -> Unit)? = null,
     private val getCurrentMode: (() -> String)? = null,
+    private var scratchpad: SessionScratchpad? = null,
 ) {
 
     companion object {
         private const val TAG = "ToolExecutor"
+    }
+
+    /** Update the scratchpad reference (called by AgentLoop when starting a new session). */
+    fun updateScratchpad(pad: SessionScratchpad) {
+        scratchpad = pad
     }
 
     /**
@@ -50,6 +56,7 @@ class ToolExecutor(
                 "get_console_logs" -> executeGetConsoleLogs(call, webView)
                 "switch_mode" -> executeSwitchMode(call)
                 "get_current_mode" -> executeGetCurrentMode(call)
+                "recall" -> executeRecall(call)
                 else -> ToolResult(call.id, "Unknown tool: ${call.name}", isError = true)
             }
         } catch (e: Exception) {
@@ -440,6 +447,69 @@ class ToolExecutor(
         val current = getCurrentMode?.invoke() ?: "unknown"
         val displayName = if (current == "agent") "Act" else "Chat"
         return ToolResult(call.id, "Current mode: $displayName ($current)")
+    }
+
+    private fun executeRecall(call: ToolCall): ToolResult {
+        val pad = scratchpad
+        if (pad == null) {
+            return ToolResult(call.id, "Session memory not available in this mode.")
+        }
+
+        val toolName = call.arguments.getAsJsonPrimitive("tool_name")?.asString
+        val index = call.arguments.getAsJsonPrimitive("index")?.asInt
+        val query = call.arguments.getAsJsonPrimitive("query")?.asString
+
+        // Specific index requested
+        if (index != null && index >= 0) {
+            val entry = pad.getByIndex(index)
+            return if (entry != null) {
+                ToolResult(call.id, buildString {
+                    appendLine("[Recall: #${entry.index} ${entry.toolName}]")
+                    appendLine("User intent: \"${entry.userIntent}\"")
+                    if (entry.truncated) appendLine("⚠️ This result was truncated when originally captured.")
+                    if (entry.errorType != null) appendLine("⚠️ Error type: ${entry.errorType}")
+                    appendLine("---")
+                    append(entry.rawOutput)
+                })
+            } else {
+                ToolResult(call.id, "No entry found at index $index. Valid indices: ${pad.entries.map { it.index }}")
+            }
+        }
+
+        // Search by query
+        if (query != null && query.isNotBlank()) {
+            val results = pad.search(query)
+            return if (results.isEmpty()) {
+                ToolResult(call.id, "No entries found matching \"$query\".\n${pad.summary()}")
+            } else {
+                ToolResult(call.id, buildString {
+                    appendLine("Found ${results.size} entries matching \"$query\":")
+                    results.forEach { entry ->
+                        appendLine("\n--- #${entry.index} ${entry.toolName}${if (entry.truncated) " [TRUNCATED]" else ""} ---")
+                        appendLine(entry.rawOutput.take(2000))
+                    }
+                })
+            }
+        }
+
+        // Filter by tool name or show all
+        val filtered = if (toolName != null) pad.getByTool(toolName) else pad.entries
+        return if (filtered.isEmpty()) {
+            ToolResult(call.id, "No entries found${if (toolName != null) " for tool '$toolName'" else ""}.\n${pad.summary()}")
+        } else {
+            ToolResult(call.id, buildString {
+                appendLine("${filtered.size} entries${if (toolName != null) " for '$toolName'" else ""}:")
+                filtered.forEach { entry ->
+                    val preview = entry.rawOutput.take(300).replace("\n", " ")
+                    appendLine("#${entry.index} ${entry.toolName}" +
+                        "${if (entry.selector != null) " selector=${entry.selector}" else ""}" +
+                        "${if (entry.truncated) " [TRUNCATED]" else ""}" +
+                        "${if (entry.errorType != null) " [ERROR: ${entry.errorType}]" else ""}" +
+                        " → ${preview}")
+                }
+                appendLine("\nUse recall with index=N to get full content of a specific entry.")
+            })
+        }
     }
 
     /**

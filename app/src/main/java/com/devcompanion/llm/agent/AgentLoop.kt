@@ -47,12 +47,17 @@ class AgentLoop(
         private const val TAG = "AgentLoop"
         private const val MAX_CONSECUTIVE_ERRORS = 3
         private const val MAX_SAME_ACTION_REPEAT = 2
+        /** Maximum length of tool result content sent to LLM context. Results exceeding this are truncated with a recall hint. */
+        private const val CONTEXT_TOOL_RESULT_BUDGET = 4000
     }
 
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)
     val state: StateFlow<AgentState> = _state.asStateFlow()
 
     private var currentJob: Job? = null
+
+    /** Scratchpad for storing full tool results during this agent session. */
+    private var scratchpad: SessionScratchpad = SessionScratchpad()
 
     /** Whether the current provider supports vision (image input). Set by ViewModel. */
     var supportsVision: Boolean = true
@@ -62,6 +67,80 @@ class AgentLoop(
 
     /** Current model name for logging. Set by ViewModel. */
     var modelName: String = "Unknown"
+
+    // ── Tool result context framing ──────────────────────────────────
+
+    /**
+     * Build a context-framed tool result message for the LLM.
+     *
+     * Instead of just passing raw tool output, we frame it with:
+     * - Which tool produced this result
+     * - What the user's original intent was
+     * - Whether the result was truncated (and how to retrieve full content)
+     * - Whether there was an error (and what type)
+     *
+     * This prevents the LLM from losing track of user intent when interpreting tool results.
+     */
+    private fun buildFramedToolResult(
+        callName: String,
+        callId: String,
+        rawOutput: String,
+        isError: Boolean,
+        isTruncated: Boolean,
+        entryIndex: Int,
+        userIntent: String,
+        errorType: String?
+    ): String {
+        return buildString {
+            // Context frame header
+            appendLine("[Tool: $callName | Intent: \"$userIntent\"]")
+
+            // Error framing
+            if (isError) {
+                appendLine("⚠️ ERROR: This tool call failed.")
+            }
+
+            // Error type guidance
+            if (errorType != null) {
+                when (errorType) {
+                    "csp" -> appendLine("⚠️ CSP (Content Security Policy) blocked JavaScript execution. Do NOT retry eval_js on this site — switch to get_dom, extract_text, or click instead.")
+                    "not_found" -> appendLine("⚠️ Element not found. Try a different selector or use extract_text for the full page.")
+                    "timeout" -> appendLine("⚠️ Operation timed out. The page may be slow or the selector too broad.")
+                    "download" -> appendLine("⚠️ JS returned a download/save/export trigger, but this does NOT mean a file was actually saved. WebView cannot download files via JS. Use extract_text to collect data instead.")
+                    else -> appendLine("⚠️ Error type: $errorType")
+                }
+            }
+
+            // Truncation warning with recall hint
+            if (isTruncated) {
+                appendLine("⚠️ RESULT TRUNCATED: Only first ${CONTEXT_TOOL_RESULT_BUDGET} of ${rawOutput.length} chars shown. Use recall(index=$entryIndex) to retrieve the full content.")
+                appendLine("---")
+                appendLine(rawOutput.take(CONTEXT_TOOL_RESULT_BUDGET))
+                appendLine("---")
+                appendLine("[End of truncated result. Full content available via recall(index=$entryIndex)]")
+            } else {
+                appendLine("---")
+                append(rawOutput)
+            }
+        }
+    }
+
+    /**
+     * Detect the type of error from tool output for targeted guidance.
+     */
+    private fun detectErrorType(output: String): String? {
+        val lower = output.lowercase()
+        return when {
+            lower.contains("content security policy") || lower.contains("csp") ||
+                lower.contains("unsafe-eval") || lower.contains("script-src") -> "csp"
+            lower.contains("not found") || lower.contains("no element") ||
+                lower.contains("selector") && lower.contains("match") -> "not_found"
+            lower.contains("timeout") || lower.contains("timed out") -> "timeout"
+            lower.contains("download") || lower.contains("save") &&
+                (lower.contains("trigger") || lower.contains("initiated") || lower.contains("started")) -> "download"
+            else -> null
+        }
+    }
 
     /** Callback for requesting user confirmation of sensitive actions. */
     var confirmationHandler: suspend (ToolCall, ToolConfirmationDetails) -> Boolean = { _, _ -> false }
@@ -123,6 +202,12 @@ class AgentLoop(
         emit: (AgentEvent) -> Unit
     ) {
         _state.value = AgentState.Thinking(0)
+
+        // Reset scratchpad for new session and set user intent
+        scratchpad = SessionScratchpad()
+        scratchpad.setUserIntent(userMessage)
+        toolExecutor.updateScratchpad(scratchpad)
+
         SessionLog.log(EventType.AGENT_START, mapOf(
             "userMessage" to userMessage.take(200),
             "provider" to providerName,
@@ -340,10 +425,35 @@ class AgentLoop(
                     }
 
                     emit(AgentEvent.ToolExecuted(call, result))
+
+                    // Store full result in scratchpad (untruncated)
+                    val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
+                    val isTruncated = result.output.length > CONTEXT_TOOL_RESULT_BUDGET
+                    val errorType = if (result.isError) "error" else detectErrorType(result.output)
+                    val entry = scratchpad.store(
+                        toolName = call.name,
+                        selector = selector,
+                        rawOutput = result.output,
+                        truncated = isTruncated,
+                        errorType = errorType
+                    )
+
+                    // Build context-framed tool result message
+                    val framedContent = buildFramedToolResult(
+                        callName = call.name,
+                        callId = call.id,
+                        rawOutput = result.output,
+                        isError = result.isError,
+                        isTruncated = isTruncated,
+                        entryIndex = entry.index,
+                        userIntent = scratchpad.userIntent,
+                        errorType = errorType
+                    )
+
                     // Include tool_call_id for API protocol compliance
                     messages.add(ChatMessage(
                         role = "tool",
-                        content = if (result.isError) "Error: ${result.output}" else result.output,
+                        content = framedContent,
                         hasContext = false,
                         toolCallId = call.id,
                         toolName = call.name

@@ -327,9 +327,32 @@ object WebViewTools {
         }
     )
 
+    val RECALL = ToolDefinition(
+        name = "recall",
+        description = "Retrieve a previously stored tool result from the session's working memory. Use when: (1) a previous tool result was truncated and you need the full content, (2) you need to re-examine earlier data instead of re-running the same tool, (3) you want to cross-reference results from different tools. This is more efficient than re-running tools.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("tool_name", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Filter by tool name (e.g. 'extract_text', 'get_dom'). Omit to list all entries.")
+                })
+                add("index", JsonObject().apply {
+                    addProperty("type", "integer")
+                    addProperty("description", "Specific entry index to retrieve. Use -1 or omit to list entries instead.")
+                })
+                add("query", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Text search within stored results. Returns entries whose output contains this text.")
+                })
+            })
+        }
+    )
+
     /** All available WebView tools. */
     val ALL = listOf(
         NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, EXTRACT_TEXT, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
+        RECALL,
         SWITCH_MODE, GET_CURRENT_MODE
     )
 }
