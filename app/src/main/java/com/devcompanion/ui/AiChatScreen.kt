@@ -6,7 +6,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,11 +21,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
+// Removed: detectTapGestures, pointerInput — select mode is now explicit toggle, not gesture
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalViewConfiguration
-import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -39,8 +35,7 @@ import com.devcompanion.llm.ChatMessage
 import com.devcompanion.llm.ConversationMeta
 import com.devcompanion.llm.LlmProvider
 import com.devcompanion.llm.LlmRepositoryImpl
-import com.devcompanion.logging.EventType
-import com.devcompanion.logging.SessionLog
+// Removed: EventType, SessionLog imports — no longer used after gesture code removal
 import com.devcompanion.llm.LlmSettings
 import com.devcompanion.llm.WebContextBuilder
 import com.devcompanion.llm.agent.ActionRisk
@@ -118,19 +113,21 @@ fun AiChatScreen(
     // Message selection mode — independent from selection state (Gmail pattern)
     var isInSelectMode by remember { mutableStateOf(false) }
     var selectedMessageIds by remember { mutableStateOf(emptySet<String>()) }
-    val longPressTimeoutMs = UiPreferences.longPressTimeoutMs
-        .coerceIn(UiPreferences.MIN_LONG_PRESS_TIMEOUT_MS, UiPreferences.MAX_LONG_PRESS_TIMEOUT_MS)
+    // Freeze selectable IDs at mode entry — avoids "Select all" breaking during streaming
+    var frozenSelectableIds by remember { mutableStateOf<Set<String>?>(null) }
 
     // System back exits select mode
     BackHandler(enabled = isInSelectMode) {
         isInSelectMode = false
         selectedMessageIds = emptySet()
+        frozenSelectableIds = null
     }
 
     // Reset select mode when conversation changes
     LaunchedEffect(conversationId) {
         isInSelectMode = false
         selectedMessageIds = emptySet()
+        frozenSelectableIds = null
     }
 
     var inputText by remember { mutableStateOf("") }
@@ -289,17 +286,37 @@ fun AiChatScreen(
                             Text("Act", style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                    // Capture
+                    // Select mode toggle — explicit entry, consistent with ConversationDrawer
                     IconButton(
-                        onClick = { if (webView != null) showCaptureDialog = true },
-                        enabled = webView != null
+                        onClick = {
+                            if (isInSelectMode) {
+                                isInSelectMode = false
+                                selectedMessageIds = emptySet()
+                                frozenSelectableIds = null
+                            } else {
+                                isInSelectMode = true
+                                frozenSelectableIds = messages.map { it.id }.toSet()
+                            }
+                        }
                     ) {
                         Icon(
-                            Icons.Default.PhotoCamera,
-                            contentDescription = "Capture context",
-                            tint = if (lastContext != null) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
+                            if (isInSelectMode) Icons.Default.Close else Icons.Default.SelectAll,
+                            contentDescription = if (isInSelectMode) "Exit select mode" else "Select messages"
                         )
+                    }
+                    // Capture — hidden during select mode (select and capture are mutually exclusive)
+                    if (!isInSelectMode) {
+                        IconButton(
+                            onClick = { if (webView != null) showCaptureDialog = true },
+                            enabled = webView != null
+                        ) {
+                            Icon(
+                                Icons.Default.PhotoCamera,
+                                contentDescription = "Capture context",
+                                tint = if (lastContext != null) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     // Settings
                     IconButton(onClick = { showSettings = true }) {
@@ -458,7 +475,8 @@ fun AiChatScreen(
                         modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val selectableIds = remember(messages) { messages.map { it.id }.toSet() }
+                        // Use frozen selectable IDs (set at mode entry) so streaming doesn't break "Select all"
+                        val selectableIds = frozenSelectableIds ?: emptySet()
                         Text(
                             if (selectedMessageIds.isEmpty()) "Select messages to export"
                             else "${selectedMessageIds.size} selected",
@@ -497,17 +515,18 @@ fun AiChatScreen(
                                 }
                                 isInSelectMode = false
                                 selectedMessageIds = emptySet()
+                                frozenSelectableIds = null
                             },
                             enabled = selectedMessageIds.isNotEmpty()
-                        ) {
                             Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(Spacing.xs))
                             Text("Export", style = MaterialTheme.typography.labelMedium)
                         }
-                        // Exit select mode
+                        // Exit select mode (redundant with TopAppBar ✕, kept for discoverability)
                         IconButton(onClick = {
                             isInSelectMode = false
                             selectedMessageIds = emptySet()
+                            frozenSelectableIds = null
                         }) {
                             Icon(Icons.Default.Close, contentDescription = "Exit select mode", modifier = Modifier.size(18.dp))
                         }
@@ -713,11 +732,6 @@ fun AiChatScreen(
                             injectedStyles = injectedStyles,
                             isSelected = message.id in selectedMessageIds,
                             isSelectMode = isInSelectMode,
-                            longPressTimeoutMs = longPressTimeoutMs,
-                            onEnterSelectMode = { id ->
-                                isInSelectMode = true
-                                selectedMessageIds = selectedMessageIds + id
-                            },
                             onToggleSelect = { id ->
                                 selectedMessageIds = if (id in selectedMessageIds)
                                     selectedMessageIds - id
@@ -740,9 +754,7 @@ fun AiChatScreen(
                             injectedStyles = injectedStyles,
                             // Streaming messages cannot be selected
                             isSelected = false,
-                            isSelectMode = false,
-                            onEnterSelectMode = {},
-                            onToggleSelect = {}
+                            isSelectMode = false
                         )
                     }
                 }
@@ -813,8 +825,6 @@ private fun MessageBubble(
     injectedStyles: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
     isSelected: Boolean = false,
     isSelectMode: Boolean = false,
-    longPressTimeoutMs: Long = UiPreferences.DEFAULT_LONG_PRESS_TIMEOUT_MS,
-    onEnterSelectMode: (String) -> Unit = {},
     onToggleSelect: (String) -> Unit = {}
 ) {
     val isUser = message.role == "user"
@@ -896,15 +906,6 @@ private fun MessageBubble(
         return
     }
 
-    // Override ViewConfiguration so detectTapGestures uses our custom longPressTimeoutMs
-    val originalConfig = LocalViewConfiguration.current
-    val customConfig = remember(originalConfig, longPressTimeoutMs) {
-        object : ViewConfiguration by originalConfig {
-            override val longPressTimeoutMillis: Long = longPressTimeoutMs
-        }
-    }
-
-    CompositionLocalProvider(LocalViewConfiguration provides customConfig) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -915,58 +916,19 @@ private fun MessageBubble(
                 ) else Modifier
             )
             .then(
-                // Gesture handling using detectTapGestures — Compose's official API.
-                // detectTapGestures internally uses awaitFirstDown + waitForLongPress,
-                // all on the same pointer event pass (Main), which keeps gesture tracking consistent.
-                //
-                // Previous approaches failed because:
-                // 1. combinedClickable: wraps detectTapGestures but modifier chain ordering
-                //    meant LazyColumn's scroll detector intercepted the pointer first
-                // 2. Manual pointerInput + down.consume(): Main pass down arrived after
-                //    LazyColumn already started monitoring → pointer cancel at ~65ms
-                // 3. Initial pass intercept: down consumed on Initial but up expected on Main
-                //    → gesture tracking broke (elapsedMs=1)
-                //
-                // detectTapGestures handles the down/up lifecycle correctly internally.
-                // Drag (scroll) cancels the gesture properly — onLongClick only fires if
-                // the finger stays still for the timeout duration.
+                // Select mode: tap to toggle selection
+                // Normal mode: no touch handler — scroll works naturally
                 if (isSelectMode) {
-                    Modifier.pointerInput(isStreaming) {
-                        detectTapGestures {
-                            if (!isStreaming) {
-                                SessionLog.log(EventType.GESTURE, mapOf(
-                                    "action" to "select_tap",
-                                    "msgId" to message.id,
-                                    "isSelected" to isSelected.toString()
-                                ))
-                                onToggleSelect(message.id)
-                            }
+                    Modifier.clickable {
+                        if (!isStreaming) {
+                            onToggleSelect(message.id)
                         }
                     }
-                } else {
-                    Modifier.pointerInput(isStreaming, longPressTimeoutMs) {
-                        detectTapGestures(
-                            onLongPress = {
-                                SessionLog.log(EventType.GESTURE, mapOf(
-                                    "action" to "long_press_enter",
-                                    "msgId" to message.id,
-                                    "timeoutMs" to longPressTimeoutMs.toString()
-                                ))
-                                if (!isStreaming) onEnterSelectMode(message.id)
-                            },
-                            onTap = {
-                                SessionLog.log(EventType.GESTURE, mapOf(
-                                    "action" to "short_tap_ignored",
-                                    "msgId" to message.id
-                                ))
-                            }
-                        )
-                    }
-                }
+                } else Modifier
             ),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        // Selection indicator — display-only; toggling handled by pointerInput to avoid double-toggle
+        // Selection indicator — display-only; toggling handled by clickable modifier on Row
         if (isSelectMode) {
             Checkbox(
                 checked = isSelected,
@@ -1069,7 +1031,6 @@ private fun MessageBubble(
             }
         }
     }
-    } // CompositionLocalProvider
 }
 
 /**
