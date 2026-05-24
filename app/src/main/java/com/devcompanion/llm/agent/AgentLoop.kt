@@ -83,7 +83,6 @@ class AgentLoop(
      */
     private fun buildFramedToolResult(
         callName: String,
-        callId: String,
         rawOutput: String,
         isError: Boolean,
         isTruncated: Boolean,
@@ -134,9 +133,9 @@ class AgentLoop(
             lower.contains("content security policy") || lower.contains("csp") ||
                 lower.contains("unsafe-eval") || lower.contains("script-src") -> "csp"
             lower.contains("not found") || lower.contains("no element") ||
-                lower.contains("selector") && lower.contains("match") -> "not_found"
+                (lower.contains("selector") && lower.contains("match")) -> "not_found"
             lower.contains("timeout") || lower.contains("timed out") -> "timeout"
-            lower.contains("download") || lower.contains("save") &&
+            (lower.contains("download") || lower.contains("save")) &&
                 (lower.contains("trigger") || lower.contains("initiated") || lower.contains("started")) -> "download"
             else -> null
         }
@@ -429,7 +428,7 @@ class AgentLoop(
                     // Store full result in scratchpad (untruncated)
                     val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
                     val isTruncated = result.output.length > CONTEXT_TOOL_RESULT_BUDGET
-                    val errorType = if (result.isError) "error" else detectErrorType(result.output)
+                    val errorType = detectErrorType(result.output) ?: if (result.isError) "error" else null
                     val entry = scratchpad.store(
                         toolName = call.name,
                         selector = selector,
@@ -441,7 +440,6 @@ class AgentLoop(
                     // Build context-framed tool result message
                     val framedContent = buildFramedToolResult(
                         callName = call.name,
-                        callId = call.id,
                         rawOutput = result.output,
                         isError = result.isError,
                         isTruncated = isTruncated,

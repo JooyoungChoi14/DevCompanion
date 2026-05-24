@@ -44,7 +44,7 @@ class SessionScratchpad {
     )
 
     private val _entries = ConcurrentLinkedQueue<Entry>()
-    private var _counter = 0
+    private val _counter = java.util.concurrent.atomic.AtomicInteger(0)
     private var _userIntent: String = ""
 
     val entries: List<Entry> get() = _entries.toList()
@@ -71,7 +71,7 @@ class SessionScratchpad {
             _entries.poll()
         }
 
-        val index = _counter++
+        val index = _counter.getAndIncrement()
         val safeOutput = if (rawOutput.length > MAX_ENTRY_SIZE) {
             rawOutput.take(MAX_ENTRY_SIZE) + "\n[SCRATCHPAD: entry truncated at ${MAX_ENTRY_SIZE} chars]"
         } else {
@@ -129,10 +129,10 @@ class SessionScratchpad {
     /** Clear all entries (called when a new conversation starts). */
     fun clear() {
         _entries.clear()
-        _counter = 0
+        _counter.set(0)
         _userIntent = ""
     }
 
-    /** Total size of all stored entries in bytes (approximate). */
+    /** Approximate total size of all stored entries. */
     fun totalSizeBytes(): Int = _entries.sumOf { it.rawOutput.length * 2 } // UTF-16 approx
 }

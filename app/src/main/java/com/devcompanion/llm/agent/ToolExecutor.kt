@@ -459,17 +459,23 @@ class ToolExecutor(
         val index = call.arguments.getAsJsonPrimitive("index")?.asInt
         val query = call.arguments.getAsJsonPrimitive("query")?.asString
 
-        // Specific index requested
+        /** Cap recall output to avoid flooding LLM context. */
+        val recallBudget = 4000
+
+        // Specific index requested — return full entry but cap output
         if (index != null && index >= 0) {
             val entry = pad.getByIndex(index)
             return if (entry != null) {
+                val fullOutput = entry.rawOutput
+                val capped = fullOutput.length > recallBudget
                 ToolResult(call.id, buildString {
                     appendLine("[Recall: #${entry.index} ${entry.toolName}]")
                     appendLine("User intent: \"${entry.userIntent}\"")
-                    if (entry.truncated) appendLine("⚠️ This result was truncated when originally captured.")
                     if (entry.errorType != null) appendLine("⚠️ Error type: ${entry.errorType}")
+                    if (capped) appendLine("⚠️ Output too large (${fullOutput.length} chars), showing first $recallBudget chars.")
                     appendLine("---")
-                    append(entry.rawOutput)
+                    append(fullOutput.take(recallBudget))
+                    if (capped) appendLine("\n--- [Use recall with query=\"...\" to search within this entry]")
                 })
             } else {
                 ToolResult(call.id, "No entry found at index $index. Valid indices: ${pad.entries.map { it.index }}")
@@ -492,7 +498,7 @@ class ToolExecutor(
             }
         }
 
-        // Filter by tool name or show all
+        // Filter by tool name or show all (summary only)
         val filtered = if (toolName != null) pad.getByTool(toolName) else pad.entries
         return if (filtered.isEmpty()) {
             ToolResult(call.id, "No entries found${if (toolName != null) " for tool '$toolName'" else ""}.\n${pad.summary()}")
@@ -503,7 +509,14 @@ class ToolExecutor(
                     val preview = entry.rawOutput.take(300).replace("\n", " ")
                     appendLine("#${entry.index} ${entry.toolName}" +
                         "${if (entry.selector != null) " selector=${entry.selector}" else ""}" +
-                        "${if (entry.truncated) " [TRUNCATED]" else ""}" +
+                        "${if (entry.truncated) " [TRUNCATED]" else "}" +
+                        "${if (entry.errorType != null) " [ERROR: ${entry.errorType}]" else ""}" +
+                        " → ${preview}")
+                }
+                appendLine("\nUse recall with index=N to get full content of a specific entry.")
+            })
+        }
+    }
                         "${if (entry.errorType != null) " [ERROR: ${entry.errorType}]" else ""}" +
                         " → ${preview}")
                 }

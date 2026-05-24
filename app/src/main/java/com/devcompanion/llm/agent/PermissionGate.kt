@@ -70,7 +70,7 @@ class PermissionGate {
         "submit_form" -> ActionRisk.SENSITIVE
         "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs" -> ActionRisk.MODERATE
         "set_style" -> ActionRisk.SENSITIVE
-        "submit_form" -> ActionRisk.SENSITIVE
+        "recall", "switch_mode", "get_current_mode" -> ActionRisk.SAFE
         else -> ActionRisk.MODERATE
     }
 
