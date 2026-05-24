@@ -518,6 +518,7 @@ fun AiChatScreen(
                                 frozenSelectableIds = null
                             },
                             enabled = selectedMessageIds.isNotEmpty()
+                        ) {
                             Icon(Icons.Default.IosShare, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(Spacing.xs))
                             Text("Export", style = MaterialTheme.typography.labelMedium)
