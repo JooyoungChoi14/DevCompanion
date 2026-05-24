@@ -6,7 +6,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,9 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -820,13 +817,6 @@ private fun MessageBubble(
     onEnterSelectMode: (String) -> Unit = {},
     onToggleSelect: (String) -> Unit = {}
 ) {
-    // Override long-press timeout with user-configured value
-    val originalConfig = LocalViewConfiguration.current
-    val customConfig = remember(originalConfig, longPressTimeoutMs) {
-        object : ViewConfiguration by originalConfig {
-            override val longPressTimeoutMillis: Long = longPressTimeoutMs
-        }
-    }
     val isUser = message.role == "user"
     val isSystem = message.role == "system"
     val isToolResult = message.isToolResult
@@ -906,6 +896,14 @@ private fun MessageBubble(
         return
     }
 
+    // Override ViewConfiguration so detectTapGestures uses our custom longPressTimeoutMs
+    val originalConfig = LocalViewConfiguration.current
+    val customConfig = remember(originalConfig, longPressTimeoutMs) {
+        object : ViewConfiguration by originalConfig {
+            override val longPressTimeoutMillis: Long = longPressTimeoutMs
+        }
+    }
+
     CompositionLocalProvider(LocalViewConfiguration provides customConfig) {
     Row(
         modifier = Modifier
@@ -917,45 +915,53 @@ private fun MessageBubble(
                 ) else Modifier
             )
             .then(
-                // Selection gesture: tap toggles in select mode, long-press enters select mode
+                // Gesture handling using detectTapGestures — Compose's official API.
+                // detectTapGestures internally uses awaitFirstDown + waitForLongPress,
+                // all on the same pointer event pass (Main), which keeps gesture tracking consistent.
+                //
+                // Previous approaches failed because:
+                // 1. combinedClickable: wraps detectTapGestures but modifier chain ordering
+                //    meant LazyColumn's scroll detector intercepted the pointer first
+                // 2. Manual pointerInput + down.consume(): Main pass down arrived after
+                //    LazyColumn already started monitoring → pointer cancel at ~65ms
+                // 3. Initial pass intercept: down consumed on Initial but up expected on Main
+                //    → gesture tracking broke (elapsedMs=1)
+                //
+                // detectTapGestures handles the down/up lifecycle correctly internally.
+                // Drag (scroll) cancels the gesture properly — onLongClick only fires if
+                // the finger stays still for the timeout duration.
                 if (isSelectMode) {
                     Modifier.pointerInput(isStreaming) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            val up = waitForUpOrCancellation()
-                            if (up != null && !isStreaming) {
-                                up.consume()
+                        detectTapGestures {
+                            if (!isStreaming) {
+                                SessionLog.log(EventType.GESTURE, mapOf(
+                                    "action" to "select_tap",
+                                    "msgId" to message.id,
+                                    "isSelected" to isSelected.toString()
+                                ))
                                 onToggleSelect(message.id)
                             }
                         }
                     }
                 } else {
-                    // Normal mode: long-press enters select mode
-                    // combinedClickable handles LazyColumn conflict internally:
-                    // - consumes down on Main pass (after LazyColumn Initial)
-                    // - detects long-press via viewConfiguration.longPressTimeoutMillis
-                    // - cancels on drag (scroll)
-                    Modifier.combinedClickable(
-                        onClickLabel = "Select message",
-                        onLongClickLabel = "Enter select mode",
-                        onLongClick = {
-                            if (!isStreaming) {
+                    Modifier.pointerInput(isStreaming, longPressTimeoutMs) {
+                        detectTapGestures(
+                            onLongPress = {
                                 SessionLog.log(EventType.GESTURE, mapOf(
                                     "action" to "long_press_enter",
                                     "msgId" to message.id,
                                     "timeoutMs" to longPressTimeoutMs.toString()
                                 ))
-                                onEnterSelectMode(message.id)
+                                if (!isStreaming) onEnterSelectMode(message.id)
+                            },
+                            onTap = {
+                                SessionLog.log(EventType.GESTURE, mapOf(
+                                    "action" to "short_tap_ignored",
+                                    "msgId" to message.id
+                                ))
                             }
-                        },
-                        onClick = {
-                            // Short tap in normal mode: do nothing
-                            SessionLog.log(EventType.GESTURE, mapOf(
-                                "action" to "short_tap_ignored",
-                                "msgId" to message.id
-                            ))
-                        }
-                    )
+                        )
+                    }
                 }
             ),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
