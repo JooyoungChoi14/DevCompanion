@@ -172,13 +172,13 @@ object WebViewTools {
 
     val EVAL_JS = ToolDefinition(
         name = "eval_js",
-        description = "Execute a JavaScript expression in the page context. WARNING: This is a powerful tool that can access sensitive data. Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
+        description = "Execute a JavaScript expression in the page context. WARNING: (1) Many sites (chatgpt.com, google.com, etc.) block eval via Content Security Policy (CSP). If you receive a CSP error, do NOT retry eval_js — switch to get_dom, extract_text, or click instead. (2) This runs inside a WebView — you CANNOT trigger file downloads, access the filesystem, or save files via JS. A return value like 'download triggered' only means JS executed, NOT that a file was saved. (3) Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
                 add("expression", JsonObject().apply {
                     addProperty("type", "string")
-                    addProperty("description", "JavaScript expression to evaluate")
+                    addProperty("description", "JavaScript expression to evaluate. Cannot trigger downloads or access the filesystem in WebView.")
                 })
             })
             add("required", com.google.gson.JsonArray().apply { add("expression") })
@@ -187,13 +187,31 @@ object WebViewTools {
 
     val GET_DOM = ToolDefinition(
         name = "get_dom",
-        description = "Get a snapshot of the page DOM. Returns the HTML structure of the selected element. Sensitive fields (passwords, hidden inputs) are masked.",
+        description = "Get a snapshot of the page DOM. Returns up to ~10,000 characters of outerHTML — long pages WILL be truncated. For text-only extraction without HTML markup, use extract_text instead. Sensitive fields (passwords, hidden inputs) are masked.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
                 add("selector", JsonObject().apply {
                     addProperty("type", "string")
-                    addProperty("description", "CSS selector to scope the DOM snapshot (default: 'body')")
+                    addProperty("description", "CSS selector to scope the DOM snapshot (default: 'body'). Use specific selectors like '#content' or '[data-testid]' to get focused, untruncated content.")
+                })
+            })
+        }
+    )
+
+    val EXTRACT_TEXT = ToolDefinition(
+        name = "extract_text",
+        description = "Extract visible text content from the page or a specific element. Unlike get_dom which returns HTML markup (which can be very large and truncated), this tool returns only the human-readable text. Use this when you need the actual content of a page — articles, conversations, lists — rather than its HTML structure. Returns up to ~8,000 characters. IMPORTANT: If the user asks to 'download' or 'save' data, use this tool to collect the data, then include it in your response text so the user can copy it. Do NOT try to trigger file downloads via eval_js — they do not work in WebView.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("selector", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "CSS selector to scope text extraction (default: 'body'). Use specific selectors like 'article', '[role=main]', or '.post-content' to get focused content.")
+                })
+                add("includeHeadings", JsonObject().apply {
+                    addProperty("type", "boolean")
+                    addProperty("description", "Whether to include heading text (default: true)")
                 })
             })
         }
@@ -311,7 +329,7 @@ object WebViewTools {
 
     /** All available WebView tools. */
     val ALL = listOf(
-        NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
+        NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, EXTRACT_TEXT, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
         SWITCH_MODE, GET_CURRENT_MODE
     )
 }

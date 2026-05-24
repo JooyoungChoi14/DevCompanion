@@ -68,7 +68,7 @@ class PermissionGate {
         "type" -> checkTypeRisk(call, webView)
         "eval_js" -> checkEvalRisk(call)
         "submit_form" -> ActionRisk.SENSITIVE
-        "click", "scroll", "get_dom", "get_computed_style", "screenshot", "get_console_logs" -> ActionRisk.MODERATE
+        "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs" -> ActionRisk.MODERATE
         "set_style" -> ActionRisk.SENSITIVE
         "submit_form" -> ActionRisk.SENSITIVE
         else -> ActionRisk.MODERATE

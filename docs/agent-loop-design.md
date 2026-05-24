@@ -1,6 +1,6 @@
-# DevCompanion Agent Loop — 설계 문서 (v2)
+# DevCompanion Agent Loop — 설계 문서 (v3)
 
-> ⚠️ **CRITICAL REVIEW APPLIED**: 보안, 상태 관리, 토큰 예산, WebView 스레딩, UX 피드백 반영
+> ⚠️ **CRITICAL REVIEW APPLIED**: 보안, 상태 관리, 토큰 예산, WebView 스레딩, UX 피드백, **인지 개선(v3)** 반영
 
 ## 1. 비전
 
@@ -706,3 +706,134 @@ fun InlineConfirmation(
 3. **DOM 전략** — iteration 0: screenshot+DOM, 이후: DOM only. 명시적 `screenshot` 호출 시에만 이미지
 4. **중단 조건** — max iterations + same action 3회 + consecutive errors 3회
 5. **쿠키 격리** — **완전 차단**. LLM은 쿠키 존재 여부조차 알 수 없음
+
+---
+
+## 9. 에이전트 인지 개선 (v3)
+
+> 실제 사용 세션 분석 결과, 도구 한계가 아닌 **에이전트의 판단력 문제**가 주요 실패 원인이었음.
+> ChatGPT 공유 링크 추출 세션에서 45초+ 소요, 35회 tool call, 0회 성공 추출.
+
+### 9.1 문제 분석
+
+| 문제 | 사례 | 빈도 |
+|------|------|------|
+| 실패 원인 분석 불가 | CSP 에러 메시지를 읽고도 동일한 `eval_js` 5회 재시도 | 5/5 |
+| 사용자 명시 지시 무시 | "원문 그대로" 요청에 요약 제공 (2회) | 2/3 응답 |
+| 반복 실패 탈출 불가 | `get_dom` 800 chars 잘림 → 스크롤 15회 + `get_dom` 15회 반복 | 15회 |
+| 도구 능력 과신 | 잘린 DOM으로 전체 텍스트 추출 시도 | 지속적 |
+
+### 9.2 해결 방안
+
+#### A. 시스템 프롬프트 인지 규칙 (MUST)
+
+`SystemPromptBuilder`에 **Cognitive Rules** 섹션 추가:
+
+```
+## Cognitive Rules (MUST follow)
+
+### 1. Analyze Failure Causes Before Retrying
+When a tool returns an error, READ the error message and identify the root cause.
+- CSP error → JS blocked. Do NOT retry eval_js. Switch tools.
+- Truncated output → Use extract_text or specific selectors. Do NOT scroll+get_dom repeatedly.
+- Selector not found → Try different strategy, not same selector.
+
+### 2. Respect Explicit User Intent
+- 'exact/original text' → verbatim, not summary
+- 'raw data' → raw, not interpretation
+- Cannot fulfill → state honestly. Never substitute summary for original.
+
+### 3. Escape Repetitive Failure Loops
+- Same tool category fails 3 times → STOP using that approach
+- Switch strategy or inform user of limitation
+- Max 3 attempts at same approach
+
+### 4. Know Your Tools' Limits
+- get_dom: ~10K chars, truncated. Use extract_text for content.
+- eval_js: Blocked by CSP on many sites. Don't retry on CSP error.
+- scroll + get_dom: Doesn't increase content. Use specific selectors.
+- screenshot: Viewport only, not full page.
+```
+
+#### B. `extract_text` 신규 도구 (MUST)
+
+`innerText` 기반 텍스트 전용 추출 도구:
+
+```kotlin
+EXTRACT_TEXT = ToolDefinition(
+    name = "extract_text",
+    description = "Extract visible text content from the page or a specific element. Unlike get_dom which returns HTML markup (which can be very large and truncated), this tool returns only the human-readable text. Use this when you need the actual content of a page — articles, conversations, lists — rather than its HTML structure. Returns up to ~8,000 characters.",
+    parameters = JsonObject().apply {
+        addProperty("type", "object")
+        add("properties", JsonObject().apply {
+            add("selector", ...)
+            add("includeHeadings", ...)
+        })
+    }
+)
+```
+
+장점:
+- HTML 태그·CSS 클래스·속성 없이 순수 텍스트만 반환
+- `#`, 개행 등 최소 구조 보존
+- `get_dom` 10K chars 중 태그가 90%인 반면, `extract_text`는 내용 위주
+- CSP 영향 없음 (`evaluateJavascript`으로 `innerText` 접근)
+
+#### C. `get_dom` 응답 메타데이터 (MUST)
+
+```json
+{
+  "tagName": "SECTION",
+  "outerHTML": "...(10000 chars)...",
+  "textContent": "...(2000 chars)...",
+  "childCount": 5,
+  "_meta": {
+    "truncated": true,
+    "totalLength": 45200,
+    "capturedLength": 10000
+  }
+}
+```
+
+`_meta.truncated = true` → LLM이 잘림을 인식하고 `extract_text`로 전환 가능.
+
+#### D. `eval_js` 설명 개선 (WANT)
+
+Before: "WARNING: This is a powerful tool..."
+After: "WARNING: Many sites (chatgpt.com, google.com, etc.) block eval via Content Security Policy (CSP). If you receive a CSP error, do NOT retry eval_js — switch to get_dom, extract_text, or click instead."
+
+이 설명은 **CSP 에러를 만나면 재시도하지 말라는** 명시적 지시를 포함한다.
+
+#### E. AgentLoop 반복 실패 추적 개선 (WANT)
+
+현재 `consecutiveErrors >= 3`은 **다른 종류의 에러**도 포함.
+CSP 에러는 성공적인 실행이므로 `isError=false`지만, 에이전트 입장에서는 **의미적 실패**다.
+
+개선안: ToolResult에 `semanticError` 필드 추가
+
+```kotlin
+data class ToolResult(
+    val id: String,
+    val output: String,
+    val isError: Boolean = false,
+    val semanticError: String? = null  // CSP 차단, 잘림 등 의미적 실패
+)
+```
+
+`eval_js`가 CSP 에러를 반환하면 `semanticError = "CSP blocked"`로 설정.
+`get_dom`이 잘린 응답이면 `semanticError = "truncated"`로 설정.
+
+AgentLoop에서 `semanticError`가 연속 3회 누적되면 해당 도구 카테고리 사용 중단.
+
+### 9.3 구현 상태
+
+| 항목 | 상태 | 파일 |
+|------|------|------|
+| Cognitive Rules 시스템 프롬프트 | ✅ 구현 | `SystemPromptBuilder.kt` |
+| `extract_text` 도구 정의 | ✅ 구현 | `ToolDefinition.kt` |
+| `extract_text` 도구 실행 | ✅ 구현 | `ToolExecutor.kt` |
+| `get_dom` 메타데이터 (`_meta.truncated`) | ✅ 구현 | `ToolExecutor.kt` |
+| `eval_js` 설명 개선 (CSP 경고) | ✅ 구현 | `ToolDefinition.kt` |
+| `extract_text` PermissionGate 분류 | ✅ 구현 | `PermissionGate.kt` |
+| ToolResult.semanticError 필드 | 🔲 예정 | `ToolDefinition.kt`, `AgentLoop.kt` |
+| AgentLoop 의미적 실패 누적 추적 | 🔲 예정 | `AgentLoop.kt` |

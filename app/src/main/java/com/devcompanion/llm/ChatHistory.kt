@@ -21,6 +21,7 @@ data class ConversationMeta(
 /**
  * Export format for a conversation — compatible with OpenAI/Anthropic/Ollama.
  * Includes both the internal format and industry-standard mappings.
+ * Also includes system prompt and tool definitions for debugging/improvement.
  */
 data class ConversationExport(
     val id: String,
@@ -28,6 +29,27 @@ data class ConversationExport(
     val createdAt: Long,
     val updatedAt: Long,
     val messages: List<ChatMessage>,
+    // OpenAI-compatible format for easy import
+    val openaiFormat: List<Map<String, String>> = emptyList(),
+    // Agent metadata for debugging and improvement analysis
+    val agentMeta: AgentMeta? = null
+)
+
+/** Metadata about the system prompt and tools used during the session.
+ * Included in exports so that agent behavior can be analyzed in context.
+ */
+data class AgentMeta(
+    val systemPrompt: String,
+    val mode: String,
+    val currentUrl: String?,
+    val toolDefinitions: List<ToolMeta>
+)
+
+/** Minimal tool definition info for export (no parameter details). */
+data class ToolMeta(
+    val name: String,
+    val description: String
+)
     // OpenAI-compatible format for easy import
     val openaiFormat: List<Map<String, String>> = emptyList()
 )
@@ -164,7 +186,7 @@ object ChatHistory {
     // ── Export / Import ────────────────────────────────────────────
 
     /** Export a conversation in DevCompanion's native format. */
-    fun exportConversation(context: Context, conversationId: String): ConversationExport? {
+    fun exportConversation(context: Context, conversationId: String, agentMeta: AgentMeta? = null): ConversationExport? {
         val messages = load(context, conversationId)
         if (messages.isEmpty()) return null
 
@@ -186,20 +208,21 @@ object ChatHistory {
             createdAt = createdAt,
             updatedAt = updatedAt,
             messages = messages,
-            openaiFormat = openaiFormat
+            openaiFormat = openaiFormat,
+            agentMeta = agentMeta
         )
     }
 
     /** Export as JSON string (for sharing). */
-    fun exportToJson(context: Context, conversationId: String): String? {
-        val export = exportConversation(context, conversationId) ?: return null
+    fun exportToJson(context: Context, conversationId: String, agentMeta: AgentMeta? = null): String? {
+        val export = exportConversation(context, conversationId, agentMeta) ?: return null
         return gson.toJson(export)
     }
 
     /** Export multiple conversations as a JSON array string. */
-    fun exportMultipleToJson(context: Context, conversationIds: List<String>): String {
+    fun exportMultipleToJson(context: Context, conversationIds: List<String>, agentMeta: AgentMeta? = null): String {
         val exports = conversationIds.mapNotNull { id ->
-            exportConversation(context, id)
+            exportConversation(context, id, agentMeta)
         }
         return gson.toJson(mapOf("conversations" to exports))
     }
@@ -218,7 +241,7 @@ object ChatHistory {
     }
 
     /** Export selected messages from a conversation as JSON string. */
-    fun exportMessagesToJson(context: Context, conversationId: String, messageIds: Set<String>): String? {
+    fun exportMessagesToJson(context: Context, conversationId: String, messageIds: Set<String>, agentMeta: AgentMeta? = null): String? {
         val allMessages = load(context, conversationId)
         if (allMessages.isEmpty()) return null
         val selected = allMessages.filter { it.id in messageIds }
@@ -237,7 +260,8 @@ object ChatHistory {
             createdAt = createdAt,
             updatedAt = updatedAt,
             messages = selected,
-            openaiFormat = selected.map { mapOf("role" to it.role, "content" to it.content) }
+            openaiFormat = selected.map { mapOf("role" to it.role, "content" to it.content) },
+            agentMeta = agentMeta
         )
         return gson.toJson(export)
     }

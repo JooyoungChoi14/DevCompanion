@@ -46,7 +46,7 @@ class AgentLoop(
     companion object {
         private const val TAG = "AgentLoop"
         private const val MAX_CONSECUTIVE_ERRORS = 3
-        private const val MAX_SAME_ACTION_REPEAT = 3
+        private const val MAX_SAME_ACTION_REPEAT = 2
     }
 
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)

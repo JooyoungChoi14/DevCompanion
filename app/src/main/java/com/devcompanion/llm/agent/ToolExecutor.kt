@@ -42,6 +42,7 @@ class ToolExecutor(
                 "scroll" -> executeScroll(call, webView)
                 "eval_js" -> executeEval(call, webView)
                 "get_dom" -> executeGetDom(call, webView)
+                "extract_text" -> executeExtractText(call, webView)
                 "get_computed_style" -> executeGetComputedStyle(call, webView)
                 "set_style" -> executeSetStyle(call, webView)
                 "screenshot" -> executeScreenshot(call, webView)
@@ -163,7 +164,26 @@ class ToolExecutor(
         """.trimIndent()
 
         val result = webView.evalJs(js)
-        return ToolResult(call.id, result)
+
+        // Append WebView environment warning for specific result patterns
+        val enhancedResult = if (result.contains(""""t":"error"""")) {
+            // Check for CSP error specifically
+            if (result.contains("Content Security Policy", ignoreCase = true) ||
+                result.contains("unsafe-eval", ignoreCase = true)) {
+                "$result\n\n[WebView: CSP blocks eval on this site. Do NOT retry eval_js. Use get_dom, extract_text, click, or navigate to backend APIs instead.]"
+            } else {
+                "$result\n\n[WebView: eval_js returned an error. Consider alternative tools.]"
+            }
+        } else if (result.contains("download", ignoreCase = true) ||
+                   result.contains("saved", ignoreCase = true) ||
+                   result.contains("exported", ignoreCase = true)) {
+            // Flag potential false positives — JS return values don't mean actual file I/O
+            "$result\n\n[WebView WARNING: eval_js cannot trigger real file downloads or save files. This string only means JS code executed, NOT that a file was saved to the device. To provide data to the user, include it in your response text.]"
+        } else {
+            result
+        }
+
+        return ToolResult(call.id, enhancedResult)
     }
 
     private suspend fun executeGetDom(call: ToolCall, webView: WebView): ToolResult {
@@ -179,11 +199,90 @@ class ToolExecutor(
                 html = html.replace(/(<input[^>]*type=["']password["'][^>]*?value=)["'][^"']*["']/gi, '$1"***"');
                 html = html.replace(/(<input[^>]*?value=)["'][^"']*["']([^>]*?type=["']hidden["'])/gi, '$1"***"$2');
                 
+                var totalLen = html.length;
+                var maxLen = 10000;
+                var truncated = totalLen > maxLen;
+                var capturedHtml = html.substring(0, maxLen);
+                
                 return JSON.stringify({
                     tagName: el.tagName,
-                    outerHTML: html.substring(0, 10000),
+                    outerHTML: capturedHtml,
                     textContent: el.textContent ? el.textContent.substring(0, 2000) : null,
-                    childCount: el.children.length
+                    childCount: el.children.length,
+                    _meta: { truncated: truncated, totalLength: totalLen, capturedLength: capturedHtml.length }
+                });
+            })()
+        """.trimIndent()
+
+        val result = webView.evalJs(js)
+        return ToolResult(call.id, result)
+    }
+
+    private suspend fun executeExtractText(call: ToolCall, webView: WebView): ToolResult {
+        val selector = call.arguments.getAsJsonPrimitive("selector")?.asString ?: "body"
+        val includeHeadings = call.arguments.getAsJsonPrimitive("includeHeadings")?.asBoolean ?: true
+
+        val js = """
+            (function(){
+                var el = document.querySelector(${escapeJsString(selector)});
+                if (!el) return JSON.stringify({error:'not found', selector:${escapeJsString(selector)}});
+                
+                // Extract text content with structure preservation
+                var maxLen = 8000;
+                var texts = [];
+                var totalLen = 0;
+                
+                function walk(node, depth) {
+                    if (totalLen >= maxLen) return;
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        var t = node.textContent.trim();
+                        if (t.length > 0) {
+                            texts.push(t);
+                            totalLen += t.length + 1;
+                        }
+                        return;
+                    }
+                    if (node.nodeType !== Node.ELEMENT_NODE) return;
+                    
+                    var tag = node.tagName.toLowerCase();
+                    
+                    // Skip hidden elements
+                    var style = window.getComputedStyle(node);
+                    if (style.display === 'none' || style.visibility === 'hidden') return;
+                    
+                    // Skip script/style
+                    if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
+                    
+                    // Add heading markers
+                    if (${includeHeadings} && /^h[1-6]$/.test(tag)) {
+                        var prefix = '#'.repeat(parseInt(tag[1]));
+                        texts.push('\n' + prefix + ' ' + (node.textContent || '').trim());
+                        totalLen += texts[texts.length-1].length + 1;
+                        return;
+                    }
+                    
+                    // Add paragraph breaks
+                    if (tag === 'p' || tag === 'div' || tag === 'li' || tag === 'tr' || tag === 'br' || tag === 'hr') {
+                        if (texts.length > 0 && texts[texts.length-1] !== '\n') {
+                            texts.push('\n');
+                            totalLen += 1;
+                        }
+                    }
+                    
+                    for (var i = 0; i < node.childNodes.length; i++) {
+                        walk(node.childNodes[i], depth + 1);
+                    }
+                }
+                
+                walk(el, 0);
+                
+                var result = texts.join(' ').replace(/ +\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+                var truncated = result.length >= maxLen;
+                
+                return JSON.stringify({
+                    text: result.substring(0, maxLen),
+                    selector: ${escapeJsString(selector)},
+                    _meta: { truncated: truncated, totalLength: totalLen, capturedLength: Math.min(result.length, maxLen) }
                 });
             })()
         """.trimIndent()

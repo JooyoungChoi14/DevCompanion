@@ -155,22 +155,36 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         return count
     }
 
+    /** Build agent metadata for export debugging. */
+    private fun buildAgentMeta(): AgentMeta? {
+        val mode = if (_agentMode.value) "agent" else "chat"
+        val prompt = try { buildSystemPrompt(mode) } catch (_: Exception) { null } ?: return null
+        val tools = if (mode == "agent") WebViewTools.ALL.map { ToolMeta(it.name, it.description) }
+                    else listOf(ToolMeta("switch_mode", WebViewTools.SWITCH_MODE.description),
+                                 ToolMeta("get_current_mode", WebViewTools.GET_CURRENT_MODE.description))
+        return AgentMeta(systemPrompt = prompt, mode = mode, currentUrl = null, toolDefinitions = tools)
+    }
+
     /** Export current conversation as JSON string. */
     fun exportCurrentConversation(): String? {
-        return ChatHistory.exportToJson(getApplication<Application>(), _conversationId.value)
+        val meta = buildAgentMeta()
+        return ChatHistory.exportToJson(getApplication<Application>(), _conversationId.value, meta)
     }
 
     /** Export multiple conversations as a JSON array string. */
     fun exportMultipleConversations(conversationIds: List<String>): String {
-        return ChatHistory.exportMultipleToJson(getApplication<Application>(), conversationIds)
+        val meta = buildAgentMeta()
+        return ChatHistory.exportMultipleToJson(getApplication<Application>(), conversationIds, meta)
     }
 
     /** Export selected messages from the current conversation as JSON string. */
     fun exportSelectedMessages(messageIds: Set<String>): String? {
+        val meta = buildAgentMeta()
         return ChatHistory.exportMessagesToJson(
             getApplication<Application>(),
             _conversationId.value,
-            messageIds
+            messageIds,
+            meta
         )
     }
 
