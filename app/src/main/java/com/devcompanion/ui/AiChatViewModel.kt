@@ -18,6 +18,7 @@ import com.devcompanion.llm.agent.ActionRisk
 import com.devcompanion.llm.agent.AgentEvent
 import com.devcompanion.llm.agent.AgentLoop
 import com.devcompanion.llm.agent.AgentState
+import com.devcompanion.llm.agent.ContextCompactor
 import com.devcompanion.llm.agent.LlmResponse
 import com.devcompanion.llm.agent.PermissionGate
 import com.devcompanion.llm.agent.ToolCall
@@ -638,7 +639,19 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             getCurrentMode = { if (_agentMode.value) "agent" else "chat" }
         )
         val gate = PermissionGate()
-        val loop = AgentLoop(executor, gate, maxIterations = LlmSettings.maxIterations)
+
+        // N1: ContextCompactor — compacts conversation when it exceeds token budget
+        // Uses LlmRepositoryImpl.complete for a simple non-streaming summary generation
+        val compactor = ContextCompactor { summaryPrompt ->
+            try {
+                val repository = LlmRepositoryImpl(currentProvider)
+                repository.complete(summaryPrompt, null)
+            } catch (e: Exception) {
+                "(compaction failed: ${e.message})"
+            }
+        }
+
+        val loop = AgentLoop(executor, gate, maxIterations = LlmSettings.maxIterations, contextCompactor = compactor)
         loop.supportsVision = currentProvider.supportsVision
         loop.providerName = currentProvider.displayName
         loop.modelName = currentProvider.model

@@ -41,7 +41,8 @@ class AgentLoop(
     private val toolExecutor: ToolExecutor,
     private val permissionGate: PermissionGate,
     private val maxIterations: Int = 10,
-    private val undoStack: UndoStack = UndoStack()
+    private val undoStack: UndoStack = UndoStack(),
+    private val contextCompactor: ContextCompactor? = null
 ) {
     companion object {
         private const val TAG = "AgentLoop"
@@ -51,6 +52,14 @@ class AgentLoop(
         private const val CONTEXT_TOOL_RESULT_BUDGET = 4000
         /** Fraction of tool result budget allocated to the tail (end) when middle-truncating. */
         private const val MIDDLE_TRUNCATE_TAIL_RATIO = 0.3f
+        /** Minimum tool result budget (chars) for adaptive truncation. */
+        private const val MIN_TOOL_RESULT_BUDGET = 2000
+        /** Maximum tool result budget (chars) for adaptive truncation. */
+        private const val MAX_TOOL_RESULT_BUDGET = 6000
+        /** Estimated context token budget (triggers compaction when exceeded). */
+        private const val ESTIMATED_CONTEXT_TOKEN_BUDGET = 8000
+        /** Reserve ratio: fraction of context to keep free for new content (LibreChat pattern). */
+        private const val CONTEXT_RESERVE_RATIO = 0.15f
     }
 
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)
@@ -100,7 +109,8 @@ class AgentLoop(
         isTruncated: Boolean,
         entryIndex: Int,
         userIntent: String,
-        errorType: String?
+        errorType: String?,
+        budget: Int = CONTEXT_TOOL_RESULT_BUDGET
     ): String {
         return buildString {
             // Context frame header
@@ -122,10 +132,10 @@ class AgentLoop(
                 }
             }
 
-            // Truncation warning with recall hint — M3: middle truncation
+            // Truncation warning with recall hint — M3: middle truncation (N4: adaptive budget)
             if (isTruncated) {
-                val truncated = middleTruncate(rawOutput, CONTEXT_TOOL_RESULT_BUDGET)
-                appendLine("⚠️ RESULT TRUNCATED: ${rawOutput.length} chars total, showing ${CONTEXT_TOOL_RESULT_BUDGET} chars (head + tail). Use recall(index=$entryIndex) to retrieve the full content.")
+                val truncated = middleTruncate(rawOutput, budget)
+                appendLine("⚠️ RESULT TRUNCATED: ${rawOutput.length} chars total, showing ${budget} chars (head + tail). Use recall(index=$entryIndex) to retrieve the full content.")
                 appendLine("---")
                 appendLine(truncated)
                 appendLine("---")
@@ -173,6 +183,30 @@ class AgentLoop(
         return raw.take(headSize) +
             "\n\n... [$omitted chars omitted] ...\n\n" +
             raw.takeLast(tailSize)
+    }
+
+    /**
+     * Compute adaptive tool result budget based on current context usage and remaining iterations.
+     *
+     * When context is already large or iterations are running low, we reduce the per-result
+     * budget to avoid overwhelming the context window. When there's plenty of room,
+     * we allow more content per result.
+     *
+     * Inspired by LibreChat's per-agent `maxToolResultChars` with dynamic allocation.
+     *
+     * @param messages Current conversation messages
+     * @param remainingIterations How many iterations are left (including this one)
+     * @return Character budget for the current tool result
+     */
+    private fun computeToolResultBudget(messages: List<ChatMessage>, remainingIterations: Int): Int {
+        // Rough estimate of current context size in chars
+        val contextChars = messages.sumOf { it.content.length }
+        // Each remaining iteration might add ~budget chars of tool result
+        // Use diminishing budget as context grows
+        val contextBudgetChars = ESTIMATED_CONTEXT_TOKEN_BUDGET * 4 // chars
+        val available = (contextBudgetChars - contextChars).coerceAtLeast(0)
+        val perIteration = available / maxOf(remainingIterations, 1)
+        return perIteration.coerceIn(MIN_TOOL_RESULT_BUDGET, MAX_TOOL_RESULT_BUDGET)
     }
 
     // ── Action signature for loop detection ─────────────────────────
@@ -310,6 +344,26 @@ class AgentLoop(
         for (i in 0 until iterations) {
             val iteration = i + startIterationOffset
             val remainingIterations = iterations - i
+
+            // ── N2: Pre-turn token check + compaction ────────────────────
+            contextCompactor?.let { compactor ->
+                val estimatedTokens = compactor.estimateTokens(messages)
+                val budgetLimit = (ESTIMATED_CONTEXT_TOKEN_BUDGET * (1 - CONTEXT_RESERVE_RATIO)).toInt()
+                if (estimatedTokens > budgetLimit) {
+                    Log.i(TAG, "Pre-turn compaction: $estimatedTokens tokens > $budgetLimit budget (iteration $iteration)")
+                    SessionLog.log(EventType.AGENT_START, mapOf(
+                        "what" to "context_compaction",
+                        "estimatedTokens" to estimatedTokens.toString(),
+                        "budget" to budgetLimit.toString(),
+                        "iteration" to iteration.toString()
+                    ))
+                    val compacted = compactor.compact(messages)
+                    if (compacted) {
+                        emit(AgentEvent.TextResponse("[Context was compacted to stay within token budget. Continuing...]"))
+                    }
+                }
+            }
+
             val effectiveTools = if (remainingIterations <= 1) emptyList() else WebViewTools.ALL
 
             // ── M2: Token budget awareness ──────────────────────────────
@@ -504,7 +558,10 @@ class AgentLoop(
 
                     // Store full result in scratchpad (untruncated)
                     val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
-                    val isTruncated = result.output.length > CONTEXT_TOOL_RESULT_BUDGET
+                    // ── N4: Adaptive tool result budget ──────────────────────
+                    // Compute budget based on remaining context capacity and iterations
+                    val adaptiveBudget = computeToolResultBudget(messages, remainingIterations)
+                    val isTruncated = result.output.length > adaptiveBudget
                     val errorType = detectErrorType(result.output) ?: if (result.isError) "error" else null
                     val entry = scratchpad.store(
                         toolName = call.name,
@@ -540,7 +597,8 @@ class AgentLoop(
                         isTruncated = isTruncated,
                         entryIndex = entry.index,
                         userIntent = scratchpad.userIntent,
-                        errorType = errorType
+                        errorType = errorType,
+                        budget = adaptiveBudget
                     )
 
                     // Include tool_call_id for API protocol compliance

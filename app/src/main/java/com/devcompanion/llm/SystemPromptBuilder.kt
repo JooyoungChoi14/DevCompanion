@@ -54,6 +54,14 @@ object SystemPromptBuilder {
             sb.appendLine("## Current Page")
             sb.appendLine("URL: $currentUrl")
             sb.appendLine()
+
+            // ── N3: Domain-specific hints based on URL ───────────────────
+            val domainHint = buildDomainHints(currentUrl)
+            if (domainHint.isNotEmpty()) {
+                sb.appendLine("## Domain Notes")
+                sb.appendLine(domainHint)
+                sb.appendLine()
+            }
         }
 
         // ── Recent URLs (context for navigation requests) ─────────────
@@ -187,5 +195,63 @@ object SystemPromptBuilder {
         }
 
         return sb.toString().trimEnd()
+    }
+
+    /**
+     * Build domain-specific hints based on the current URL.
+     *
+     * Inspired by LibreChat's MCP instruction injection pattern —
+     * different sites have different capabilities and restrictions.
+     * Providing this info upfront prevents the LLM from discovering
+     * restrictions through repeated failures.
+     *
+     * @param url The current page URL
+     * @return Domain-specific hints string, or empty string if no hints apply
+     */
+    private fun buildDomainHints(url: String): String {
+        val hints = mutableListOf<String>()
+        val lower = url.lowercase()
+
+        when {
+            lower.contains("google.com") -> {
+                hints.add("Google sites enforce strict CSP. eval_js will likely fail. Use click, type, extract_text, and get_dom only.")
+            }
+            lower.contains("chatgpt.com") || lower.contains("openai.com") || lower.contains("chat.openai.com") -> {
+                hints.add("OpenAI sites block JavaScript injection. Prefer get_dom and extract_text over eval_js.")
+                hints.add("Dynamic content loads via React — get_dom may show initial state only. Try extract_text for rendered content.")
+            }
+            lower.contains("github.com") -> {
+                hints.add("GitHub pages support eval_js. Use get_dom with specific selectors for code content (e.g., .blob-content, .CodeMirror).")
+            }
+            lower.contains("twitter.com") || lower.contains("x.com") -> {
+                hints.add("Twitter/X uses heavy CSP. eval_js will likely fail. Use extract_text and click only.")
+                hints.add("Timeline content loads dynamically — extract_text may capture more than get_dom.")
+            }
+            lower.contains("youtube.com") -> {
+                hints.add("YouTube uses CSP. eval_js may fail. Use extract_text for video metadata and click for interactions.")
+            }
+            lower.contains("reddit.com") -> {
+                hints.add("Reddit supports eval_js. Use get_dom with specific selectors for post content.")
+            }
+            lower.contains("stackoverflow.com") || lower.contains("stackexchange.com") -> {
+                hints.add("Stack sites support eval_js. Use get_dom with .answer and .question selectors for content extraction.")
+            }
+            lower.contains("amazon.") || lower.contains("amazon.co.jp") || lower.contains("amazon.co.uk") -> {
+                hints.add("Amazon uses dynamic loading. eval_js works but may return stale data. Prefer extract_text for product details.")
+            }
+            lower.contains("naver.com") -> {
+                hints.add("Naver sites may use CSP. If eval_js fails, switch to extract_text and click.")
+            }
+            lower.contains("coupang.com") -> {
+                hints.add("Coupang uses heavy dynamic rendering. extract_text may capture more product info than get_dom.")
+            }
+        }
+
+        // Generic HTTPS hint for unknown domains
+        if (hints.isEmpty() && url.startsWith("https://")) {
+            hints.add("If eval_js returns a CSP error, switch to get_dom, extract_text, and click. Many modern sites enforce CSP.")
+        }
+
+        return hints.joinToString("\n")
     }
 }
