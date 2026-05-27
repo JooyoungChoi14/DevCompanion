@@ -49,6 +49,8 @@ class AgentLoop(
         private const val MAX_SAME_ACTION_REPEAT = 2
         /** Maximum length of tool result content sent to LLM context. Results exceeding this are truncated with a recall hint. */
         private const val CONTEXT_TOOL_RESULT_BUDGET = 4000
+        /** Fraction of tool result budget allocated to the tail (end) when middle-truncating. */
+        private const val MIDDLE_TRUNCATE_TAIL_RATIO = 0.3f
     }
 
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)
@@ -58,6 +60,16 @@ class AgentLoop(
 
     /** Scratchpad for storing full tool results during this agent session. */
     private var scratchpad: SessionScratchpad = SessionScratchpad()
+
+    // ── Loop detection state (M1 + M4) ───────────────────────────────
+
+    /** Tracks repeated recall of the same scratchpad index. */
+    private var lastRecallIndex: Int? = null
+    private var recallRepeatCount = 0
+
+    /** Tracks (toolName, keyParam) signature for same-action detection. */
+    private var lastActionSignature: ActionSignature? = null
+    private var sameActionCount = 0
 
     /** Whether the current provider supports vision (image input). Set by ViewModel. */
     var supportsVision: Boolean = true
@@ -110,11 +122,12 @@ class AgentLoop(
                 }
             }
 
-            // Truncation warning with recall hint
+            // Truncation warning with recall hint — M3: middle truncation
             if (isTruncated) {
-                appendLine("⚠️ RESULT TRUNCATED: Only first ${CONTEXT_TOOL_RESULT_BUDGET} of ${rawOutput.length} chars shown. Use recall(index=$entryIndex) to retrieve the full content.")
+                val truncated = middleTruncate(rawOutput, CONTEXT_TOOL_RESULT_BUDGET)
+                appendLine("⚠️ RESULT TRUNCATED: ${rawOutput.length} chars total, showing ${CONTEXT_TOOL_RESULT_BUDGET} chars (head + tail). Use recall(index=$entryIndex) to retrieve the full content.")
                 appendLine("---")
-                appendLine(rawOutput.take(CONTEXT_TOOL_RESULT_BUDGET))
+                appendLine(truncated)
                 appendLine("---")
                 appendLine("[End of truncated result. Full content available via recall(index=$entryIndex)]")
             } else {
@@ -140,6 +153,35 @@ class AgentLoop(
             else -> null
         }
     }
+
+    /**
+     * Middle-truncate a string: keep head + tail with an omission marker in between.
+     * This preserves both the beginning and end of long tool results,
+     * which is far more useful than head-only truncation.
+     *
+     * Inspired by Codex TruncationPolicy (middle truncation pattern).
+     *
+     * @param raw The full string to truncate.
+     * @param budget Maximum character budget.
+     * @return Truncated string with "[N chars omitted]" marker.
+     */
+    private fun middleTruncate(raw: String, budget: Int): String {
+        if (raw.length <= budget) return raw
+        val tailSize = (budget * MIDDLE_TRUNCATE_TAIL_RATIO).toInt()
+        val headSize = budget - tailSize - 30 // 30 chars for the omission marker
+        val omitted = raw.length - headSize - tailSize
+        return raw.take(headSize) +
+            "\n\n... [$omitted chars omitted] ...\n\n" +
+            raw.takeLast(tailSize)
+    }
+
+    // ── Action signature for loop detection ─────────────────────────
+
+    /**
+     * Identifies a tool call by its name and key parameter (selector or url).
+     * Used to detect repeated identical actions across iterations.
+     */
+    private data class ActionSignature(val tool: String, val keyParam: String?)
 
     /** Callback for requesting user confirmation of sensitive actions. */
     var confirmationHandler: suspend (ToolCall, ToolConfirmationDetails) -> Boolean = { _, _ -> false }
@@ -202,6 +244,12 @@ class AgentLoop(
     ) {
         _state.value = AgentState.Thinking(0)
 
+        // Reset loop detection state for new session
+        lastRecallIndex = null
+        recallRepeatCount = 0
+        lastActionSignature = null
+        sameActionCount = 0
+
         // Reset scratchpad for new session and set user intent
         scratchpad = SessionScratchpad()
         scratchpad.setUserIntent(userMessage)
@@ -263,10 +311,19 @@ class AgentLoop(
             val iteration = i + startIterationOffset
             val remainingIterations = iterations - i
             val effectiveTools = if (remainingIterations <= 1) emptyList() else WebViewTools.ALL
+
+            // ── M2: Token budget awareness ──────────────────────────────
+            // Inject iteration + token budget info into every iteration
+            val budgetInfo = buildString {
+                append("[BUDGET: Iteration ${iteration + 1}/$maxIterations")
+                append(", remaining: $remainingIterations iterations")
+                append("]")
+            }
             val budgetWarning = when {
+                remainingIterations <= 1 -> "\n[SYSTEM: No more tool calls allowed. Summarize your findings and respond in text only.]"
                 remainingIterations == 2 -> "\n[SYSTEM: You have 1 tool call remaining. After this, summarize your findings and respond in text only.]"
-                remainingIterations == 1 -> "\n[SYSTEM: No more tool calls allowed. Summarize your findings and respond in text only.]"
-                else -> null
+                iteration + 1 >= maxIterations - 2 -> "\n$budgetInfo\n[SYSTEM: You are near the iteration limit. Prioritize the most important remaining action, then summarize.]"
+                else -> "\n$budgetInfo"
             }
 
             // Capture URL before any tool execution for URL_CHANGE tracking
@@ -338,7 +395,27 @@ class AgentLoop(
 
                 // Process each tool call
                 for (call in response.toolCalls) {
-                    // Loop detection
+                    // ── M4: Same-action loop detection (ActionSignature) ──
+                    val signature = ActionSignature(
+                        call.name,
+                        call.arguments.getAsJsonPrimitive("selector")?.asString
+                            ?: call.arguments.getAsJsonPrimitive("url")?.asString
+                    )
+                    if (signature == lastActionSignature) {
+                        sameActionCount++
+                        if (sameActionCount >= MAX_SAME_ACTION_REPEAT) {
+                            messages.add(ChatMessage(
+                                role = "system",
+                                content = "[SYSTEM: You have called ${signature.tool}(${signature.keyParam}) $sameActionCount times with the same result. STOP repeating this action. Try a different approach or report the limitation to the user.]"
+                            ))
+                            sameActionCount = 0 // reset to allow continuation with different action
+                        }
+                    } else {
+                        lastActionSignature = signature
+                        sameActionCount = 0
+                    }
+
+                    // Legacy loop detection (kept for full-argument-string match)
                     val actionKey = call.name to call.arguments.toString()
                     if (actionKey == prevAction) {
                         repeatCount++
@@ -436,6 +513,24 @@ class AgentLoop(
                         truncated = isTruncated,
                         errorType = errorType
                     )
+
+                    // ── M1: Recall repeat detection ────────────────────────
+                    if (call.name == "recall") {
+                        val idx = call.arguments.getAsJsonPrimitive("index")?.asInt
+                        if (idx == lastRecallIndex) {
+                            recallRepeatCount++
+                            if (recallRepeatCount >= 2) {
+                                messages.add(ChatMessage(
+                                    role = "system",
+                                    content = "[SYSTEM: You have recalled the same entry (index=$idx) twice. Stop recalling and proceed with your current information, or tell the user what is missing.]"
+                                ))
+                                // Don't abort — just warn and let the loop continue
+                            }
+                        } else {
+                            lastRecallIndex = idx
+                            recallRepeatCount = 0
+                        }
+                    }
 
                     // Build context-framed tool result message
                     val framedContent = buildFramedToolResult(

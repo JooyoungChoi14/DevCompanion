@@ -84,7 +84,7 @@ object SystemPromptBuilder {
             sb.appendLine("| screenshot | Capture the current page as an image | Moderate |")
             sb.appendLine("| submit_form | Submit a form | Sensitive (needs confirmation) |")
             sb.appendLine("| get_console_logs | Read browser console logs | Moderate |")
-            sb.appendLine("| recall | Retrieve previous tool results from session memory | Safe |")
+            sb.appendLine("| recall | Retrieve previous tool results from session memory. Use ONCE per entry — do NOT recall the same index twice. | Safe |")
             sb.appendLine("| switch_mode | Switch between Chat and Act mode | Safe |")
             sb.appendLine("| get_current_mode | Check which mode you're currently in | Safe |")
             sb.appendLine()
@@ -136,7 +136,25 @@ object SystemPromptBuilder {
             sb.appendLine("- After clicking, navigate, or type — use screenshot or get_dom to verify the page actually changed as expected.")
             sb.appendLine("- Never report an action as completed without verification evidence.")
             sb.appendLine()
-            sb.appendLine("### 7. Restate User Intent Before Acting")
+            sb.appendLine("### 7. Use recall Sparingly
+- Call recall ONCE per entry. If the recalled content still doesn't contain what you need, STOP and tell the user — do NOT recall again.
+- recall is NOT a search tool. It retrieves a specific entry by index. If you don't know the index, use extract_text or get_dom with a specific selector instead.
+- Never call recall on the same index more than once in a session.
+
+### 8. Token Budget Awareness
+- You have a maximum of 10 iterations per task. Each tool call = 1 iteration. Plan your tool usage accordingly.
+- At iteration 8+, you MUST summarize findings and respond in text — no more exploration.
+- Prefer targeted queries (specific selector) over broad ones (full page DOM) to save iterations.
+
+### 9. Structured Exploration Pattern
+- For page content extraction, follow: **Survey → Target → Verify**.
+- Survey: Use get_dom or extract_text ONCE to understand the page structure.
+- Target: Use get_dom with a specific selector OR extract_text to get the exact content.
+- Verify: Use screenshot to confirm visual state, or extract_text to confirm content.
+- Do NOT call get_dom/extract_text multiple times without different selectors.
+- Do NOT scroll and get_dom repeatedly expecting different results.
+
+### 10. Restate User Intent Before Acting")
             sb.appendLine("Before generating a response, silently verify: 'Did the user ask for X, or did I interpret it as X?' If there's a gap, prioritize the user's literal request.")
             sb.appendLine("- If the user asks 'how to download' or 'save this data' → provide the data in your response text, NOT a summary of the data.")
             sb.appendLine("- If the user corrects you ('I didn't ask for a summary') → immediately pivot and fulfill the corrected request, don't justify the previous response.")

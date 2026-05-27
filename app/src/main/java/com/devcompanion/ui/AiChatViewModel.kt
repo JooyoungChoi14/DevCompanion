@@ -861,9 +861,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 agentJob = null
                 SessionLog.log(EventType.AGENT_END, mapOf("reason" to "loop_finished"))
                 // Stop foreground service when agent finishes
-                getApplication<Application>().stopService(
-                    Intent(getApplication<Application>(), AgentService::class.java)
-                )
+                val app = getApplication<Application>()
+                app.startService(Intent(app, AgentService::class.java).apply {
+                    action = AgentService.ACTION_STOP
+                })
             }
         }
     }
@@ -882,7 +883,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _agentState.value = AgentState.Idle
         // Stop foreground service
         val app = getApplication<Application>()
-        app.stopService(Intent(app, AgentService::class.java))
+        app.startService(Intent(app, AgentService::class.java).apply {
+            action = AgentService.ACTION_STOP
+        })
         _isStreaming.value = false
         _currentResponse.value = ""
         _pendingConfirmation.value = null
