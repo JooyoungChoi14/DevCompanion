@@ -251,25 +251,19 @@ fun AiChatScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = {
-                    Icon(
-                        Icons.Default.Menu,
-                        contentDescription = "Conversations",
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clickable { scope.launch { drawerState.open() } },
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                },
+                title = { },
                 navigationIcon = {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                    // Drawer toggle — primary navigation, always visible and tappable
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(Icons.Default.Menu, contentDescription = "Conversations")
                     }
                 },
                 actions = {
-                    // View/Act mode switch — always visible
+                    // View/Act mode switch — flexible width, takes remaining space
                     SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier.height(28.dp)
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
                     ) {
                         SegmentedButton(
                             selected = !agentMode,
@@ -304,23 +298,13 @@ fun AiChatScreen(
                             contentDescription = if (isInSelectMode) "Exit select mode" else "Select messages"
                         )
                     }
-                    // Capture — hidden during select mode (select and capture are mutually exclusive)
-                    if (!isInSelectMode) {
-                        IconButton(
-                            onClick = { if (webView != null) showCaptureDialog = true },
-                            enabled = webView != null
-                        ) {
-                            Icon(
-                                Icons.Default.PhotoCamera,
-                                contentDescription = "Capture context",
-                                tint = if (lastContext != null) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     // Settings
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                    // Close chat
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = "Close")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -559,7 +543,7 @@ fun AiChatScreen(
                     }
                 }
             }
-            // Auto-capture indicator
+            // Auto-capture indicator — also serves as manual capture trigger (camera button removed from TopAppBar)
             AnimatedVisibility(visible = lastContext == null && autoCapture && webView != null) {
                 Surface(
                     color = MaterialTheme.colorScheme.tertiaryContainer,
@@ -579,10 +563,45 @@ fun AiChatScreen(
                             color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
                         Spacer(modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            if (webView != null) showCaptureDialog = true
+                        }) {
+                            Text("Capture", style = MaterialTheme.typography.labelSmall)
+                        }
                         Text(
-                            "Tap to disable",
+                            "\u00B7",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.5f)
+                        )
+                        Text(
+                            "Disable",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.clickable { viewModel.setAutoCaptureEnabled(false) }
+                        )
+                    }
+                }
+            }
+
+            // Manual capture trigger — shown when auto-capture is off and no context captured
+            // (camera button removed from TopAppBar; this is the alternative entry point)
+            AnimatedVisibility(visible = lastContext == null && !autoCapture && webView != null && !isInSelectMode) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = Spacing.md, vertical = Spacing.xs)
+                            .clickable { if (webView != null) showCaptureDialog = true },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("\uD83D\uDCF7", style = MaterialTheme.typography.labelMedium)
+                        Spacer(modifier = Modifier.width(Spacing.xs))
+                        Text(
+                            "Capture page context",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
