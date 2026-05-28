@@ -1,6 +1,7 @@
 package com.devcompanion.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -25,6 +26,8 @@ import com.devcompanion.llm.LlmRepositoryImpl
 import com.devcompanion.llm.LlmSettings
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.ui.theme.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 

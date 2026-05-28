@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 // Removed: detectTapGestures, pointerInput — select mode is now explicit toggle, not gesture
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -346,11 +347,12 @@ fun AiChatScreen(
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
                                     provider!!.displayName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline,
-                                maxLines = 1
-                            )
-                        } else {
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1
+                                )
+                            }
+                        }
                             Text(
                                 "No provider ⚠️",
                                 style = MaterialTheme.typography.labelSmall,
@@ -450,7 +452,6 @@ fun AiChatScreen(
                                     MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.outline
                             )
-                        }
                         }
                     }
                 }
