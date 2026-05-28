@@ -336,6 +336,7 @@ fun AiChatScreen(
                                     }
                             )
                         }
+                    }
                         if (totalInputTokens > 0 || totalOutputTokens > 0) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
