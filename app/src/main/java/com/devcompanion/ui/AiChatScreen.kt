@@ -259,11 +259,9 @@ fun AiChatScreen(
                     }
                 },
                 actions = {
-                    // View/Act mode switch — flexible width, takes remaining space
+                    // View/Act mode switch
                     SingleChoiceSegmentedButtonRow(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(28.dp)
+                        modifier = Modifier.height(28.dp)
                     ) {
                         SegmentedButton(
                             selected = !agentMode,
