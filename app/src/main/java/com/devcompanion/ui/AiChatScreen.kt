@@ -34,7 +34,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.devcompanion.llm.ChatMessage
 import com.devcompanion.llm.ConversationMeta
-import com.devcompanion.llm.LlmProvider
+import com.devcompanion.cdp.CdpClient
 import com.devcompanion.llm.LlmRepositoryImpl
 // Removed: EventType, SessionLog imports — no longer used after gesture code removal
 import com.devcompanion.llm.LlmSettings
@@ -48,38 +48,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import android.content.Intent
 
-/** Recommended models per provider type. */
-private val RECOMMENDED_MODELS = mapOf(
-    LlmProvider.Anthropic.TYPE to listOf(
-        "claude-sonnet-4-20250514",
-        "claude-opus-4-20250514",
-        "claude-3.5-haiku-20241022"
-    ),
-    LlmProvider.OpenAi.TYPE to listOf(
-        "gpt-4o",
-        "gpt-4o-mini",
-        "gpt-4.5-preview",
-        "o3",
-        "o4-mini"
-    ),
-    LlmProvider.Ollama.TYPE to listOf(
-        "glm-5.1",
-        "deepseek-v4-pro",
-        "deepseek-v4-flash",
-        "kimi-k2.5",
-        "kimi-k2.6",
-        "minimax-m2.7",
-        "qwen3.5:397b",
-        "qwen3-coder:480b",
-        "devstral-2:123b",
-        "llava"
-    ),
-    LlmProvider.Gemini.TYPE to listOf(
-        "gemini-2.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.0-flash"
-    )
-)
+
 
 /**
  * Full-screen AI chat UI.
@@ -92,6 +61,7 @@ private val RECOMMENDED_MODELS = mapOf(
 fun AiChatScreen(
     viewModel: AiChatViewModel = viewModel(),
     webView: WebView?,
+    cdpClient: CdpClient,
     initialPrompt: String? = null,
     startNewConversation: Boolean = false,
     onDismiss: () -> Unit,
@@ -838,7 +808,7 @@ fun AiChatScreen(
     // ── Settings sheet (unified: Appearance / AI / Integrations) ──
     if (showSettings) {
         SettingsSheet(
-            cdpClient = viewModel.cdpClient,
+            cdpClient = cdpClient,
             onDismiss = { showSettings = false },
             initialTab = settingsInitialTab,
             viewModel = viewModel

@@ -230,6 +230,7 @@ fun MainApp(
                 ) {
                     AiChatScreen(
                         webView = webViewRef,
+                        cdpClient = app!!.cdpClient,
                         initialPrompt = pendingAiQuestion,
                         startNewConversation = pendingAiQuestion != null,
                         onDismiss = { showAiChat = false; pendingAiQuestion = null },

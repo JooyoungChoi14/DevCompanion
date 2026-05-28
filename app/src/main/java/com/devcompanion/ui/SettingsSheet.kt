@@ -20,14 +20,13 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import com.devcompanion.cdp.CdpClient
+import com.devcompanion.ui.AiChatViewModel
 import com.devcompanion.github.ui.GitHubPatSection
 import com.devcompanion.llm.LlmProvider
 import com.devcompanion.llm.LlmRepositoryImpl
 import com.devcompanion.llm.LlmSettings
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.ui.theme.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
