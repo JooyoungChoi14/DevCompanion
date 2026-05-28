@@ -132,6 +132,7 @@ fun AiChatScreen(
 
     var inputText by remember { mutableStateOf("") }
     var showSettings by remember { mutableStateOf(false) }
+    var settingsInitialTab by remember { mutableIntStateOf(SETTINGS_TAB_APPEARANCE) }
     var showCaptureDialog by remember { mutableStateOf(false) }
 
     // Initialize new conversation with prompt via single ViewModel entry point (M2).
@@ -324,18 +325,27 @@ fun AiChatScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (provider != null) {
-                            Box(
+                            Row(
                                 modifier = Modifier
-                                    .size(5.dp)
-                                    .background(
-                                        color = if (provider!!.hasApiKey) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.error,
-                                        shape = CircleShape
-                                    )
-                            )
-                            Spacer(modifier = Modifier.width(3.dp))
-                            Text(
-                                provider!!.displayName,
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        settingsInitialTab = SETTINGS_TAB_AI
+                                        showSettings = true
+                                    },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(5.dp)
+                                        .background(
+                                            color = if (provider!!.hasApiKey) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.error,
+                                            shape = CircleShape
+                                        )
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    provider!!.displayName,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.outline,
                                 maxLines = 1
@@ -345,7 +355,13 @@ fun AiChatScreen(
                                 "No provider ⚠️",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.error,
-                                maxLines = 1
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        settingsInitialTab = SETTINGS_TAB_AI
+                                        showSettings = true
+                                    }
                             )
                         }
                         if (totalInputTokens > 0 || totalOutputTokens > 0) {
@@ -818,12 +834,13 @@ fun AiChatScreen(
         )
     }
 
-    // ── LLM Settings bottom sheet ──────────────────────────────────────
-
+    // ── Settings sheet (unified: Appearance / AI / Integrations) ──
     if (showSettings) {
-        LlmSettingsSheet(
-            viewModel = viewModel,
-            onDismiss = { showSettings = false }
+        SettingsSheet(
+            cdpClient = viewModel.cdpClient,
+            onDismiss = { showSettings = false },
+            initialTab = settingsInitialTab,
+            viewModel = viewModel
         )
     }
     } // ModalNavigationDrawer
@@ -1083,367 +1100,6 @@ private fun StreamingIndicator() {
             }
         }
     }
-}
-
-/**
- * LLM provider configuration bottom sheet.
- */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-private fun LlmSettingsSheet(
-    viewModel: AiChatViewModel,
-    onDismiss: () -> Unit
-) {
-    val currentProvider by viewModel.provider.collectAsState()
-
-    // Form state
-    var selectedType by remember {
-        mutableStateOf(
-            when (currentProvider) {
-                is LlmProvider.Anthropic -> LlmProvider.Anthropic.TYPE
-                is LlmProvider.OpenAi -> LlmProvider.OpenAi.TYPE
-                is LlmProvider.Ollama -> LlmProvider.Ollama.TYPE
-                is LlmProvider.Gemini -> LlmProvider.Gemini.TYPE
-                null -> LlmProvider.Anthropic.TYPE
-            }
-        )
-    }
-    var apiKey by remember { mutableStateOf(providerApiKey(currentProvider)) }
-    var baseUrl by remember { mutableStateOf(providerBaseUrl(currentProvider)) }
-    var model by remember { mutableStateOf(providerModel(currentProvider)) }
-    var showApiKey by remember { mutableStateOf(false) }
-    var testing by remember { mutableStateOf(false) }
-    var testResult by remember { mutableStateOf<String?>(null) }
-    var modelMenuExpanded by remember { mutableStateOf(false) }
-    val usingPlainStorage = LlmSettings.isUsingPlainStorage
-
-    val scope = rememberCoroutineScope()
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.surface,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.lg, vertical = Spacing.md)
-                .imePadding()
-        ) {
-            Text("LLM Provider", style = MaterialTheme.typography.titleMedium)
-
-            // Security warning for plaintext storage
-            if (usingPlainStorage) {
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(Spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs)
-                    ) {
-                        Icon(
-                            Icons.Default.Warning,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Text(
-                            "Encrypted storage unavailable — API keys stored in plaintext",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // Provider type selector
-            Text("Provider", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(modifier = Modifier.height(Spacing.xs))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-                verticalArrangement = Arrangement.spacedBy(Spacing.xs)
-            ) {
-                listOf(
-                    LlmProvider.Anthropic.TYPE to "Anthropic",
-                    LlmProvider.OpenAi.TYPE to "OpenAI",
-                    LlmProvider.Ollama.TYPE to "Ollama",
-                    LlmProvider.Gemini.TYPE to "Gemini"
-                ).forEach { (type, label) ->
-                    FilterChip(
-                        selected = selectedType == type,
-                        onClick = {
-                            selectedType = type
-                            // Reset form fields when switching provider type
-                            apiKey = ""
-                            baseUrl = when (type) {
-                                LlmProvider.Ollama.TYPE -> "https://ollama.com"
-                                LlmProvider.Gemini.TYPE -> "https://generativelanguage.googleapis.com/v1beta"
-                                else -> ""
-                            }
-                            model = when (type) {
-                                LlmProvider.Anthropic.TYPE -> "claude-sonnet-4-20250514"
-                                LlmProvider.OpenAi.TYPE -> "gpt-4o"
-                                LlmProvider.Ollama.TYPE -> "glm-5.1"
-                                LlmProvider.Gemini.TYPE -> "gemini-2.5-flash"
-                                else -> ""
-                            }
-                        },
-                        label = { Text(label, style = MaterialTheme.typography.labelMedium) }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            // API Key
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("API Key") },
-                placeholder = { Text(
-                    when (selectedType) {
-                        LlmProvider.Ollama.TYPE -> "Enter your Ollama Cloud API key"
-                        else -> "Enter your API key"
-                    }
-                )},
-                visualTransformation = if (showApiKey) VisualTransformation.None
-                else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { showApiKey = !showApiKey }) {
-                        Icon(
-                            if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (showApiKey) "Hide" else "Show"
-                        )
-                    }
-                },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.sm))
-
-            // Base URL (Ollama and Gemini only)
-            if (selectedType == LlmProvider.Ollama.TYPE || selectedType == LlmProvider.Gemini.TYPE) {
-                OutlinedTextField(
-                    value = baseUrl,
-                    onValueChange = { baseUrl = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Base URL") },
-                    placeholder = { Text(
-                        when (selectedType) {
-                            LlmProvider.Ollama.TYPE -> "https://ollama.com"
-                            LlmProvider.Gemini.TYPE -> "https://generativelanguage.googleapis.com/v1beta"
-                            else -> ""
-                        }
-                    )},
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
-                )
-                Spacer(modifier = Modifier.height(Spacing.sm))
-            }
-
-            // Model (all providers — dropdown with recommended + custom input)
-            ExposedDropdownMenuBox(
-                expanded = modelMenuExpanded,
-                onExpandedChange = { modelMenuExpanded = !modelMenuExpanded }
-            ) {
-                OutlinedTextField(
-                    value = model,
-                    onValueChange = { model = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                    label = { Text("Model") },
-                    placeholder = { Text(
-                        when (selectedType) {
-                            LlmProvider.Anthropic.TYPE -> "claude-sonnet-4-20250514"
-                            LlmProvider.OpenAi.TYPE -> "gpt-4o"
-                            LlmProvider.Ollama.TYPE -> "glm-5.1"
-                            LlmProvider.Gemini.TYPE -> "gemini-2.5-flash"
-                            else -> ""
-                        }
-                    )},
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelMenuExpanded) }
-                )
-                ExposedDropdownMenu(
-                    expanded = modelMenuExpanded,
-                    onDismissRequest = { modelMenuExpanded = false }
-                ) {
-                    RECOMMENDED_MODELS[selectedType]?.forEach { modelName ->
-                        DropdownMenuItem(
-                            text = { Text(modelName, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) },
-                            onClick = {
-                                model = modelName
-                                modelMenuExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(Spacing.sm))
-
-            // Save & Test row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                Button(
-                    onClick = {
-                        val newProvider = when (selectedType) {
-                            LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://api.anthropic.com" },
-                                model = model.ifEmpty { "claude-sonnet-4-20250514" }
-                            )
-                            LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://api.openai.com" },
-                                model = model.ifEmpty { "gpt-4o" }
-                            )
-                            LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://ollama.com" },
-                                model = model.ifEmpty { "glm-5.1" }
-                            )
-                            LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                                model = model.ifEmpty { "gemini-2.5-flash" }
-                            )
-                            else -> return@Button
-                        }
-                        viewModel.setProvider(newProvider)
-                        testResult = null
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Save")
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        val testProvider = when (selectedType) {
-                            LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://api.anthropic.com" },
-                                model = model.ifEmpty { "claude-sonnet-4-20250514" }
-                            )
-                            LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://api.openai.com" },
-                                model = model.ifEmpty { "gpt-4o" }
-                            )
-                            LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://ollama.com" },
-                                model = model.ifEmpty { "glm-5.1" }
-                            )
-                            LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
-                                apiKey = apiKey,
-                                baseUrl = baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                                model = model.ifEmpty { "gemini-2.5-flash" }
-                            )
-                            else -> return@OutlinedButton
-                        }
-                        testing = true
-                        testResult = null
-                        scope.launch {
-                            try {
-                                val repo = LlmRepositoryImpl(testProvider)
-                                val response = repo.complete("Hello")
-                                testResult = "✓ Connected: ${response.take(80)}"
-                            } catch (e: Exception) {
-                                testResult = "✗ Error: ${e.message?.take(100) ?: "Unknown"}"
-                            } finally {
-                                testing = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    enabled = apiKey.isNotBlank() && !testing
-                ) {
-                    if (testing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    } else {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Test")
-                }
-            }
-
-            // Test result
-            testResult?.let { result ->
-                Spacer(modifier = Modifier.height(Spacing.sm))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (result.startsWith("✓"))
-                            MaterialTheme.colorScheme.primaryContainer
-                        else
-                            MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Text(
-                        result,
-                        modifier = Modifier.padding(Spacing.sm),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.lg))
-        }
-    }
-}
-
-/**
- * Extract API key from a provider for form pre-fill.
- */
-private fun providerApiKey(provider: LlmProvider?): String = when (provider) {
-    is LlmProvider.Anthropic -> provider.apiKey
-    is LlmProvider.OpenAi -> provider.apiKey
-    is LlmProvider.Ollama -> provider.apiKey
-    is LlmProvider.Gemini -> provider.apiKey
-    null -> ""
-}
-
-/**
- * Extract base URL from a provider for form pre-fill.
- */
-private fun providerBaseUrl(provider: LlmProvider?): String = when (provider) {
-    is LlmProvider.Anthropic -> provider.baseUrl
-    is LlmProvider.OpenAi -> provider.baseUrl
-    is LlmProvider.Ollama -> provider.baseUrl
-    is LlmProvider.Gemini -> provider.baseUrl
-    null -> ""
-}
-
-/**
- * Extract model from a provider for form pre-fill.
- */
-private fun providerModel(provider: LlmProvider?): String = when (provider) {
-    is LlmProvider.Anthropic -> provider.model
-    is LlmProvider.OpenAi -> provider.model
-    is LlmProvider.Ollama -> provider.model
-    is LlmProvider.Gemini -> provider.model
-    null -> ""
 }
 
 /**
