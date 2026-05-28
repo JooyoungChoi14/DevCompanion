@@ -322,7 +322,7 @@ fun AiChatScreen(
                                     maxLines = 1
                                 )
                             }
-                        }
+                        } else {
                             Text(
                                 "No provider ⚠️",
                                 style = MaterialTheme.typography.labelSmall,
