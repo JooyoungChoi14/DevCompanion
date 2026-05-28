@@ -268,6 +268,7 @@ private fun AppearanceTab() {
 // ═══════════════════════════════════════════════════════════════
 // Tab 2: AI (LLM Provider + Instructions + Max Iterations)
 // ═══════════════════════════════════════════════════════════════
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AiTab(
     viewModel: AiChatViewModel?,
