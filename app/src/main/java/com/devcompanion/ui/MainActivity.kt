@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
+import com.devcompanion.llm.ChatHistory
 import com.devcompanion.DevCompanionApp
 import com.devcompanion.debug.WebViewDebuggerHolder
 import com.devcompanion.ui.theme.DevCompanionTheme
@@ -144,6 +145,9 @@ fun MainApp(
     var showAiChat by remember { mutableStateOf(false) }
     var pendingAiQuestion by remember { mutableStateOf<String?>(null) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var showSessionChoice by remember { mutableStateOf(false) }
+    var matchedConversationId by remember { mutableStateOf<String?>(null) }
+    var currentUrlForChat by remember { mutableStateOf<String?>(null) }
     val debugger = WebViewDebuggerHolder.current
     val isActive = debugger != null
 
@@ -167,7 +171,17 @@ fun MainApp(
                             style = MaterialTheme.typography.labelSmall,
                             modifier = Modifier.padding(end = Spacing.xs)
                         )
-                        IconButton(onClick = { showAiChat = true }) {
+                        IconButton(onClick = {
+                            val url = webViewRef?.url
+                            currentUrlForChat = url
+                            if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
+                                // Real URL — show session choice dialog
+                                showSessionChoice = true
+                            } else {
+                                // about:blank, chrome://, etc. — always new session
+                                showAiChat = true
+                            }
+                        }) {
                             Icon(
                                 Icons.Default.SmartToy,
                                 contentDescription = "AI Chat",
@@ -215,14 +229,74 @@ fun MainApp(
                 onWebViewCreated = { webView -> webViewRef = webView },
                 onAskAi = { question ->
                     pendingAiQuestion = question
-                    showAiChat = true
+                    val url = webViewRef?.url
+                    currentUrlForChat = url
+                    if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
+                        showSessionChoice = true
+                    } else {
+                        showAiChat = true
+                    }
                 }
             )
+
+            // Session choice dialog — shown when a matching URL conversation exists
+            if (showSessionChoice) {
+                val context = LocalContext.current
+                val matched = currentUrlForChat?.let { ChatHistory.findConversationByUrl(context, it) }
+
+                if (matched != null) {
+                    // Found existing conversation for this URL
+                    AlertDialog(
+                        onDismissRequest = { showSessionChoice = false },
+                        title = { Text("Existing session found") },
+                        text = {
+                            Column {
+                                Text("A conversation for this page already exists:")
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Surface(
+                                    tonalElevation = 1.dp,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        matched.title ?: "Untitled",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Resume that session or start a new one?", style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showSessionChoice = false
+                                matchedConversationId = matched.id
+                                showAiChat = true
+                            }) { Text("Resume") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                showSessionChoice = false
+                                matchedConversationId = null  // new session
+                                showAiChat = true
+                            }) { Text("New session") }
+                        }
+                    )
+                } else {
+                    // No existing conversation — open chat directly with new session
+                    LaunchedEffect(Unit) {
+                        showSessionChoice = false
+                        matchedConversationId = null
+                        showAiChat = true
+                    }
+                }
+            }
 
             // AI Chat as bottom sheet — WebView stays visible behind
             if (showAiChat) {
                 ModalBottomSheet(
-                    onDismissRequest = { showAiChat = false; pendingAiQuestion = null },
+                    onDismissRequest = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false
@@ -232,8 +306,10 @@ fun MainApp(
                         webView = webViewRef,
                         cdpClient = app!!.cdpClient,
                         initialPrompt = pendingAiQuestion,
-                        startNewConversation = pendingAiQuestion != null,
-                        onDismiss = { showAiChat = false; pendingAiQuestion = null },
+                        startNewConversation = matchedConversationId == null && pendingAiQuestion != null,
+                        resumeConversationId = matchedConversationId,
+                        sourceUrl = if (matchedConversationId == null) currentUrlForChat else null,
+                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null },
                         modifier = Modifier.imePadding()
                     )
                 }

@@ -15,7 +15,8 @@ data class ConversationMeta(
     val title: String?,
     val createdAt: Long,
     val updatedAt: Long,
-    val messageCount: Int
+    val messageCount: Int,
+    val sourceUrl: String? = null
 )
 
 /**
@@ -75,7 +76,7 @@ object ChatHistory {
     // ── Save / Load ────────────────────────────────────────────────
 
     /** Save messages for a given conversation. */
-    fun save(context: Context, conversationId: String, messages: List<ChatMessage>) {
+    fun save(context: Context, conversationId: String, messages: List<ChatMessage>, sourceUrl: String? = null) {
         try {
             val persistable = messages
                 .filter { it.role in listOf("user", "assistant", "system") }
@@ -91,6 +92,7 @@ object ChatHistory {
                 "createdAt" to (persistable.firstOrNull()?.timestamp ?: now),
                 "updatedAt" to now,
                 "messageCount" to persistable.size,
+                "sourceUrl" to (sourceUrl ?: loadSourceUrl(context, conversationId)),
                 "messages" to persistable
             )
             file.writeText(gson.toJson(meta))
@@ -141,7 +143,8 @@ object ChatHistory {
                                 title = map["title"] as? String ?: "Untitled",
                                 createdAt = (map["createdAt"] as? Number)?.toLong() ?: 0L,
                                 updatedAt = (map["updatedAt"] as? Number)?.toLong() ?: 0L,
-                                messageCount = (map["messageCount"] as? Number)?.toInt() ?: 0
+                                messageCount = (map["messageCount"] as? Number)?.toInt() ?: 0,
+                                sourceUrl = map["sourceUrl"] as? String
                             )
                         } else {
                             // Old format: plain message list
@@ -152,7 +155,8 @@ object ChatHistory {
                                 title = deriveTitle(msgs),
                                 createdAt = msgs.firstOrNull()?.timestamp ?: 0L,
                                 updatedAt = msgs.lastOrNull()?.timestamp ?: 0L,
-                                messageCount = msgs.size
+                                messageCount = msgs.size,
+                                sourceUrl = null
                             )
                         }
                     } catch (_: Exception) {
@@ -180,6 +184,45 @@ object ChatHistory {
     /** Generate a new conversation ID based on timestamp. */
     fun newConversationId(): String {
         return System.currentTimeMillis().toString()
+    }
+
+    /** Load sourceUrl from a saved conversation without parsing all messages. */
+    private fun loadSourceUrl(context: Context, conversationId: String): String? {
+        return try {
+            val file = File(historyDir(context), "$conversationId.json")
+            if (!file.exists()) return null
+            val json = file.readText()
+            val map = gson.fromJson(json, Map::class.java) as? Map<*, *>
+            map?.get("sourceUrl") as? String
+        } catch (_: Exception) { null }
+    }
+
+    /**
+     * Find the most recent conversation matching a URL by domain+path prefix.
+     * Strips query parameters and fragments before comparison.
+     * Returns null if no match found.
+     */
+    fun findConversationByUrl(context: Context, url: String): ConversationMeta? {
+        val normalized = normalizeUrlForMatch(url) ?: return null
+        return listConversations(context)
+            .filter { it.sourceUrl != null }
+            .filter { normalizeUrlForMatch(it.sourceUrl!!) == normalized }
+            .firstOrNull()
+    }
+
+    /**
+     * Normalize URL for matching: extract scheme+host+path (no query/fragment).
+     * Returns null for about:blank, chrome://, data:, etc.
+     */
+    fun normalizeUrlForMatch(url: String): String? {
+        return try {
+            val uri = java.net.URI(url)
+            val scheme = uri.scheme ?: return null
+            if (scheme !in listOf("http", "https")) return null
+            val host = uri.host ?: return null
+            val path = uri.path?.trimEnd('/') ?: ""
+            "$scheme://$host$path"
+        } catch (_: Exception) { null }
     }
 
     // ── Export / Import ────────────────────────────────────────────

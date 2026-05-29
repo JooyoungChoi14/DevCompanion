@@ -79,10 +79,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     // M1: Promoted from internal var to StateFlow for UI observability
     private val _conversationId = MutableStateFlow(ChatHistory.newConversationId())
     val conversationId: StateFlow<String> = _conversationId.asStateFlow()
+    private var _sourceUrl: String? = null
 
     fun loadConversation(conversationId: String) {
         _conversationId.value = conversationId
         _messages.value = ChatHistory.load(getApplication<Application>(), conversationId)
+        // Restore sourceUrl from saved metadata
+        _sourceUrl = ChatHistory.listConversations(getApplication<Application>())
+            .find { it.id == conversationId }?.sourceUrl
     }
 
     /** Whether the initial prompt from address bar has been sent (prevents re-send on recomposition). */
@@ -100,13 +104,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Start a new conversation. */
-    fun newConversation() {
+    fun newConversation(sourceUrl: String? = null) {
         _conversationId.value = ChatHistory.newConversationId()
         _messages.value = emptyList()
         _currentResponse.value = ""
         _isStreaming.value = false
         _agentState.value = AgentState.Idle
         _lastContext.value = null  // N1: prevent context leak between conversations
+        _sourceUrl = sourceUrl
         initialPromptSent = false  // Reset so future initial prompts can fire
     }
 
@@ -117,7 +122,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
      * Internal: only called from AiChatScreen's LaunchedEffect.
      */
     internal fun initializeWithPrompt(prompt: String, webView: WebView?, isAgentMode: Boolean) {
-        newConversation()  // already resets initialPromptSent
+        newConversation(sourceUrl = _sourceUrl)  // already resets initialPromptSent
         if (prompt.isNotBlank()) {
             markInitialPromptSent()
             if (isAgentMode) {
@@ -203,7 +208,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 .debounce(500)
                 .collect {
                     if (it.isNotEmpty()) {
-                        ChatHistory.save(getApplication<Application>(), _conversationId.value, it)
+                        ChatHistory.save(getApplication<Application>(), _conversationId.value, it, _sourceUrl)
                     }
                 }
         }
@@ -254,6 +259,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             if (lastConv != null) {
                 _conversationId.value = lastConv.id
                 _messages.value = ChatHistory.load(application, lastConv.id)
+                _sourceUrl = lastConv.sourceUrl
                 Log.d(TAG, "Restored last conversation: ${lastConv.id} (${lastConv.messageCount} msgs)")
             }
         } catch (e: Exception) {
@@ -265,6 +271,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Set the active LLM provider and persist it.
      */
+    fun setSourceUrl(url: String) {
+        _sourceUrl = url
+    }
+
     fun setProvider(provider: LlmProvider) {
         val oldName = _provider.value?.displayName ?: "None"
         _provider.value = provider
@@ -953,7 +963,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         // ChatHistory.save() is synchronous (file I/O), so safe to call here.
         val msgs = _messages.value
         if (msgs.isNotEmpty()) {
-            ChatHistory.save(getApplication<Application>(), _conversationId.value, msgs)
+            ChatHistory.save(getApplication<Application>(), _conversationId.value, msgs, _sourceUrl)
         }
     }
 }

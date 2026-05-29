@@ -67,6 +67,8 @@ fun AiChatScreen(
     cdpClient: CdpClient,
     initialPrompt: String? = null,
     startNewConversation: Boolean = false,
+    resumeConversationId: String? = null,
+    sourceUrl: String? = null,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -117,6 +119,20 @@ fun AiChatScreen(
         inputFocusRequester.requestFocus()
     }
 
+    // Resume existing conversation if requested
+    LaunchedEffect(resumeConversationId) {
+        if (resumeConversationId != null) {
+            viewModel.loadConversation(resumeConversationId)
+        }
+    }
+
+    // Set sourceUrl for new conversations
+    LaunchedEffect(sourceUrl) {
+        if (sourceUrl != null && resumeConversationId == null) {
+            viewModel.setSourceUrl(sourceUrl)
+        }
+    }
+
     // Initialize new conversation with prompt via single ViewModel entry point (M2).
     // Replaces dual LaunchedEffect pattern to guarantee ordering:
     // newConversation → resetInitialPromptSent → send prompt.
@@ -124,7 +140,7 @@ fun AiChatScreen(
         if (startNewConversation && initialPrompt != null && !viewModel.initialPromptSent) {
             viewModel.initializeWithPrompt(initialPrompt, webView, agentMode)
         } else if (startNewConversation && initialPrompt == null) {
-            viewModel.newConversation()
+            viewModel.newConversation(sourceUrl = sourceUrl)
         }
     }
 
