@@ -429,9 +429,10 @@ fun BrowserTab(
                             view.evaluateJavascript(AUTOFILL_INJECTION, null)
                             // WebView rendering fixes
                             view.evaluateJavascript(VH_FIX_INJECTION, null)
-                            view.evaluateJavascript(KEYBOARD_FIX_INJECTION, null)
+                            // KEYBOARD_FIX & OVERFLOW_FIX removed: adjustResize handles
+                            // viewport resizing natively. JS body locking caused
+                            // scroll-lock residue on pages like 서경포탈.
                             view.evaluateJavascript(TEXT_SIZE_FIX_INJECTION, null)
-                            view.evaluateJavascript(OVERFLOW_FIX_INJECTION, null)
                             if (debugger.inspectorEnabled) {
                                 view.evaluateJavascript(INSPECTOR_IFRAME_INJECTION, null)
                             }
@@ -792,47 +793,6 @@ private val VH_FIX_INJECTION = """(function(){
  * This script adjusts fixed elements to use absolute positioning during
  * keyboard visibility, matching iOS WKWebView behavior.
  */
-private val KEYBOARD_FIX_INJECTION = """(function(){
-    var isKeyboardOpen = false;
-    var originalViewportHeight = window.innerHeight;
-
-    function detectKeyboard() {
-        var currentHeight = window.innerHeight;
-        var threshold = originalViewportHeight * 0.15;
-        var nowOpen = currentHeight < (originalViewportHeight - threshold);
-
-        if (nowOpen !== isKeyboardOpen) {
-            isKeyboardOpen = nowOpen;
-            document.documentElement.classList.toggle('webview-keyboard-open', isKeyboardOpen);
-
-            if (isKeyboardOpen) {
-                // Lock body scroll and adjust fixed elements
-                document.body.setAttribute('data-webview-scroll-lock', '');
-                document.body.style.setProperty('overflow', 'hidden', 'important');
-                document.querySelectorAll('header, footer, [style*="position: fixed"], [style*="position:fixed"]').forEach(function(el) {
-                    el.dataset.originalPosition = el.style.position;
-                    // Keep fixed but recalculate based on new viewport
-                });
-            } else {
-                document.body.removeAttribute('data-webview-scroll-lock');
-                document.body.style.removeProperty('overflow');
-                originalViewportHeight = window.innerHeight;
-            }
-        }
-    }
-
-    // Poll for keyboard visibility (visualViewport API if available)
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', detectKeyboard);
-        window.visualViewport.addEventListener('scroll', detectKeyboard);
-    }
-    window.addEventListener('resize', detectKeyboard);
-})();"""
-
-/**
- * Prevents Android WebView auto-text-size-adjust which inflates
- * small text (12-13px common in Korean university portals) and breaks layouts.
- */
 private val TEXT_SIZE_FIX_INJECTION = """(function(){
     var style = document.createElement('style');
     style.textContent = [
@@ -847,53 +807,4 @@ private val TEXT_SIZE_FIX_INJECTION = """(function(){
         '}'
     ].join('\\n');
     document.head.appendChild(style);
-})();"""
-
-/**
- * Prevents background scrolling when keyboard fix sets overflow:hidden.
- * Only applies when our own keyboard fix sets the overflow:hidden,
- * using a data attribute marker to avoid breaking pages that legitimately
- * use overflow:hidden (e.g., DuckDuckGo).
- */
-private val OVERFLOW_FIX_INJECTION = """(function(){
-    var savedScrollY = 0;
-    var locked = false;
-
-    function applyScrollLock() {
-        if (locked) return;
-        if (!document.body.hasAttribute('data-webview-scroll-lock')) return;
-        locked = true;
-        savedScrollY = window.scrollY;
-        document.body.style.setProperty('position', 'fixed', 'important');
-        document.body.style.setProperty('top', '-' + savedScrollY + 'px', 'important');
-        document.body.style.setProperty('width', '100%', 'important');
-    }
-
-    function removeScrollLock() {
-        if (!locked) return;
-        locked = false;
-        document.body.style.removeProperty('position');
-        document.body.style.removeProperty('top');
-        document.body.style.removeProperty('width');
-        window.scrollTo(0, savedScrollY);
-    }
-
-    // Observe our marker attribute
-    var observer = new MutationObserver(function() {
-        if (document.body.hasAttribute('data-webview-scroll-lock')) {
-            applyScrollLock();
-        } else {
-            removeScrollLock();
-        }
-    });
-
-    observer.observe(document.body, {
-        attributes: true,
-        attributeFilter: ['data-webview-scroll-lock']
-    });
-
-    // Initial check
-    if (document.body.hasAttribute('data-webview-scroll-lock')) {
-        applyScrollLock();
-    }
 })();"""
