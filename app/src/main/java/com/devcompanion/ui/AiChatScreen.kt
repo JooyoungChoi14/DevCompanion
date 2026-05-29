@@ -21,8 +21,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 // Removed: detectTapGestures, pointerInput — select mode is now explicit toggle, not gesture
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -105,6 +108,14 @@ fun AiChatScreen(
     var showSettings by remember { mutableStateOf(false) }
     var settingsInitialTab by remember { mutableIntStateOf(SETTINGS_TAB_APPEARANCE) }
     var showCaptureDialog by remember { mutableStateOf(false) }
+    val inputFocusRequester = remember { FocusRequester() }
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+
+    // Auto-focus input field when chat screen enters
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(300) // small delay for composition to settle
+        inputFocusRequester.requestFocus()
+    }
 
     // Initialize new conversation with prompt via single ViewModel entry point (M2).
     // Replaces dual LaunchedEffect pattern to guarantee ordering:
@@ -155,6 +166,8 @@ fun AiChatScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
+        gesturesEnabled = drawerState.isOpen,
+        modifier = Modifier.fillMaxSize(),
         drawerContent = {
             ConversationDrawer(
                 conversations = conversations,
@@ -283,7 +296,7 @@ fun AiChatScreen(
             )
         },
         bottomBar = {
-            Column(modifier = Modifier.fillMaxWidth().imePadding()) {
+            Column(modifier = Modifier.fillMaxWidth().padding(bottom = with(LocalDensity.current) { imeBottom.toDp() })) {
                 // Status bar: provider + connection + token usage + context
                 Surface(
                     tonalElevation = 1.dp,
@@ -370,7 +383,7 @@ fun AiChatScreen(
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).focusRequester(inputFocusRequester),
                         placeholder = { Text(
                             if (agentMode) "Agent command… (/do prefix optional)"
                             else "Message…",
