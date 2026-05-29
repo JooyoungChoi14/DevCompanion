@@ -100,7 +100,15 @@ fun SettingsSheet(
     viewModel: AiChatViewModel? = null,
 ) {
     var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 2)) }
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
 
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+    ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -151,6 +159,7 @@ fun SettingsSheet(
             SETTINGS_TAB_INTEGRATIONS -> IntegrationsTab(cdpClient = cdpClient)
         }
     }
+    } // ModalBottomSheet
 }
 
 // ═══════════════════════════════════════════════════════════════
