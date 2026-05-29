@@ -147,6 +147,7 @@ fun MainApp(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var showSessionChoice by remember { mutableStateOf(false) }
     var matchedConversationId by remember { mutableStateOf<String?>(null) }
+    var forceNewSession by remember { mutableStateOf(false) }
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
     val debugger = WebViewDebuggerHolder.current
     val isActive = debugger != null
@@ -179,6 +180,7 @@ fun MainApp(
                                 showSessionChoice = true
                             } else {
                                 // about:blank, chrome://, etc. — always new session
+                                forceNewSession = true
                                 showAiChat = true
                             }
                         }) {
@@ -234,6 +236,7 @@ fun MainApp(
                     if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
                         showSessionChoice = true
                     } else {
+                        forceNewSession = true
                         showAiChat = true
                     }
                 }
@@ -279,6 +282,7 @@ fun MainApp(
                             TextButton(onClick = {
                                 showSessionChoice = false
                                 matchedConversationId = null  // new session
+                                forceNewSession = true
                                 showAiChat = true
                             }) { Text("New session") }
                         }
@@ -288,6 +292,7 @@ fun MainApp(
                     LaunchedEffect(Unit) {
                         showSessionChoice = false
                         matchedConversationId = null
+                        forceNewSession = true
                         showAiChat = true
                     }
                 }
@@ -306,10 +311,10 @@ fun MainApp(
                         webView = webViewRef,
                         cdpClient = app!!.cdpClient,
                         initialPrompt = pendingAiQuestion,
-                        startNewConversation = matchedConversationId == null && pendingAiQuestion != null,
+                        startNewConversation = forceNewSession || (matchedConversationId == null && pendingAiQuestion != null),
                         resumeConversationId = matchedConversationId,
                         sourceUrl = if (matchedConversationId == null) currentUrlForChat else null,
-                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null },
+                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; forceNewSession = false },
                         modifier = Modifier.imePadding()
                     )
                 }
