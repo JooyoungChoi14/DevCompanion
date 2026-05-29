@@ -283,7 +283,7 @@ fun AiChatScreen(
             )
         },
         bottomBar = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().imePadding()) {
                 // Status bar: provider + connection + token usage + context
                 Surface(
                     tonalElevation = 1.dp,
