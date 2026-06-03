@@ -513,6 +513,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                 }
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "LLM response timed out (60s)")
+                SessionLog.llmError(currentProvider.displayName, currentProvider.model, "LLM response timed out (60s)")
+                _error.value = "LLM response timed out. The provider may be overloaded — try again."
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Cancelled by user — partial response already handled in cancelStreaming()
                 Log.d(TAG, "Streaming cancelled by user")
