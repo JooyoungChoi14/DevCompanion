@@ -241,12 +241,7 @@ object LlmSettings {
         val committed = p.edit().apply {
             putString(KEY_PROVIDER_TYPE, provider.providerType)
             putString(KEY_BASE_URL, baseUrlValue)
-            putString(KEY_MODEL, when (provider) {
-                is LlmProvider.Anthropic -> ""
-                is LlmProvider.OpenAi -> ""
-                is LlmProvider.Ollama -> provider.model
-                is LlmProvider.Gemini -> provider.model
-            })
+            putString(KEY_MODEL, provider.model)
             putString(KEY_ORGANIZATION, when (provider) {
                 is LlmProvider.OpenAi -> provider.organization
                 else -> null
@@ -335,12 +330,14 @@ object LlmSettings {
             LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
                 apiKey = apiKey,
                 baseUrl = baseUrl.ifEmpty { "https://api.anthropic.com" },
-                version = version
+                version = version,
+                model = model.ifEmpty { "claude-sonnet-4-20250514" }
             )
             LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(
                 apiKey = apiKey,
                 baseUrl = baseUrl.ifEmpty { "https://api.openai.com" },
-                organization = organization
+                organization = organization,
+                model = model.ifEmpty { "gpt-4o" }
             )
             LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
                 apiKey = apiKey,
@@ -363,9 +360,15 @@ object LlmSettings {
      * Read API key from the appropriate storage (encrypted or plaintext file).
      */
     private fun readApiKeyFromStorage(): String? {
-        // Check cache first
+        // Check cache first — verify provider type matches
         if (cachedApiKey != null && cachedApiKeyProvider != null) {
-            return cachedApiKey
+            val currentType = requirePrefs().getString(KEY_PROVIDER_TYPE, null)
+            if (currentType == cachedApiKeyProvider) {
+                return cachedApiKey
+            }
+            // Cache is stale — clear and re-read
+            cachedApiKey = null
+            cachedApiKeyProvider = null
         }
 
         return try {
@@ -385,9 +388,9 @@ object LlmSettings {
      */
     fun clear() {
         val wasAgentModeDefault = requirePrefs().getBoolean(KEY_AGENT_MODE_DEFAULT, true)
-        requirePrefs().edit().clear().apply()
+        requirePrefs().edit().clear().commit()
         // Preserve agent mode default preference after clear
-        requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, wasAgentModeDefault).apply()
+        requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, wasAgentModeDefault).commit()
 
         // Delete key files
         appContext?.let { ctx ->
