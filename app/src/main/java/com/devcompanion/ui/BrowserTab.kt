@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -406,10 +407,10 @@ fun BrowserTab(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                key = webViewKey,
-            factory = { ctx ->
+            key(webViewKey) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { ctx ->
                 Log.i(TAG, "Creating WebView with debugger (key=$webViewKey)")
                 // Reset crash state on factory re-invocation
                 webViewCrashed = false
@@ -561,6 +562,7 @@ fun BrowserTab(
                 }
             }
         )
+        }
 
             // ── Crash overlay ───────────────────────────────────────
             if (webViewCrashed) {
@@ -576,7 +578,7 @@ fun BrowserTab(
                         modifier = Modifier.padding(Spacing.lg)
                     ) {
                         Icon(
-                            Icons.Default.Warning,
+                            Icons.Filled.Warning,
                             contentDescription = "WebView crashed",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.error
