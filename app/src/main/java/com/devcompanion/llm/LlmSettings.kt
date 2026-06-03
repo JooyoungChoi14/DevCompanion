@@ -143,7 +143,16 @@ object LlmSettings {
             )
             LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
                 apiKey = apiKey,
-                baseUrl = baseUrl.ifEmpty { "http://localhost:11434" },
+                // Migration: old versions saved localhost as Ollama baseUrl.
+                // If the saved value is a localhost URL, replace with cloud default.
+                baseUrl = when {
+                    baseUrl.isEmpty() -> LlmProvider.Ollama.DEFAULT_BASE_URL
+                    baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1") -> {
+                        Log.w(TAG, "Migrating Ollama baseUrl from localhost to cloud: $baseUrl")
+                        LlmProvider.Ollama.DEFAULT_BASE_URL
+                    }
+                    else -> baseUrl
+                },
                 model = model
             )
             LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(

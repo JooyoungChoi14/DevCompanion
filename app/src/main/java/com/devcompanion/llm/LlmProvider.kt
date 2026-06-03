@@ -77,9 +77,13 @@ sealed class LlmProvider {
 
     data class Ollama(
         val apiKey: String = "",
-        val baseUrl: String = "https://ollama.com",
+        val baseUrl: String = DEFAULT_BASE_URL,
         override val model: String = "glm-5.1"
     ) : LlmProvider() {
+        companion object {
+            const val TYPE = "ollama"
+            const val DEFAULT_BASE_URL = "https://ollama.com"
+        }
         override val providerType = TYPE
         override val displayName = "Ollama"
         override val hasApiKey get() = apiKey.isNotBlank()
@@ -87,10 +91,6 @@ sealed class LlmProvider {
 
         override fun toString(): String =
             "Ollama(baseUrl=$baseUrl, model=$model)"
-
-        companion object {
-            const val TYPE = "ollama"
-        }
     }
 
     // ── Gemini ───────────────────────────────────────────────────────
