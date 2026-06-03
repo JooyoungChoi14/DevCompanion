@@ -248,7 +248,7 @@ object LlmSettings {
         }
 
         // Save non-sensitive settings to SharedPreferences (synchronous commit)
-        p.edit().apply {
+        val committed = p.edit().apply {
             putString(KEY_PROVIDER_TYPE, provider.providerType)
             putString(KEY_BASE_URL, baseUrlValue)
             putString(KEY_MODEL, when (provider) {
@@ -265,11 +265,9 @@ object LlmSettings {
                 is LlmProvider.Anthropic -> provider.version
                 else -> null
             })
-            commit() // synchronous — guarantees disk write
-        }.also { committed ->
-            if (!committed) {
-                Log.e(TAG, "SharedPreferences.commit() returned false")
-            }
+        }.commit() // synchronous — guarantees disk write
+        if (!committed) {
+            Log.e(TAG, "SharedPreferences.commit() returned false")
         }
 
         // Save API key to encrypted/plaintext file
