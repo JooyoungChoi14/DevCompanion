@@ -84,14 +84,15 @@ object LlmSettings {
      */
     fun saveProvider(provider: LlmProvider) {
         val p = requirePrefs()
+        val apiKeyValue = when (provider) {
+            is LlmProvider.Anthropic -> provider.apiKey
+            is LlmProvider.OpenAi -> provider.apiKey
+            is LlmProvider.Ollama -> provider.apiKey
+            is LlmProvider.Gemini -> provider.apiKey
+        }
         p.edit().apply {
             putString(KEY_PROVIDER_TYPE, provider.providerType)
-            putString(KEY_API_KEY, when (provider) {
-                is LlmProvider.Anthropic -> provider.apiKey
-                is LlmProvider.OpenAi -> provider.apiKey
-                is LlmProvider.Ollama -> provider.apiKey
-                is LlmProvider.Gemini -> provider.apiKey
-            })
+            putString(KEY_API_KEY, apiKeyValue)
             putString(KEY_BASE_URL, when (provider) {
                 is LlmProvider.Anthropic -> provider.baseUrl
                 is LlmProvider.OpenAi -> provider.baseUrl
@@ -114,7 +115,13 @@ object LlmSettings {
             })
             apply()
         }
-        Log.d(TAG, "Provider saved: ${provider.providerType}")
+        // Verify round-trip immediately after save
+        val savedKey = p.getString(KEY_API_KEY, "")
+        if (savedKey != apiKeyValue) {
+            Log.e(TAG, "API KEY CORRUPTION: saved=${apiKeyValue.length}chars, read back=${savedKey?.length ?: 0}chars")
+        } else {
+            Log.d(TAG, "Provider saved: ${provider.providerType}, apiKey=${apiKeyValue.take(4)}...${apiKeyValue.takeLast(4)} (${apiKeyValue.length}chars)")
+        }
     }
 
     /**
@@ -129,6 +136,8 @@ object LlmSettings {
         val model = p.getString(KEY_MODEL, "llava") ?: "llava"
         val organization = p.getString(KEY_ORGANIZATION, null)
         val version = p.getString(KEY_VERSION, "2023-06-01") ?: "2023-06-01"
+
+        Log.d(TAG, "Loaded provider: type=$type, apiKey=${apiKey.take(4)}...${apiKey.takeLast(4)} (${apiKey.length}chars), baseUrl=$baseUrl")
 
         return when (type) {
             LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
