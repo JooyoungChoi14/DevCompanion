@@ -388,9 +388,10 @@ object LlmSettings {
      */
     fun clear() {
         val wasAgentModeDefault = requirePrefs().getBoolean(KEY_AGENT_MODE_DEFAULT, true)
-        requirePrefs().edit().clear().commit()
-        // Preserve agent mode default preference after clear
-        requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, wasAgentModeDefault).commit()
+        requirePrefs().edit().apply {
+            clear()
+            putBoolean(KEY_AGENT_MODE_DEFAULT, wasAgentModeDefault)
+        }.commit()
 
         // Delete key files
         appContext?.let { ctx ->
@@ -477,11 +478,13 @@ object LlmSettings {
                     )
                     LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
                         apiKey = oldApiKey,
-                        baseUrl = oldBaseUrl.ifEmpty { "https://api.anthropic.com" }
+                        baseUrl = oldBaseUrl.ifEmpty { "https://api.anthropic.com" },
+                        model = oldModel.ifEmpty { "claude-sonnet-4-20250514" }
                     )
                     LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(
                         apiKey = oldApiKey,
-                        baseUrl = oldBaseUrl.ifEmpty { "https://api.openai.com" }
+                        baseUrl = oldBaseUrl.ifEmpty { "https://api.openai.com" },
+                        model = oldModel.ifEmpty { "gpt-4o" }
                     )
                     LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
                         apiKey = oldApiKey,
