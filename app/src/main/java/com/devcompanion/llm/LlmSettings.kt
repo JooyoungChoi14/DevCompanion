@@ -68,6 +68,7 @@ object LlmSettings {
     private var appContext: Context? = null
 
     /** Whether we're using plaintext storage (no encryption available). */
+    @Volatile
     var isUsingPlainStorage: Boolean = false
         private set
 
@@ -522,8 +523,8 @@ object LlmSettings {
                 Log.i(TAG, "Migrating API key from old plaintext SharedPreferences")
                 val provider = when (oldType) {
                     LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(apiKey = oldApiKey, baseUrl = oldPlainPrefs.getString(KEY_BASE_URL, "")?.ifEmpty { LlmProvider.Ollama.DEFAULT_BASE_URL } ?: LlmProvider.Ollama.DEFAULT_BASE_URL, model = oldPlainPrefs.getString(KEY_MODEL, "glm-5.1") ?: "glm-5.1")
-                    LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(apiKey = oldApiKey, baseUrl = oldPlainPrefs.getString(KEY_BASE_URL, "")?.ifEmpty { "https://api.anthropic.com" } ?: "https://api.anthropic.com")
-                    LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(apiKey = oldApiKey, baseUrl = oldPlainPrefs.getString(KEY_BASE_URL, "")?.ifEmpty { "https://api.openai.com" } ?: "https://api.openai.com")
+                    LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(apiKey = oldApiKey, baseUrl = oldPlainPrefs.getString(KEY_BASE_URL, "")?.ifEmpty { "https://api.anthropic.com" } ?: "https://api.anthropic.com", model = oldPlainPrefs.getString(KEY_MODEL, "claude-sonnet-4-20250514") ?: "claude-sonnet-4-20250514")
+                    LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(apiKey = oldApiKey, baseUrl = oldPlainPrefs.getString(KEY_BASE_URL, "")?.ifEmpty { "https://api.openai.com" } ?: "https://api.openai.com", model = oldPlainPrefs.getString(KEY_MODEL, "gpt-4o") ?: "gpt-4o")
                     LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(apiKey = oldApiKey, baseUrl = oldPlainPrefs.getString(KEY_BASE_URL, "")?.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" } ?: "https://generativelanguage.googleapis.com/v1beta", model = oldPlainPrefs.getString(KEY_MODEL, "gemini-2.5-flash") ?: "gemini-2.5-flash")
                     else -> return
                 }
