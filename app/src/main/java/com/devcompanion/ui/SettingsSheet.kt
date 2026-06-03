@@ -375,19 +375,23 @@ private fun AiTab(
                         FilterChip(
                             selected = selectedType == type,
                             onClick = {
-                                selectedType = type
-                                apiKey = ""
-                                baseUrl = when (type) {
-                                    LlmProvider.Ollama.TYPE -> "https://ollama.com"
-                                    LlmProvider.Gemini.TYPE -> "https://generativelanguage.googleapis.com/v1beta"
-                                    else -> ""
-                                }
-                                model = when (type) {
-                                    LlmProvider.Anthropic.TYPE -> "claude-sonnet-4-20250514"
-                                    LlmProvider.OpenAi.TYPE -> "gpt-4o"
-                                    LlmProvider.Ollama.TYPE -> "glm-5.1"
-                                    LlmProvider.Gemini.TYPE -> "gemini-2.5-flash"
-                                    else -> ""
+                                if (selectedType != type) {
+                                    selectedType = type
+                                    // Only clear apiKey when actually switching provider type
+                                    // Same type = user re-entered settings, preserve existing key
+                                    apiKey = ""
+                                    baseUrl = when (type) {
+                                        LlmProvider.Ollama.TYPE -> "https://ollama.com"
+                                        LlmProvider.Gemini.TYPE -> "https://generativelanguage.googleapis.com/v1beta"
+                                        else -> ""
+                                    }
+                                    model = when (type) {
+                                        LlmProvider.Anthropic.TYPE -> "claude-sonnet-4-20250514"
+                                        LlmProvider.OpenAi.TYPE -> "gpt-4o"
+                                        LlmProvider.Ollama.TYPE -> "glm-5.1"
+                                        LlmProvider.Gemini.TYPE -> "gemini-2.5-flash"
+                                        else -> ""
+                                    }
                                 }
                             },
                             label = { Text(label, style = MaterialTheme.typography.labelMedium) }
