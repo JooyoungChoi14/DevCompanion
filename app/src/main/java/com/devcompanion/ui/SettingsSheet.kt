@@ -12,22 +12,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.devcompanion.cdp.CdpClient
-import com.devcompanion.ui.AiChatViewModel
 import com.devcompanion.github.ui.GitHubPatSection
 import com.devcompanion.llm.LlmProvider
-import com.devcompanion.llm.LlmRepositoryImpl
-import com.devcompanion.llm.LlmSettings
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.ui.theme.*
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 private val RECOMMENDED_MODELS = mapOf(
@@ -62,30 +59,6 @@ private val RECOMMENDED_MODELS = mapOf(
     )
 )
 
-private fun providerApiKey(provider: LlmProvider?): String = when (provider) {
-    is LlmProvider.Anthropic -> provider.apiKey
-    is LlmProvider.OpenAi -> provider.apiKey
-    is LlmProvider.Ollama -> provider.apiKey
-    is LlmProvider.Gemini -> provider.apiKey
-    null -> ""
-}
-
-private fun providerBaseUrl(provider: LlmProvider?): String = when (provider) {
-    is LlmProvider.Anthropic -> provider.baseUrl
-    is LlmProvider.OpenAi -> provider.baseUrl
-    is LlmProvider.Ollama -> provider.baseUrl
-    is LlmProvider.Gemini -> provider.baseUrl
-    null -> ""
-}
-
-private fun providerModel(provider: LlmProvider?): String = when (provider) {
-    is LlmProvider.Anthropic -> provider.model
-    is LlmProvider.OpenAi -> provider.model
-    is LlmProvider.Ollama -> provider.model
-    is LlmProvider.Gemini -> provider.model
-    null -> ""
-}
-
 // ── Tab indices ──────────────────────────────────────────────
 const val SETTINGS_TAB_APPEARANCE = 0
 const val SETTINGS_TAB_AI = 1
@@ -97,6 +70,8 @@ fun SettingsSheet(
     cdpClient: CdpClient,
     onDismiss: () -> Unit,
     initialTab: Int = SETTINGS_TAB_APPEARANCE,
+    settingsViewModel: SettingsViewModel = viewModel(),
+    // AiChatViewModel kept for backward compat — only used to sync runtime provider
     viewModel: AiChatViewModel? = null,
 ) {
     var selectedTab by remember { mutableStateOf(initialTab.coerceIn(0, 2)) }
@@ -155,7 +130,10 @@ fun SettingsSheet(
         // ── Tab content ──────────────────────────────────────────
         when (selectedTab) {
             SETTINGS_TAB_APPEARANCE -> AppearanceTab()
-            SETTINGS_TAB_AI -> AiTab(viewModel = viewModel)
+            SETTINGS_TAB_AI -> AiTab(
+                settingsViewModel = settingsViewModel,
+                chatViewModel = viewModel,
+            )
             SETTINGS_TAB_INTEGRATIONS -> IntegrationsTab(cdpClient = cdpClient)
         }
     }
@@ -190,7 +168,6 @@ private fun AppearanceTab() {
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
-        // ── Theme Card ────────────────────────────────────────────
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -275,41 +252,26 @@ private fun AppearanceTab() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Tab 2: AI (LLM Provider + Instructions + Max Iterations)
+// Tab 2: AI — now observes SettingsViewModel, never touches LlmSettings directly
 // ═══════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AiTab(
-    viewModel: AiChatViewModel?,
+    settingsViewModel: SettingsViewModel,
+    chatViewModel: AiChatViewModel?,
 ) {
-    val currentProvider by (viewModel?.provider ?: MutableStateFlow(null)).collectAsState()
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    // ── All form state from ViewModel ─────────────────────────────
+    val formState by settingsViewModel.formState.collectAsState()
+    val testing by settingsViewModel.testing.collectAsState()
+    val testResult by settingsViewModel.testResult.collectAsState()
+    val usingPlainStorage by settingsViewModel.usingPlainStorage.collectAsState()
+    val customPrompt by settingsViewModel.customPrompt.collectAsState()
+    val maxIter by settingsViewModel.maxIterations.collectAsState()
 
-    // ── Form state ────────────────────────────────────────────────
-    var selectedType by remember {
-        mutableStateOf(
-            when (currentProvider) {
-                is LlmProvider.Anthropic -> LlmProvider.Anthropic.TYPE
-                is LlmProvider.OpenAi -> LlmProvider.OpenAi.TYPE
-                is LlmProvider.Ollama -> LlmProvider.Ollama.TYPE
-                is LlmProvider.Gemini -> LlmProvider.Gemini.TYPE
-                null -> LlmProvider.Anthropic.TYPE
-            }
-        )
-    }
-    var apiKey by remember { mutableStateOf(providerApiKey(currentProvider)) }
-    var baseUrl by remember { mutableStateOf(providerBaseUrl(currentProvider)) }
-    var model by remember { mutableStateOf(providerModel(currentProvider)) }
+    // ── Local UI-only state ───────────────────────────────────────
     var showApiKey by remember { mutableStateOf(false) }
-    var testing by remember { mutableStateOf(false) }
-    var testResult by remember { mutableStateOf<String?>(null) }
     var modelMenuExpanded by remember { mutableStateOf(false) }
-    val usingPlainStorage = LlmSettings.isUsingPlainStorage
-
-    // ── Custom Instructions & Max Iterations ──────────────────────
-    var customPrompt by remember { mutableStateOf(LlmSettings.loadCustomPrompt() ?: "") }
-    var maxIter by remember { mutableStateOf(LlmSettings.maxIterations) }
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -373,27 +335,8 @@ private fun AiTab(
                         LlmProvider.Gemini.TYPE to "Gemini"
                     ).forEach { (type, label) ->
                         FilterChip(
-                            selected = selectedType == type,
-                            onClick = {
-                                if (selectedType != type) {
-                                    selectedType = type
-                                    // Only clear apiKey when actually switching provider type
-                                    // Same type = user re-entered settings, preserve existing key
-                                    apiKey = ""
-                                    baseUrl = when (type) {
-                                        LlmProvider.Ollama.TYPE -> "https://ollama.com"
-                                        LlmProvider.Gemini.TYPE -> "https://generativelanguage.googleapis.com/v1beta"
-                                        else -> ""
-                                    }
-                                    model = when (type) {
-                                        LlmProvider.Anthropic.TYPE -> "claude-sonnet-4-20250514"
-                                        LlmProvider.OpenAi.TYPE -> "gpt-4o"
-                                        LlmProvider.Ollama.TYPE -> "glm-5.1"
-                                        LlmProvider.Gemini.TYPE -> "gemini-2.5-flash"
-                                        else -> ""
-                                    }
-                                }
-                            },
+                            selected = formState.providerType == type,
+                            onClick = { settingsViewModel.updateProviderType(type) },
                             label = { Text(label, style = MaterialTheme.typography.labelMedium) }
                         )
                     }
@@ -403,12 +346,12 @@ private fun AiTab(
 
                 // API Key
                 OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
+                    value = formState.apiKey,
+                    onValueChange = { settingsViewModel.updateApiKey(it) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("API Key") },
                     placeholder = { Text(
-                        when (selectedType) {
+                        when (formState.providerType) {
                             LlmProvider.Ollama.TYPE -> "Enter your Ollama Cloud API key"
                             else -> "Enter your API key"
                         }
@@ -430,14 +373,14 @@ private fun AiTab(
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
                 // Base URL (Ollama and Gemini only)
-                if (selectedType == LlmProvider.Ollama.TYPE || selectedType == LlmProvider.Gemini.TYPE) {
+                if (formState.providerType == LlmProvider.Ollama.TYPE || formState.providerType == LlmProvider.Gemini.TYPE) {
                     OutlinedTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it },
+                        value = formState.baseUrl,
+                        onValueChange = { settingsViewModel.updateBaseUrl(it) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Base URL") },
                         placeholder = { Text(
-                            when (selectedType) {
+                            when (formState.providerType) {
                                 LlmProvider.Ollama.TYPE -> "https://ollama.com"
                                 LlmProvider.Gemini.TYPE -> "https://generativelanguage.googleapis.com/v1beta"
                                 else -> ""
@@ -455,14 +398,14 @@ private fun AiTab(
                     onExpandedChange = { modelMenuExpanded = !modelMenuExpanded }
                 ) {
                     OutlinedTextField(
-                        value = model,
-                        onValueChange = { model = it },
+                        value = formState.model,
+                        onValueChange = { settingsViewModel.updateModel(it) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .menuAnchor(),
                         label = { Text("Model") },
                         placeholder = { Text(
-                            when (selectedType) {
+                            when (formState.providerType) {
                                 LlmProvider.Anthropic.TYPE -> "claude-sonnet-4-20250514"
                                 LlmProvider.OpenAi.TYPE -> "gpt-4o"
                                 LlmProvider.Ollama.TYPE -> "glm-5.1"
@@ -478,11 +421,11 @@ private fun AiTab(
                         expanded = modelMenuExpanded,
                         onDismissRequest = { modelMenuExpanded = false }
                     ) {
-                        RECOMMENDED_MODELS[selectedType]?.forEach { modelName ->
+                        RECOMMENDED_MODELS[formState.providerType]?.forEach { modelName ->
                             DropdownMenuItem(
                                 text = { Text(modelName, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) },
                                 onClick = {
-                                    model = modelName
+                                    settingsViewModel.updateModel(modelName)
                                     modelMenuExpanded = false
                                 }
                             )
@@ -499,58 +442,17 @@ private fun AiTab(
                 ) {
                     Button(
                         onClick = {
-                            val newProvider = when (selectedType) {
-                                LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://api.anthropic.com" },
-                                    model = model.ifEmpty { "claude-sonnet-4-20250514" }
-                                )
-                                LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://api.openai.com" },
-                                    model = model.ifEmpty { "gpt-4o" }
-                                )
-                                LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://ollama.com" },
-                                    model = model.ifEmpty { "glm-5.1" }
-                                )
-                                LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                                    model = model.ifEmpty { "gemini-2.5-flash" }
-                                )
-                                else -> return@Button
+                            val result = settingsViewModel.save()
+                            val toastMsg = when (result) {
+                                is SaveResult.Success -> "✓ Saved"
+                                is SaveResult.Error -> "✗ ${result.message}"
                             }
-                            val vm = viewModel
-                            // Always save to persistent storage (ViewModel or not)
-                            try {
-                                LlmSettings.saveProvider(newProvider)
-                                SessionLog.log(com.devcompanion.logging.EventType.SETTINGS_SAVE, mapOf(
-                                    "provider" to newProvider.providerType,
-                                    "result" to "ok",
-                                    "apiKeyLen" to providerApiKey(newProvider).length.toString()
-                                ))
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "✓ Saved",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            } catch (e: Exception) {
-                                SessionLog.log(com.devcompanion.logging.EventType.SETTINGS_SAVE, mapOf(
-                                    "provider" to newProvider.providerType,
-                                    "result" to "error",
-                                    "error" to (e.message?.take(80) ?: "unknown")
-                                ))
-                                android.widget.Toast.makeText(
-                                    context,
-                                    "✗ Save failed: ${e.message?.take(50)}",
-                                    android.widget.Toast.LENGTH_LONG
-                                ).show()
+                            android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
+                            // Sync runtime provider if AiChatViewModel available
+                            val provider = formState.toProvider()
+                            if (provider != null) {
+                                chatViewModel?.setProvider(provider, persist = false)
                             }
-                            // Also update runtime provider if ViewModel available
-                            vm?.setProvider(newProvider, persist = false)
-                            testResult = null
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -560,46 +462,9 @@ private fun AiTab(
                     }
 
                     OutlinedButton(
-                        onClick = {
-                            val testProvider = when (selectedType) {
-                                LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://api.anthropic.com" },
-                                    model = model.ifEmpty { "claude-sonnet-4-20250514" }
-                                )
-                                LlmProvider.OpenAi.TYPE -> LlmProvider.OpenAi(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://api.openai.com" },
-                                    model = model.ifEmpty { "gpt-4o" }
-                                )
-                                LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://ollama.com" },
-                                    model = model.ifEmpty { "glm-5.1" }
-                                )
-                                LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
-                                    apiKey = apiKey,
-                                    baseUrl = baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                                    model = model.ifEmpty { "gemini-2.5-flash" }
-                                )
-                                else -> return@OutlinedButton
-                            }
-                            testing = true
-                            testResult = null
-                            scope.launch {
-                                try {
-                                    val repo = LlmRepositoryImpl(testProvider)
-                                    val response = repo.complete("Hello")
-                                    testResult = "✓ Connected: ${response.take(80)}"
-                                } catch (e: Exception) {
-                                    testResult = "✗ Error: ${e.message?.take(100) ?: "Unknown"}"
-                                } finally {
-                                    testing = false
-                                }
-                            }
-                        },
+                        onClick = { settingsViewModel.testConnection() },
                         modifier = Modifier.weight(1f),
-                        enabled = apiKey.isNotBlank() && !testing
+                        enabled = formState.apiKey.isNotBlank() && !testing
                     ) {
                         if (testing) {
                             CircularProgressIndicator(
@@ -659,7 +524,7 @@ private fun AiTab(
 
                 OutlinedTextField(
                     value = customPrompt,
-                    onValueChange = { customPrompt = it },
+                    onValueChange = { settingsViewModel.updateCustomPrompt(it) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(120.dp),
@@ -675,8 +540,7 @@ private fun AiTab(
                     horizontalArrangement = Arrangement.End
                 ) {
                     TextButton(onClick = {
-                        customPrompt = ""
-                        LlmSettings.saveCustomPrompt("")
+                        settingsViewModel.clearCustomPrompt()
                         android.widget.Toast.makeText(
                             context, "✓ Custom instructions cleared", android.widget.Toast.LENGTH_SHORT
                         ).show()
@@ -685,7 +549,7 @@ private fun AiTab(
                     }
                     Spacer(modifier = Modifier.width(Spacing.xs))
                     Button(onClick = {
-                        LlmSettings.saveCustomPrompt(customPrompt.trim())
+                        settingsViewModel.saveCustomPrompt()
                         android.widget.Toast.makeText(
                             context, "✓ Custom instructions saved", android.widget.Toast.LENGTH_SHORT
                         ).show()
@@ -722,12 +586,9 @@ private fun AiTab(
                 ) {
                     Slider(
                         value = maxIter.toFloat(),
-                        onValueChange = {
-                            maxIter = it.toInt()
-                            LlmSettings.maxIterations = maxIter
-                        },
-                        valueRange = LlmSettings.MIN_MAX_ITERATIONS.toFloat()..LlmSettings.MAX_MAX_ITERATIONS.toFloat(),
-                        steps = LlmSettings.MAX_MAX_ITERATIONS - LlmSettings.MIN_MAX_ITERATIONS - 1,
+                        onValueChange = { settingsViewModel.updateMaxIterations(it.toInt()) },
+                        valueRange = com.devcompanion.llm.LlmSettings.MIN_MAX_ITERATIONS.toFloat()..com.devcompanion.llm.LlmSettings.MAX_MAX_ITERATIONS.toFloat(),
+                        steps = com.devcompanion.llm.LlmSettings.MAX_MAX_ITERATIONS - com.devcompanion.llm.LlmSettings.MIN_MAX_ITERATIONS - 1,
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(modifier = Modifier.width(Spacing.sm))
@@ -785,7 +646,6 @@ private fun IntegrationsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
-                // Connection status
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -862,7 +722,6 @@ private fun IntegrationsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
-                // Setup instructions
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -888,7 +747,6 @@ private fun IntegrationsTab(
 
                 Spacer(modifier = Modifier.height(Spacing.sm))
 
-                // Connect/Disconnect button
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
