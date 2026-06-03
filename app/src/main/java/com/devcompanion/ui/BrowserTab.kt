@@ -491,7 +491,7 @@ fun BrowserTab(
                                 view.destroy()
                                 pendingAction = BrowserAction.Reload
                             }
-                            true
+                            return true
                         }
                     }
 
