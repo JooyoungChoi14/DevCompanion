@@ -132,13 +132,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         return try {
             LlmSettings.saveProvider(provider)
             val saved = LlmSettings.loadProvider()
-            val savedKey = when (saved) {
-                is LlmProvider.Anthropic -> saved.apiKey
-                is LlmProvider.OpenAi -> saved.apiKey
-                is LlmProvider.Ollama -> saved.apiKey
-                is LlmProvider.Gemini -> saved.apiKey
-                null -> ""
-            }
+            val savedKey = saved?.apiKey ?: ""
             if (savedKey != state.apiKey) {
                 SessionLog.log(EventType.SETTINGS_SAVE, mapOf(
                     "provider" to provider.providerType,
@@ -273,32 +267,12 @@ data class ProviderFormState(
     }
 
     companion object {
-        fun fromProvider(provider: LlmProvider): ProviderFormState = when (provider) {
-            is LlmProvider.Anthropic -> ProviderFormState(
-                providerType = LlmProvider.Anthropic.TYPE,
-                apiKey = provider.apiKey,
-                baseUrl = provider.baseUrl,
-                model = provider.model
-            )
-            is LlmProvider.OpenAi -> ProviderFormState(
-                providerType = LlmProvider.OpenAi.TYPE,
-                apiKey = provider.apiKey,
-                baseUrl = provider.baseUrl,
-                model = provider.model
-            )
-            is LlmProvider.Ollama -> ProviderFormState(
-                providerType = LlmProvider.Ollama.TYPE,
-                apiKey = provider.apiKey,
-                baseUrl = provider.baseUrl,
-                model = provider.model
-            )
-            is LlmProvider.Gemini -> ProviderFormState(
-                providerType = LlmProvider.Gemini.TYPE,
-                apiKey = provider.apiKey,
-                baseUrl = provider.baseUrl,
-                model = provider.model
-            )
-        }
+        fun fromProvider(provider: LlmProvider): ProviderFormState = ProviderFormState(
+            providerType = provider.providerType,
+            apiKey = provider.apiKey,
+            baseUrl = provider.baseUrl,
+            model = provider.model
+        )
     }
 }
 

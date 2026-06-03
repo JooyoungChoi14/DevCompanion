@@ -234,18 +234,8 @@ object LlmSettings {
      */
     fun saveProvider(provider: LlmProvider) {
         val p = requirePrefs()
-        val apiKeyValue = when (provider) {
-            is LlmProvider.Anthropic -> provider.apiKey
-            is LlmProvider.OpenAi -> provider.apiKey
-            is LlmProvider.Ollama -> provider.apiKey
-            is LlmProvider.Gemini -> provider.apiKey
-        }
-        val baseUrlValue = when (provider) {
-            is LlmProvider.Anthropic -> provider.baseUrl
-            is LlmProvider.OpenAi -> provider.baseUrl
-            is LlmProvider.Ollama -> provider.baseUrl
-            is LlmProvider.Gemini -> provider.baseUrl
-        }
+        val apiKeyValue = provider.apiKey
+        val baseUrlValue = provider.baseUrl
 
         // Save non-sensitive settings to SharedPreferences (synchronous commit)
         val committed = p.edit().apply {
@@ -319,7 +309,7 @@ object LlmSettings {
         val type = p.getString(KEY_PROVIDER_TYPE, null) ?: return null
 
         val baseUrl = p.getString(KEY_BASE_URL, "") ?: ""
-        val model = p.getString(KEY_MODEL, "llava") ?: "llava"
+        val model = p.getString(KEY_MODEL, "") ?: ""
         val organization = p.getString(KEY_ORGANIZATION, null)
         val version = p.getString(KEY_VERSION, "2023-06-01") ?: "2023-06-01"
 
@@ -355,12 +345,12 @@ object LlmSettings {
             LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
                 apiKey = apiKey,
                 baseUrl = baseUrl.ifEmpty { LlmProvider.Ollama.DEFAULT_BASE_URL },
-                model = model
+                model = model.ifEmpty { "glm-5.1" }
             )
             LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
                 apiKey = apiKey,
                 baseUrl = baseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                model = model.ifEmpty { "gemini-2.0-flash" }
+                model = model.ifEmpty { "gemini-2.5-flash" }
             )
             else -> {
                 Log.w(TAG, "Unknown provider type: $type")
@@ -473,14 +463,14 @@ object LlmSettings {
                 Log.i(TAG, "Migrating API key from old EncryptedSharedPreferences")
                 // Save to new storage via normal path
                 val oldBaseUrl = oldPrefs.getString(KEY_BASE_URL, "") ?: ""
-                val oldModel = oldPrefs.getString(KEY_MODEL, "llava") ?: "llava"
+                val oldModel = oldPrefs.getString(KEY_MODEL, "") ?: ""
 
                 // Create provider and save through new path
                 val provider = when (oldType) {
                     LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
                         apiKey = oldApiKey,
                         baseUrl = oldBaseUrl.ifEmpty { LlmProvider.Ollama.DEFAULT_BASE_URL },
-                        model = oldModel
+                        model = oldModel.ifEmpty { "glm-5.1" }
                     )
                     LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
                         apiKey = oldApiKey,
@@ -493,7 +483,7 @@ object LlmSettings {
                     LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(
                         apiKey = oldApiKey,
                         baseUrl = oldBaseUrl.ifEmpty { "https://generativelanguage.googleapis.com/v1beta" },
-                        model = oldModel.ifEmpty { "gemini-2.0-flash" }
+                        model = oldModel.ifEmpty { "gemini-2.5-flash" }
                     )
                     else -> return
                 }

@@ -21,6 +21,12 @@ sealed class LlmProvider {
     /** The model identifier used by this provider. */
     abstract val model: String
 
+    /** API key — common to all providers (empty string if not set). */
+    abstract val apiKey: String
+
+    /** Base URL for API calls. */
+    abstract val baseUrl: String
+
     /** Whether this provider has a usable API key configured.
      *  For Ollama, the key is optional so this is always true.
      *  For others, the key must be non-blank. */
@@ -34,8 +40,8 @@ sealed class LlmProvider {
     // ── Anthropic ────────────────────────────────────────────────────
 
     data class Anthropic(
-        val apiKey: String,
-        val baseUrl: String = "https://api.anthropic.com",
+        override val apiKey: String,
+        override val baseUrl: String = "https://api.anthropic.com",
         val version: String = "2023-06-01",
         override val model: String = "claude-sonnet-4-20250514"
     ) : LlmProvider() {
@@ -55,8 +61,8 @@ sealed class LlmProvider {
     // ── OpenAI ───────────────────────────────────────────────────────
 
     data class OpenAi(
-        val apiKey: String,
-        val baseUrl: String = "https://api.openai.com",
+        override val apiKey: String,
+        override val baseUrl: String = "https://api.openai.com",
         val organization: String? = null,
         override val model: String = "gpt-4o"
     ) : LlmProvider() {
@@ -76,8 +82,8 @@ sealed class LlmProvider {
     // ── Ollama ───────────────────────────────────────────────────────
 
     data class Ollama(
-        val apiKey: String = "",
-        val baseUrl: String = DEFAULT_BASE_URL,
+        override val apiKey: String = "",
+        override val baseUrl: String = DEFAULT_BASE_URL,
         override val model: String = "glm-5.1"
     ) : LlmProvider() {
         companion object {
@@ -96,8 +102,8 @@ sealed class LlmProvider {
     // ── Gemini ───────────────────────────────────────────────────────
 
     data class Gemini(
-        val apiKey: String,
-        val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
+        override val apiKey: String,
+        override val baseUrl: String = "https://generativelanguage.googleapis.com/v1beta",
         override val model: String = "gemini-2.5-flash"
     ) : LlmProvider() {
         override val providerType = TYPE
