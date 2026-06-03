@@ -9,6 +9,8 @@ import android.util.Base64
 import android.util.Log
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -42,6 +44,7 @@ object LlmSettings {
 
     // Preference keys
     private const val KEY_PROVIDER_TYPE = "provider_type"
+    private const val KEY_API_KEY = "api_key"
     private const val KEY_BASE_URL = "base_url"
     private const val KEY_MODEL = "model"
     private const val KEY_ORGANIZATION = "organization"
@@ -86,16 +89,15 @@ object LlmSettings {
             getOrCreateAesKey()
             isUsingPlainStorage = false
             true
-        } catch (e: Exception) {
-            Log.w(TAG, "Android Keystore unavailable, using plaintext fallback", e)
+        } catch (ex: Exception) {
+            Log.w(TAG, "Android Keystore unavailable, using plaintext fallback", ex)
             isUsingPlainStorage = true
             false
         }
 
         SessionLog.log(EventType.SETTINGS_INIT, mapOf(
             "storage" to if (keyAvailable) "encrypted" else "plaintext_fallback",
-            "result" to if (keyAvailable) "success" else "fallback",
-            "error" to if (!keyAvailable) (e?.message?.take(80) ?: "unknown") else ""
+            "result" to if (keyAvailable) "success" else "fallback"
         ))
 
         // Migrate: if encrypted file exists but we're in plaintext mode now,
@@ -273,9 +275,9 @@ object LlmSettings {
         // Save API key to encrypted/plaintext file
         try {
             if (isUsingPlainStorage) {
-                writePlainFile(mapOf(KEY_API_KEY to apiKeyValue))
+                writePlainFile(mapOf<String, String>(KEY_API_KEY to apiKeyValue))
             } else {
-                writeEncryptedFile(mapOf(KEY_API_KEY to apiKeyValue))
+                writeEncryptedFile(mapOf<String, String>(KEY_API_KEY to apiKeyValue))
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write API key file", e)
@@ -431,15 +433,15 @@ object LlmSettings {
     /** Default agent mode (true = Act, false = View). */
     var agentModeDefault: Boolean
         get() = requirePrefs().getBoolean(KEY_AGENT_MODE_DEFAULT, true)
-        set(value) = requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, value).commit()
+        set(value) { requirePrefs().edit().putBoolean(KEY_AGENT_MODE_DEFAULT, value).commit() }
 
     /** Maximum agent loop iterations (3-30, default 10). */
     var maxIterations: Int
         get() = requirePrefs().getInt(KEY_MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS)
-        set(value) = requirePrefs().edit().putInt(
+        set(value) { requirePrefs().edit().putInt(
             KEY_MAX_ITERATIONS,
             value.coerceIn(MIN_MAX_ITERATIONS, MAX_MAX_ITERATIONS)
-        ).commit()
+        ).commit() }
 
     // ── Migration from old EncryptedSharedPreferences ──────────────
 
