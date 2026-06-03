@@ -45,6 +45,7 @@ object SessionLog {
     private val buffer = mutableListOf<LogEvent>()
     private var currentSessionId: String = ""
     private var sessionStartTime: Long = 0L
+    private var lastFlushIndex: Int = 0 // index of first unflushed event
 
     private var flushJob: Job? = null
     private var appContext: Context? = null
@@ -54,7 +55,10 @@ object SessionLog {
         flushToMemory() // keep in-memory for immediate export
         currentSessionId = sessionId ?: UUID.randomUUID().toString()
         sessionStartTime = System.currentTimeMillis()
-        buffer.clear()
+        synchronized(buffer) {
+            buffer.clear()
+            lastFlushIndex = 0
+        }
         log(EventType.SESSION_START, mapOf(
             "sessionId" to currentSessionId,
             "startTime" to sessionStartTime.toString()
@@ -182,16 +186,18 @@ object SessionLog {
     // ── Persistence ─────────────────────────────────────────────────────
 
     /**
-     * Flush the in-memory buffer to a JSONL file.
-     * Call from onPause/onStop or when exporting.
+     * Flush unflushed events from the in-memory buffer to a JSONL file.
+     * Call from onPause/onStop, auto-flush timer, or when exporting.
      * Safe to call multiple times — appends new events only.
+     * Events remain in memory for bufferSize() display.
      */
     suspend fun flush(context: Context) = withContext(Dispatchers.IO) {
-        val events: List<LogEvent>
+        val unflushed: List<LogEvent>
         synchronized(buffer) {
-            events = buffer.toList()
+            if (lastFlushIndex >= buffer.size) return@withContext
+            unflushed = buffer.subList(lastFlushIndex, buffer.size).toList()
         }
-        if (events.isEmpty()) return@withContext
+        if (unflushed.isEmpty()) return@withContext
 
         val logDir = File(context.filesDir, LOG_DIR)
         if (!logDir.exists()) logDir.mkdirs()
@@ -200,12 +206,11 @@ object SessionLog {
         val logFile = File(logDir, "$dateStr-$currentSessionId.jsonl")
 
         try {
-            logFile.appendText(events.joinToString("\n", postfix = "\n") { gson.toJson(it) })
-            // Clear flushed events from buffer
+            logFile.appendText(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
             synchronized(buffer) {
-                buffer.removeAll(events.toSet())
+                lastFlushIndex = buffer.size
             }
-            Log.d(TAG, "Flushed ${events.size} events to ${logFile.name}")
+            Log.d(TAG, "Flushed ${unflushed.size} events to ${logFile.name}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to flush session log", e)
         }
@@ -301,6 +306,10 @@ object SessionLog {
         if (!logDir.exists()) return 0
         var count = 0
         logDir.listFiles()?.forEach { if (it.delete()) count++ }
+        synchronized(buffer) {
+            buffer.clear()
+            lastFlushIndex = 0
+        }
         return count
     }
 
@@ -328,6 +337,12 @@ object SessionLog {
 
     /** Current buffer size (for display). */
     fun bufferSize(): Int = synchronized(buffer) { buffer.size }
+
+    /** Count of log files on disk. */
+    fun diskLogFileCount(context: Context): Int {
+        val logDir = File(context.filesDir, LOG_DIR)
+        return logDir.listFiles()?.size ?: 0
+    }
 }
 
 // ── Data classes ────────────────────────────────────────────────────────

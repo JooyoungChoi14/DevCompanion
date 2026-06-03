@@ -914,7 +914,7 @@ private fun IntegrationsTab(
                     color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.xs))
                 Text(
-                    "${SessionLog.bufferSize()} events in current session buffer.",
+                    "${SessionLog.bufferSize()} events in buffer, ${SessionLog.diskLogFileCount(logContext)} log files on disk.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

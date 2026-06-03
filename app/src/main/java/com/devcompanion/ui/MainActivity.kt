@@ -76,7 +76,6 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "onCreate: starting")
         SessionLog.init(this)
         SessionLog.startSession()
-        SessionLog.startAutoFlush(lifecycleScope)
 
         try {
             try {
