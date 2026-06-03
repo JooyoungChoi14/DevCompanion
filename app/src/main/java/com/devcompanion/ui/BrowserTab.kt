@@ -483,7 +483,7 @@ fun BrowserTab(
                         override fun onRenderProcessGone(
                             view: WebView,
                             detail: android.webkit.RenderProcessGoneDetail
-                        ) {
+                        ): Boolean {
                             Log.e(TAG, "WebView render process gone: didCrash=${detail.didCrash()}")
                             if (detail.didCrash()) {
                                 // Render process crashed — force recreate the WebView
@@ -491,7 +491,7 @@ fun BrowserTab(
                                 view.destroy()
                                 pendingAction = BrowserAction.Reload
                             }
-                            // If not a crash (low-memory kill), the WebView will recover automatically
+                            true
                         }
                     }
 

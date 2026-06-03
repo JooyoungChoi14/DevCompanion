@@ -44,6 +44,7 @@ private fun statusColor(code: Int): Color = when {
     else -> Color(0xFFE53935)         // 5xx bright red
 }
 
+@Composable
 private fun methodColor(method: String): Color = when (method.uppercase()) {
     "GET" -> Color(0xFF8BE9FD)      // cyan
     "POST" -> Color(0xFF50FA7B)     // green
@@ -245,12 +246,13 @@ private fun NetworkTableRow(
         )
 
         // Duration
+        val dur = entry.durationMs
         Text(
-            entry.durationMs?.let { "${it}ms" } ?: "–",
+            dur?.let { "${it}ms" } ?: "–",
             modifier = Modifier.weight(Col.DURATION),
             style = MaterialTheme.typography.labelSmall,
             fontFamily = FontFamily.Monospace,
-            color = if (entry.durationMs != null && entry.durationMs > 3000) Color(0xFFFFA726) else MaterialTheme.colorScheme.outline,
+            color = if (dur != null && dur > 3000) Color(0xFFFFA726) else MaterialTheme.colorScheme.outline,
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
 
