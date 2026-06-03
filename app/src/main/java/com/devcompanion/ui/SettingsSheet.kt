@@ -101,7 +101,7 @@ fun SettingsSheet(
         ) {
             Tab(
                 selected = selectedTab == SETTINGS_TAB_APPEARANCE,
-                onClick = { selectedTab = SETTINGS_TAB_APPEARANCE },
+                onClick = { selectedTab = SETTINGS_TAB_APPEARANCE; SessionLog.uiTab("settings", "appearance") },
                 text = { Text("Appearance") },
                 icon = { Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -109,7 +109,7 @@ fun SettingsSheet(
             )
             Tab(
                 selected = selectedTab == SETTINGS_TAB_AI,
-                onClick = { selectedTab = SETTINGS_TAB_AI },
+                onClick = { selectedTab = SETTINGS_TAB_AI; SessionLog.uiTab("settings", "ai") },
                 text = { Text("AI") },
                 icon = { Icon(Icons.Default.SmartToy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -117,7 +117,7 @@ fun SettingsSheet(
             )
             Tab(
                 selected = selectedTab == SETTINGS_TAB_INTEGRATIONS,
-                onClick = { selectedTab = SETTINGS_TAB_INTEGRATIONS },
+                onClick = { selectedTab = SETTINGS_TAB_INTEGRATIONS; SessionLog.uiTab("settings", "integrations") },
                 text = { Text("Integrations") },
                 icon = { Icon(Icons.Default.Extension, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 selectedContentColor = MaterialTheme.colorScheme.primary,
@@ -336,7 +336,7 @@ private fun AiTab(
                     ).forEach { (type, label) ->
                         FilterChip(
                             selected = formState.providerType == type,
-                            onClick = { settingsViewModel.updateProviderType(type) },
+                            onClick = { settingsViewModel.updateProviderType(type); SessionLog.uiClick("provider_type", type) },
                             label = { Text(label, style = MaterialTheme.typography.labelMedium) }
                         )
                     }
@@ -443,6 +443,7 @@ private fun AiTab(
                     Button(
                         onClick = {
                             val result = settingsViewModel.save()
+                            SessionLog.uiClick("settings_save", when (result) { is SaveResult.Success -> "ok"; is SaveResult.Error -> result.message.take(50) })
                             val toastMsg = when (result) {
                                 is SaveResult.Success -> "✓ Saved"
                                 is SaveResult.Error -> "✗ ${result.message}"
@@ -462,7 +463,7 @@ private fun AiTab(
                     }
 
                     OutlinedButton(
-                        onClick = { settingsViewModel.testConnection() },
+                        onClick = { settingsViewModel.testConnection(); SessionLog.uiClick("test_connection") },
                         modifier = Modifier.weight(1f),
                         enabled = formState.apiKey.isNotBlank() && !testing
                     ) {

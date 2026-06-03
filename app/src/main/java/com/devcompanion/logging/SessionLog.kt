@@ -176,6 +176,70 @@ object SessionLog {
         ))
     }
 
+    // ── UI interaction helpers ────────────────────────────────────────
+
+    /** Log screen/sheet navigation (open/close). */
+    fun uiNav(target: String, action: String, detail: String = "") {
+        log(EventType.UI_NAV, mapOf(
+            "target" to target,
+            "action" to action,  // open, close, dismiss
+            "detail" to detail
+        ))
+    }
+
+    /** Log tab switch. */
+    fun uiTab(from: String, to: String) {
+        log(EventType.UI_TAB, mapOf(
+            "from" to from,
+            "to" to to
+        ))
+    }
+
+    /** Log button/toggle click. */
+    fun uiClick(target: String, detail: String = "") {
+        log(EventType.UI_CLICK, mapOf(
+            "target" to target,
+            "detail" to detail
+        ))
+    }
+
+    /** Log text input change — value is masked for privacy. */
+    fun uiInput(target: String, valueMasked: String) {
+        log(EventType.UI_INPUT, mapOf(
+            "target" to target,
+            "valueMasked" to valueMasked  // e.g. "4***z", "non-empty", "empty"
+        ))
+    }
+
+    /** Log scroll position (throttled — only significant changes). */
+    fun uiScroll(target: String, position: String) {
+        log(EventType.UI_SCROLL, mapOf(
+            "target" to target,
+            "position" to position
+        ))
+    }
+
+    /** Log WebView outer state (viewport, scroll, URL). */
+    fun uiWebviewState(url: String, viewportW: Int, viewportH: Int, scrollX: Int, scrollY: Int, contentH: Int) {
+        log(EventType.UI_WEBVIEW_STATE, mapOf(
+            "url" to url.take(200),
+            "viewport" to "${viewportW}x${viewportH}",
+            "scroll" to "${scrollX},${scrollY}",
+            "contentH" to contentH.toString()
+        ))
+    }
+
+    /** Log data snapshot (message count, conversation count, cache state). */
+    fun uiDataSnapshot(messages: Int, conversations: Int, isStreaming: Boolean, providerType: String, model: String) {
+        log(EventType.UI_DATA_SNAPSHOT, mapOf(
+            "messages" to messages.toString(),
+            "conversations" to conversations.toString(),
+            "isStreaming" to isStreaming.toString(),
+            "provider" to providerType,
+            "model" to model
+        ))
+    }
+
     fun streamEvent(event: String, detail: String = "") {
         log(EventType.STREAM, mapOf(
             "event" to event,
@@ -371,6 +435,16 @@ enum class EventType(val key: String) {
     SETTINGS_SAVE("settings_save"),
     SETTINGS_LOAD("settings_load"),
     SETTINGS_INIT("settings_init"),
+
+    // ── UI interaction events (user-facing actions for debugging) ──
+    UI_NAV("ui_nav"),               // screen/sheet open/close
+    UI_TAB("ui_tab"),               // tab switch
+    UI_CLICK("ui_click"),           // button/toggle click
+    UI_INPUT("ui_input"),           // text field change (value masked)
+    UI_SCROLL("ui_scroll"),         // significant scroll position
+    UI_WEBVIEW_STATE("ui_webview_state"), // viewport size, scroll, URL
+    UI_DATA_SNAPSHOT("ui_data_snapshot"), // message count, cache state
+
     ERROR("error")
 }
 

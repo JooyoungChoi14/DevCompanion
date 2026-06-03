@@ -372,6 +372,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         // Clear error state
         _error.value = null
         _isStreaming.value = true
+        SessionLog.uiDataSnapshot(
+            messages = _messages.value.size,
+            conversations = ChatHistory.listConversations(getApplication<Application>()).size,
+            isStreaming = true,
+            providerType = currentProvider.providerType,
+            model = currentProvider.model
+        )
         _currentResponse.value = ""
 
         // Clear manually captured context after use (one-shot)
@@ -540,6 +547,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 _error.value = "Error: ${e.message}"
             } finally {
                 _isStreaming.value = false
+                SessionLog.uiDataSnapshot(
+                    messages = _messages.value.size,
+                    conversations = ChatHistory.listConversations(getApplication<Application>()).size,
+                    isStreaming = false,
+                    providerType = _provider.value?.providerType ?: "none",
+                    model = _provider.value?.model ?: "none"
+                )
                 _currentResponse.value = ""
                 streamingJob = null
             }

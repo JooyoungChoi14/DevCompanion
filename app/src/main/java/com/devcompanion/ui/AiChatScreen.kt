@@ -1,6 +1,7 @@
 package com.devcompanion.ui
 
 import android.util.Log
+import com.devcompanion.logging.SessionLog
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -266,14 +267,14 @@ fun AiChatScreen(
                     ) {
                         SegmentedButton(
                             selected = !agentMode,
-                            onClick = { if (agentMode) viewModel.toggleAgentMode() },
+                            onClick = { if (agentMode) viewModel.toggleAgentMode(); SessionLog.uiClick("mode_switch", "view") },
                             shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
                         ) {
                             Text("View", style = MaterialTheme.typography.labelSmall)
                         }
                         SegmentedButton(
                             selected = agentMode,
-                            onClick = { if (!agentMode) viewModel.toggleAgentMode() },
+                            onClick = { if (!agentMode) viewModel.toggleAgentMode(); SessionLog.uiClick("mode_switch", "agent") },
                             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
                         ) {
                             Text("Act", style = MaterialTheme.typography.labelSmall)
@@ -286,9 +287,11 @@ fun AiChatScreen(
                                 isInSelectMode = false
                                 selectedMessageIds = emptySet()
                                 frozenSelectableIds = null
+                                SessionLog.uiClick("select_mode", "exit")
                             } else {
                                 isInSelectMode = true
                                 frozenSelectableIds = messages.map { it.id }.toSet()
+                                SessionLog.uiClick("select_mode", "enter")
                             }
                         }
                     ) {
@@ -435,6 +438,7 @@ fun AiChatScreen(
                         IconButton(
                             onClick = {
                                 if (inputText.isNotBlank()) {
+                                    SessionLog.uiClick("send_msg", if (agentMode) "agent" else "chat")
                                     if (agentMode) {
                                         viewModel.sendMessageAgent(inputText.trim(), webView)
                                     } else {

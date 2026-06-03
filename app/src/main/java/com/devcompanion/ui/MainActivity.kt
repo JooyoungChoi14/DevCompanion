@@ -156,6 +156,14 @@ fun MainApp(
     var matchedConversationId by remember { mutableStateOf<String?>(null) }
     var forceNewSession by remember { mutableStateOf(false) }
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
+
+    // ── UI navigation tracking ──
+    LaunchedEffect(showAiChat) { SessionLog.uiNav("ai_chat", if (showAiChat) "open" else "close") }
+    LaunchedEffect(showDevTools) { SessionLog.uiNav("devtools", if (showDevTools) "open" else "close") }
+    LaunchedEffect(showSettings) { SessionLog.uiNav("settings", if (showSettings) "open" else "close") }
+    LaunchedEffect(showBridgeInfo) { SessionLog.uiNav("bridge_info", if (showBridgeInfo) "open" else "close") }
+    LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
+    LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; else -> "unknown" }) }
     val debugger = WebViewDebuggerHolder.current
     val isActive = debugger != null
 
@@ -182,6 +190,7 @@ fun MainApp(
                         IconButton(onClick = {
                             val url = webViewRef?.url
                             currentUrlForChat = url
+                            SessionLog.uiClick("ai_chat_btn", if (url != null) "has_url" else "no_url")
                             if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
                                 // Real URL — show session choice dialog
                                 showSessionChoice = true
@@ -198,7 +207,7 @@ fun MainApp(
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = { showBridgeInfo = !showBridgeInfo }) {
+                        IconButton(onClick = { showBridgeInfo = !showBridgeInfo; SessionLog.uiClick("bridge_info_btn") }) {
                             Icon(
                                 Icons.Default.SettingsEthernet,
                                 contentDescription = "Bridge API",
@@ -206,7 +215,7 @@ fun MainApp(
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = { showDevTools = !showDevTools }) {
+                        IconButton(onClick = { showDevTools = !showDevTools; SessionLog.uiClick("devtools_btn") }) {
                             Icon(
                                 Icons.Default.BugReport,
                                 contentDescription = "DevTools",
@@ -214,7 +223,7 @@ fun MainApp(
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = { showSettings = true }) {
+                        IconButton(onClick = { showSettings = true; SessionLog.uiClick("settings_btn") }) {
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = "Settings",
@@ -257,7 +266,7 @@ fun MainApp(
                 if (matched != null) {
                     // Found existing conversation for this URL
                     AlertDialog(
-                        onDismissRequest = { showSessionChoice = false },
+                        onDismissRequest = { showSessionChoice = false; SessionLog.uiNav("session_choice", "close") },
                         title = { Text("Existing session found") },
                         text = {
                             Column {
@@ -308,7 +317,7 @@ fun MainApp(
             // AI Chat as bottom sheet — WebView stays visible behind
             if (showAiChat) {
                 ModalBottomSheet(
-                    onDismissRequest = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null },
+                    onDismissRequest = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; SessionLog.uiNav("ai_chat", "close") },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false
@@ -330,7 +339,7 @@ fun MainApp(
             // DevTools as bottom sheet overlay
             if (showDevTools) {
                 ModalBottomSheet(
-                    onDismissRequest = { showDevTools = false },
+                    onDismissRequest = { showDevTools = false; SessionLog.uiNav("devtools", "close") },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false
@@ -347,7 +356,7 @@ fun MainApp(
             // Bridge API info sheet
             if (showBridgeInfo) {
                 ModalBottomSheet(
-                    onDismissRequest = { showBridgeInfo = false },
+                    onDismissRequest = { showBridgeInfo = false; SessionLog.uiNav("bridge_info", "close") },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false
@@ -366,7 +375,7 @@ fun MainApp(
             // Settings sheet
             if (showSettings) {
                 ModalBottomSheet(
-                    onDismissRequest = { showSettings = false },
+                    onDismissRequest = { showSettings = false; SessionLog.uiNav("settings", "close") },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false

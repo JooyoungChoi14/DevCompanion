@@ -3,6 +3,7 @@ package com.devcompanion.ui
 import android.graphics.Bitmap
 import android.webkit.WebView
 import android.util.Log
+import com.devcompanion.logging.SessionLog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -94,6 +95,7 @@ fun BrowserTab(
         onWebViewReady?.invoke {
             if (canGoBack && webViewRef != null) {
                 webViewRef?.goBack()
+                SessionLog.uiClick("webview_back")
                 true
             } else {
                 false
@@ -177,6 +179,7 @@ fun BrowserTab(
                         keyboardActions = KeyboardActions(
                             onGo = {
                                 val input = urlTextValue.text.trim()
+                                SessionLog.uiClick("url_bar_go", input.take(50))
                                 when (val route = routeUrlInput(input)) {
                                     is UrlRoute.AiQuestion -> {
                                         onAskAi?.invoke(route.question)
@@ -323,6 +326,7 @@ fun BrowserTab(
                             selected = viewportScale == scale,
                             onClick = {
                                 viewportScale = scale
+                                SessionLog.uiClick("viewport_scale", "${scale}%")
                                 webViewRef?.settings?.textZoom = scale
                                 webViewRef?.evaluateJavascript(
                                     "(function(){document.documentElement.style.zoom='${scale / 100.0}';})();",
@@ -444,6 +448,7 @@ fun BrowserTab(
                             debugger.addUrlToHistory(pageUrl)
                             urlHistoryStore.addUrl(pageUrl)
                             debugger.markPageStart()
+                            SessionLog.uiWebviewState(pageUrl, view.width, view.height, view.scrollX, view.scrollY, view.contentHeight)
                         }
 
                         override fun onPageFinished(view: WebView, url: String) {
@@ -451,6 +456,7 @@ fun BrowserTab(
                             canGoBack = view.canGoBack()
                             canGoForward = view.canGoForward()
                             pageTitle = view.title ?: ""
+                            SessionLog.uiWebviewState(url, view.width, view.height, view.scrollX, view.scrollY, view.contentHeight)
                             view.evaluateJavascript(
                                 "(function(){document.documentElement.style.zoom='${viewportScale / 100.0}';})();",
                                 null
