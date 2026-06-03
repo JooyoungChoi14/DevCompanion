@@ -517,7 +517,20 @@ private fun AiTab(
                                 )
                                 else -> return@Button
                             }
-                            viewModel?.setProvider(newProvider)
+                            val vm = viewModel
+                            if (vm == null) {
+                                SessionLog.log(com.devcompanion.logging.EventType.ERROR, mapOf(
+                                    "what" to "save_no_viewmodel",
+                                    "detail" to "viewModel is null in AiTab — Save will not persist"
+                                ))
+                            } else {
+                                SessionLog.log(com.devcompanion.logging.EventType.SETTINGS_SAVE, mapOf(
+                                    "step" to "before_setProvider",
+                                    "provider" to newProvider.providerType,
+                                    "apiKeyLen" to providerApiKey(newProvider).length.toString()
+                                ))
+                            }
+                            vm?.setProvider(newProvider)
                             testResult = null
                         },
                         modifier = Modifier.weight(1f)
