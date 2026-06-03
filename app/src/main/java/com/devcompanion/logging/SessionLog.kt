@@ -3,6 +3,11 @@ package com.devcompanion.logging
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
@@ -41,6 +46,9 @@ object SessionLog {
     private val buffer = mutableListOf<LogEvent>()
     private var currentSessionId: String = ""
     private var sessionStartTime: Long = 0L
+
+    private var flushJob: Job? = null
+    private var appContext: Context? = null
 
     /** Start a new session. Called when the app starts or user explicitly begins. */
     fun startSession(sessionId: String? = null) {
@@ -297,6 +305,28 @@ object SessionLog {
         return count
     }
 
+    /** Set app context for auto-flush. Call once in Application.onCreate(). */
+    fun init(context: Context) {
+        appContext = context.applicationContext
+    }
+
+    /** Start periodic auto-flush (every 30 seconds). Call from Activity.onCreate(). */
+    fun startAutoFlush(scope: kotlinx.coroutines.CoroutineScope) {
+        flushJob?.cancel()
+        flushJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(30_000L)
+                appContext?.let { flush(it) }
+            }
+        }
+    }
+
+    /** Stop periodic auto-flush. Call from Activity.onDestroy(). */
+    fun stopAutoFlush() {
+        flushJob?.cancel()
+        flushJob = null
+    }
+
     /** Current buffer size (for display). */
     fun bufferSize(): Int = synchronized(buffer) { buffer.size }
 }
@@ -319,6 +349,11 @@ enum class EventType(val key: String) {
     URL_CHANGE("url_change"),
     PROVIDER_CHANGE("provider_change"),
     STREAM("stream"),
+    AGENT_ANALYSIS("agent_analysis"),
+    WEBVIEW_CRASH("webview_crash"),
+    WEBVIEW_RECOVER("webview_recover"),
+    NETWORK_ERROR("network_error"),
+    ANR_DETECTED("anr_detected"),
     ERROR("error")
 }
 

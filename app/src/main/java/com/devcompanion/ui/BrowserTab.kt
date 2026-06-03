@@ -80,6 +80,8 @@ fun BrowserTab(
     var viewportScale by remember { mutableIntStateOf(100) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var urlHadFocus by remember { mutableStateOf(false) }
+    var webViewCrashed by remember { mutableStateOf(false) }
+    var webViewKey by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -398,10 +400,23 @@ fun BrowserTab(
 
         HorizontalDivider()
 
-        // ── WebView ─────────────────────────────────────────────────
-        AndroidView(
+        // ── WebView + Crash overlay ──────────────────────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                key = webViewKey,
             factory = { ctx ->
-                Log.i(TAG, "Creating WebView with debugger")
+                Log.i(TAG, "Creating WebView with debugger (key=$webViewKey)")
+                // Reset crash state on factory re-invocation
+                webViewCrashed = false
+                com.devcompanion.logging.SessionLog.log(
+                    com.devcompanion.logging.EventType.WEBVIEW_RECOVER,
+                    mapOf("webViewKey" to webViewKey.toString())
+                )
                 WebView(ctx.applicationContext).apply {
                     settings.javaScriptEnabled = true
                     settings.domStorageEnabled = true
@@ -473,10 +488,13 @@ fun BrowserTab(
                             errorResponse: android.webkit.WebResourceResponse
                         ) {
                             // Track HTTP errors (4xx/5xx from server) in network log
-                            debugger.trackHttpError(
-                                url = request.url.toString(),
-                                statusCode = errorResponse.statusCode,
-                                reasonPhrase = errorResponse.reasonPhrase ?: "HTTP error"
+                            val url = request.url.toString()
+                            val statusCode = errorResponse.statusCode
+                            val reasonPhrase = errorResponse.reasonPhrase ?: "HTTP error"
+                            debugger.trackHttpError(url, statusCode, reasonPhrase)
+                            com.devcompanion.logging.SessionLog.log(
+                                com.devcompanion.logging.EventType.NETWORK_ERROR,
+                                mapOf("url" to url, "statusCode" to statusCode.toString(), "reason" to reasonPhrase)
                             )
                         }
 
@@ -485,11 +503,16 @@ fun BrowserTab(
                             detail: android.webkit.RenderProcessGoneDetail
                         ): Boolean {
                             Log.e(TAG, "WebView render process gone: didCrash=${detail.didCrash()}")
+                            com.devcompanion.logging.SessionLog.log(
+                                com.devcompanion.logging.EventType.WEBVIEW_CRASH,
+                                mapOf("didCrash" to detail.didCrash().toString())
+                            )
                             if (detail.didCrash()) {
-                                // Render process crashed — force recreate the WebView
-                                webViewRef = null
-                                view.destroy()
-                                pendingAction = BrowserAction.Reload
+                                // Render process crashed — mark crashed and trigger WebView recreation
+                                // Do NOT call view.destroy() directly: Compose manages the View lifecycle.
+                                // Incrementing webViewKey forces AndroidView factory to re-run.
+                                webViewCrashed = true
+                                webViewKey += 1
                             }
                             return true
                         }
@@ -536,11 +559,55 @@ fun BrowserTab(
                     }
                     null -> { }
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
+            }
         )
+
+            // ── Crash overlay ───────────────────────────────────────
+            if (webViewCrashed) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier.padding(Spacing.lg)
+                    ) {
+                        Icon(
+                            Icons.Default.Warning,
+                            contentDescription = "WebView crashed",
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Text(
+                            "WebView has stopped",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.xs))
+                        Text(
+                            "The render process crashed. Tap to retry.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(Spacing.md))
+                        Button(
+                            onClick = {
+                                webViewCrashed = false
+                                webViewKey += 1
+                            }
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(Spacing.xs))
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // ── Start page bottom sheet ──────────────────────────────────────

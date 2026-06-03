@@ -59,16 +59,24 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { SessionLog.flush(this@MainActivity) }
     }
 
+    override fun onResume() {
+        super.onResume()
+        SessionLog.startAutoFlush(lifecycleScope)
+    }
+
     override fun onStop() {
         super.onStop()
         SessionLog.log(EventType.SESSION_END, mapOf("reason" to "onStop"))
+        SessionLog.stopAutoFlush()
         lifecycleScope.launch { SessionLog.flush(this@MainActivity) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate: starting")
+        SessionLog.init(this)
         SessionLog.startSession()
+        SessionLog.startAutoFlush(lifecycleScope)
 
         try {
             try {
