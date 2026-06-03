@@ -379,6 +379,19 @@ fun BrowserTab(
                         modifier = Modifier.size(12.dp),
                         strokeWidth = 1.5.dp
                     )
+                } else {
+                    // Emergency reload: visible even when collapsed
+                    IconButton(
+                        onClick = { pendingAction = BrowserAction.Reload },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Reload",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -452,6 +465,33 @@ fun BrowserTab(
                             error: android.webkit.WebResourceError?
                         ) {
                             debugger.DebugWebViewClient().onReceivedError(view, request, error)
+                        }
+
+                        override fun onReceivedHttpError(
+                            view: WebView,
+                            request: android.webkit.WebResourceRequest,
+                            errorResponse: android.webkit.WebResourceResponse
+                        ) {
+                            // Track HTTP errors (4xx/5xx from server) in network log
+                            debugger.trackHttpError(
+                                url = request.url.toString(),
+                                statusCode = errorResponse.statusCode,
+                                reasonPhrase = errorResponse.reasonPhrase ?: "HTTP error"
+                            )
+                        }
+
+                        override fun onRenderProcessGone(
+                            view: WebView,
+                            detail: android.webkit.RenderProcessGoneDetail
+                        ) {
+                            Log.e(TAG, "WebView render process gone: didCrash=${detail.didCrash()}")
+                            if (detail.didCrash()) {
+                                // Render process crashed — force recreate the WebView
+                                webViewRef = null
+                                view.destroy()
+                                pendingAction = BrowserAction.Reload
+                            }
+                            // If not a crash (low-memory kill), the WebView will recover automatically
                         }
                     }
 

@@ -18,12 +18,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import com.devcompanion.ui.theme.Spacing
-import com.devcompanion.ui.theme.Sizing
 import com.devcompanion.debug.WebViewDebuggerHolder
 import com.devcompanion.debug.NetworkEntry
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +35,32 @@ private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
     .withZone(ZoneId.systemDefault())
 
 private fun formatTime(ts: Long): String = timeFormatter.format(Instant.ofEpochMilli(ts))
+
+/** Color for HTTP status code — matches browser DevTools convention. */
+private fun statusColor(code: Int): Color = when {
+    code < 300 -> Color(0xFF4CAF50)   // 2xx green
+    code < 400 -> Color(0xFFFFA726)   // 3xx amber
+    code < 500 -> Color(0xFFEF5350)   // 4xx red
+    else -> Color(0xFFE53935)         // 5xx bright red
+}
+
+private fun methodColor(method: String): Color = when (method.uppercase()) {
+    "GET" -> Color(0xFF8BE9FD)      // cyan
+    "POST" -> Color(0xFF50FA7B)     // green
+    "PUT", "PATCH" -> Color(0xFFBD93F9) // purple
+    "DELETE" -> Color(0xFFFF5555)   // red
+    "OPTIONS", "HEAD" -> Color(0xFFFFB86C) // orange
+    else -> MaterialTheme.colorScheme.onSurface
+}
+
+/** Table column widths (fractions of available width). */
+private object Col {
+    const val METHOD = 0.10f
+    const val STATUS = 0.08f
+    const val DURATION = 0.08f
+    const val TIME = 0.10f
+    const val URL = 0.64f  // remainder
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,7 +93,8 @@ fun NetworkTab() {
     if (showDetail && selectedEntry != null) {
         NetworkDetail(
             entry = selectedEntry!!,
-            onBack = { showDetail = false }
+            onBack = { showDetail = false },
+            onCopy = { copyToClipboard(it) }
         )
         return
     }
@@ -128,22 +155,21 @@ fun NetworkTab() {
                 )
             }
         } else {
+            // Table header
+            NetworkTableHeader()
+            HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 4.dp)
+                contentPadding = PaddingValues(vertical = 0.dp)
             ) {
                 items(items = filtered, key = { it.request.requestId }) { entry ->
-                    NetworkEntryRow(
+                    NetworkTableRow(
                         entry = entry,
                         onClick = {
                             selectedEntry = entry
                             showDetail = true
                         }
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = Spacing.md),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                     )
                 }
             }
@@ -151,24 +177,33 @@ fun NetworkTab() {
     }
 }
 
+/** Table header row — Method | Status | Duration | Time | URL */
 @Composable
-private fun NetworkEntryRow(
+private fun NetworkTableHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Method", modifier = Modifier.weight(Col.METHOD), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline)
+        Text("Status", modifier = Modifier.weight(Col.STATUS), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline)
+        Text("Time", modifier = Modifier.weight(Col.TIME), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+        Text("ms", modifier = Modifier.weight(Col.DURATION), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline, textAlign = androidx.compose.ui.text.style.TextAlign.End)
+        Text("URL", modifier = Modifier.weight(Col.URL), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.outline)
+    }
+}
+
+/** Table data row — aligned columns matching the header. */
+@Composable
+private fun NetworkTableRow(
     entry: NetworkEntry,
     onClick: () -> Unit,
 ) {
-    val methodColor = when (entry.request.method.uppercase()) {
-        "GET" -> Color(0xFF8BE9FD)      // cyan
-        "POST" -> Color(0xFF50FA7B)     // green
-        "PUT", "PATCH" -> Color(0xFFBD93F9) // purple
-        "DELETE" -> Color(0xFFFF5555)   // red
-        "OPTIONS", "HEAD" -> Color(0xFFFFB86C) // orange
-        else -> MaterialTheme.colorScheme.onSurface
-    }
-    val statusColor = when {
+    val mColor = methodColor(entry.request.method)
+    val sColor = when {
         entry.failure != null -> MaterialTheme.colorScheme.error
-        entry.response != null && entry.response.statusCode >= 400 -> Color(0xFFEF5350)
-        entry.response != null && entry.response.statusCode >= 300 -> Color(0xFFFFA726)
-        entry.response != null -> MaterialTheme.colorScheme.primary
+        entry.response != null -> statusColor(entry.response.statusCode)
         else -> MaterialTheme.colorScheme.outline
     }
 
@@ -176,57 +211,57 @@ private fun NetworkEntryRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            .padding(horizontal = Spacing.md, vertical = Spacing.xxs),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(
-            color = methodColor.copy(alpha = 0.15f),
-            shape = MaterialTheme.shapes.extraSmall,
-            modifier = Modifier.size(width = Sizing.tagWidth, height = Sizing.tagHeight)
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    entry.request.method,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = methodColor,
-                )
-            }
-        }
+        // Method
+        Text(
+            entry.request.method,
+            modifier = Modifier.weight(Col.METHOD),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = mColor,
+            fontWeight = FontWeight.Bold,
+        )
 
-        Spacer(modifier = Modifier.width(Spacing.sm))
+        // Status code
+        Text(
+            entry.statusDisplay,
+            modifier = Modifier.weight(Col.STATUS),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = sColor,
+            fontWeight = FontWeight.Bold,
+        )
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                entry.request.url,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Text(
-                    entry.statusDisplay,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = statusColor,
-                )
-                entry.durationMs?.let { ms ->
-                    Text(
-                        "${ms}ms",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.width(Spacing.xs))
+        // Timestamp
         Text(
             formatTime(entry.request.timestamp),
+            modifier = Modifier.weight(Col.TIME),
             style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
             color = MaterialTheme.colorScheme.outline,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        )
+
+        // Duration
+        Text(
+            entry.durationMs?.let { "${it}ms" } ?: "–",
+            modifier = Modifier.weight(Col.DURATION),
+            style = MaterialTheme.typography.labelSmall,
+            fontFamily = FontFamily.Monospace,
+            color = if (entry.durationMs != null && entry.durationMs > 3000) Color(0xFFFFA726) else MaterialTheme.colorScheme.outline,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        )
+
+        // URL (truncated)
+        Text(
+            entry.request.url,
+            modifier = Modifier.weight(Col.URL),
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -236,7 +271,10 @@ private fun NetworkEntryRow(
 private fun NetworkDetail(
     entry: NetworkEntry,
     onBack: () -> Unit,
+    onCopy: (String) -> Unit = {},
 ) {
+    val context = LocalContext.current
+
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
@@ -251,6 +289,31 @@ private fun NetworkDetail(
                 IconButton(onClick = onBack) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                 }
+            },
+            actions = {
+                IconButton(onClick = {
+                    val text = buildString {
+                        appendLine("${entry.request.method} ${entry.request.url}")
+                        entry.response?.let { appendLine("Status: ${it.statusCode}") }
+                        entry.durationMs?.let { appendLine("Duration: ${it}ms") }
+                        entry.failure?.let { appendLine("Error: ${it.description}") }
+                        if (entry.request.headers.isNotEmpty()) {
+                            appendLine()
+                            appendLine("Request Headers:")
+                            entry.request.headers.forEach { (k, v) -> appendLine("  $k: $v") }
+                        }
+                        entry.response?.let { resp ->
+                            if (resp.headers.isNotEmpty()) {
+                                appendLine()
+                                appendLine("Response Headers:")
+                                resp.headers.forEach { (k, v) -> appendLine("  $k: $v") }
+                            }
+                        }
+                    }
+                    onCopy(text)
+                }) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy")
+                }
             }
         )
 
@@ -262,14 +325,14 @@ private fun NetworkDetail(
             item {
                 Text("General", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(Spacing.xs))
-                HeaderRow("Request URL", entry.request.url)
-                HeaderRow("Method", entry.request.method)
+                DetailRow("Request URL", entry.request.url, onCopy)
+                DetailRow("Method", entry.request.method, onCopy)
                 entry.response?.let { resp ->
-                    HeaderRow("Status Code", resp.statusCode.toString())
-                    entry.durationMs?.let { HeaderRow("Duration", "${it}ms") }
+                    DetailRow("Status Code", resp.statusCode.toString(), onCopy)
+                    entry.durationMs?.let { DetailRow("Duration", "${it}ms", onCopy) }
                 }
                 entry.failure?.let { fail ->
-                    HeaderRow("Error", fail.description)
+                    DetailRow("Error", fail.description, onCopy)
                 }
                 Spacer(modifier = Modifier.height(Spacing.md))
             }
@@ -280,17 +343,35 @@ private fun NetworkDetail(
                     Spacer(modifier = Modifier.height(Spacing.xs))
                 }
                 items(items = entry.request.headers.entries.toList(), key = { it.key }) { (k, v) ->
-                    HeaderRow(k, v)
+                    DetailRow(k, v, onCopy)
                 }
                 item { Spacer(modifier = Modifier.height(Spacing.md)) }
+            }
+
+            // Response headers
+            entry.response?.let { resp ->
+                if (resp.headers.isNotEmpty()) {
+                    item {
+                        Text("Response Headers", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(modifier = Modifier.height(Spacing.xs))
+                    }
+                    items(items = resp.headers.entries.toList(), key = { "resp-${it.key}" }) { (k, v) ->
+                        DetailRow(k, v, onCopy)
+                    }
+                    item { Spacer(modifier = Modifier.height(Spacing.md)) }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun HeaderRow(key: String, value: String) {
-    Row(modifier = Modifier.padding(vertical = Spacing.xxs)) {
+private fun DetailRow(key: String, value: String, onCopy: (String) -> Unit = {}) {
+    Row(
+        modifier = Modifier
+            .padding(vertical = Spacing.xxs)
+            .clickable { onCopy("$key: $value") },
+    ) {
         Text(
             key,
             style = MaterialTheme.typography.bodySmall,

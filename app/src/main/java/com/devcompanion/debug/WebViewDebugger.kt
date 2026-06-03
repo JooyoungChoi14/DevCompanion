@@ -464,6 +464,46 @@ class WebViewDebugger {
         }
     }
 
+    /** Track HTTP error (4xx/5xx from server) — matched by URL since WebView doesn't give requestId for HTTP errors */
+    fun trackHttpError(url: String, statusCode: Int, reasonPhrase: String) {
+        val now = System.currentTimeMillis()
+        _networkEntries.update { map ->
+            // Find existing pending entry for this URL that doesn't have a response yet
+            val existing = map.values.find { it.request.url == url && it.response == null && it.failure == null }
+            if (existing != null) {
+                val response = NetworkResponse(
+                    requestId = existing.request.requestId,
+                    url = url,
+                    statusCode = statusCode,
+                    headers = emptyMap(),
+                    timestamp = now,
+                    durationMs = now - existing.request.timestamp
+                )
+                map + (existing.request.requestId to existing.copy(
+                    response = response,
+                    completedAt = now
+                ))
+            } else {
+                // No matching request — create a standalone entry
+                val requestId = requestIdCounter.incrementAndGet().toString()
+                val request = NetworkRequest(
+                    requestId = requestId,
+                    url = url,
+                    timestamp = now
+                )
+                val response = NetworkResponse(
+                    requestId = requestId,
+                    url = url,
+                    statusCode = statusCode,
+                    headers = emptyMap(),
+                    timestamp = now,
+                    durationMs = 0
+                )
+                map + (requestId to NetworkEntry(request = request, response = response, completedAt = now))
+            }
+        }
+    }
+
     /** Mark page load start for performance tracking */
     fun markPageStart() {
         pendingRequests["__page_start__"] = System.currentTimeMillis()
