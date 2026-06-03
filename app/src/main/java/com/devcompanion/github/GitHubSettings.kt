@@ -90,8 +90,7 @@ object GitHubSettings {
                     remove(KEY_PAT_SCOPES)
                 }
             }
-            }.commit()
-        }
+        }.commit()
         Log.d(TAG, "PAT saved (type=${when (credential.patType) {
             is PatType.Classic -> "classic"
             is PatType.FineGrained -> "fine_grained"
@@ -143,8 +142,7 @@ object GitHubSettings {
             remove(KEY_PAT_SCOPES)
             remove(KEY_PAT_FG_REPOS)
             remove(KEY_PAT_FG_PERMS)
-            }.commit()
-        }
+        }.commit()
         Log.d(TAG, "PAT cleared")
     }
 
