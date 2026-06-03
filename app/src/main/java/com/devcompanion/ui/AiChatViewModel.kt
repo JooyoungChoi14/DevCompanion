@@ -28,9 +28,11 @@ import com.devcompanion.llm.agent.WebViewTools
 import com.devcompanion.logging.EventType
 import com.devcompanion.logging.SessionLog
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /**
  * ViewModel managing the AI chat screen state.
@@ -411,6 +413,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 val systemPrompt = buildSystemPrompt("chat", webView)
                 var toolCallsToProcess = listOf<com.devcompanion.llm.agent.ToolCall>()
+                withTimeout(60_000L) {
                 repository.streamWithTools(_messages.value, capturedContext, systemPrompt, modeTools).collect { event ->
                     when (event) {
                         is LlmStreamEvent.Token -> {
@@ -427,6 +430,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                             _currentResponse.value = responseBuilder.toString()
                         }
                     }
+                }
                 }
 
                 // Process any mode-switch tool calls
@@ -450,6 +454,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                     responseBuilder.clear()
                     _currentResponse.value = ""
                     try {
+                        withTimeout(60_000L) {
                         repository.streamWithTools(
                             _messages.value,
                             capturedContext,
@@ -471,6 +476,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                                     // Ignore subsequent tool calls in re-stream
                                 }
                             }
+                        }
                         }
                     } catch (_: Exception) { /* best effort re-stream */ }
                 }
@@ -732,27 +738,35 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             _currentResponse.value = ""
 
             try {
-                repository.streamWithTools(messages, context, systemPrompt, tools).collect { event ->
-                    when (event) {
-                        is LlmStreamEvent.Token -> {
-                            sb.append(event.content)
-                            _currentResponse.value = sb.toString()
-                        }
-                        is LlmStreamEvent.ToolCalls -> toolCallsList = event.calls
-                        is LlmStreamEvent.Start -> Unit
-                        is LlmStreamEvent.Complete -> {
-                            event.usage?.let {
-                                lastUsage = it
-                                _totalInputTokens.value += it.inputTokens
-                                _totalOutputTokens.value += it.outputTokens
+                withTimeout(60_000L) {
+                    repository.streamWithTools(messages, context, systemPrompt, tools).collect { event ->
+                        when (event) {
+                            is LlmStreamEvent.Token -> {
+                                sb.append(event.content)
+                                _currentResponse.value = sb.toString()
                             }
-                        }
-                        is LlmStreamEvent.Error -> {
-                            streamError = event.message
-                            streamErrorCode = event.code
+                            is LlmStreamEvent.ToolCalls -> toolCallsList = event.calls
+                            is LlmStreamEvent.Start -> Unit
+                            is LlmStreamEvent.Complete -> {
+                                event.usage?.let {
+                                    lastUsage = it
+                                    _totalInputTokens.value += it.inputTokens
+                                    _totalOutputTokens.value += it.outputTokens
+                                }
+                            }
+                            is LlmStreamEvent.Error -> {
+                                streamError = event.message
+                                streamErrorCode = event.code
+                            }
                         }
                     }
                 }
+            } catch (e: TimeoutCancellationException) {
+                streamError = "LLM response timed out (60s)"
+                SessionLog.log(
+                    com.devcompanion.logging.EventType.ERROR,
+                    mapOf("what" to "llm_timeout", "provider" to currentProvider.displayName, "model" to currentProvider.model)
+                )
             } catch (e: Exception) {
                 streamError = e.message
             }
