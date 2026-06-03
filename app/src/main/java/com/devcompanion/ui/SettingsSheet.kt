@@ -518,19 +518,33 @@ private fun AiTab(
                                 else -> return@Button
                             }
                             val vm = viewModel
-                            if (vm == null) {
-                                SessionLog.log(com.devcompanion.logging.EventType.ERROR, mapOf(
-                                    "what" to "save_no_viewmodel",
-                                    "detail" to "viewModel is null in AiTab — Save will not persist"
-                                ))
-                            } else {
+                            // Always save to persistent storage (ViewModel or not)
+                            try {
+                                LlmSettings.saveProvider(newProvider)
                                 SessionLog.log(com.devcompanion.logging.EventType.SETTINGS_SAVE, mapOf(
-                                    "step" to "before_setProvider",
                                     "provider" to newProvider.providerType,
+                                    "result" to "ok",
                                     "apiKeyLen" to providerApiKey(newProvider).length.toString()
                                 ))
+                                android.widget.Toast.makeText(
+                                    LocalContext.current,
+                                    "✓ Saved",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            } catch (e: Exception) {
+                                SessionLog.log(com.devcompanion.logging.EventType.SETTINGS_SAVE, mapOf(
+                                    "provider" to newProvider.providerType,
+                                    "result" to "error",
+                                    "error" to (e.message?.take(80) ?: "unknown")
+                                ))
+                                android.widget.Toast.makeText(
+                                    LocalContext.current,
+                                    "✗ Save failed: ${e.message?.take(50)}",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
                             }
-                            vm?.setProvider(newProvider)
+                            // Also update runtime provider if ViewModel available
+                            vm?.setProvider(newProvider, persist = false)
                             testResult = null
                         },
                         modifier = Modifier.weight(1f)
@@ -658,12 +672,18 @@ private fun AiTab(
                     TextButton(onClick = {
                         customPrompt = ""
                         LlmSettings.saveCustomPrompt("")
+                        android.widget.Toast.makeText(
+                            LocalContext.current, "✓ Custom instructions cleared", android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }) {
                         Text("Clear")
                     }
                     Spacer(modifier = Modifier.width(Spacing.xs))
                     Button(onClick = {
                         LlmSettings.saveCustomPrompt(customPrompt.trim())
+                        android.widget.Toast.makeText(
+                            LocalContext.current, "✓ Custom instructions saved", android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }) {
                         Text("Save")
                     }
@@ -980,9 +1000,12 @@ private fun IntegrationsTab(
                         confirmButton = {
                             TextButton(
                                 onClick = {
-                                    SessionLog.clearLogs(logContext)
+                                    val count = SessionLog.clearLogs(logContext)
                                     SessionLog.startSession()
                                     showClearLogDialog = false
+                                    android.widget.Toast.makeText(
+                                        logContext, "Cleared $count log files", android.widget.Toast.LENGTH_SHORT
+                                    ).show()
                                 }
                             ) { Text("Clear", color = MaterialTheme.colorScheme.error) }
                         },

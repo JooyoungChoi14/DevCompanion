@@ -277,13 +277,15 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _sourceUrl = url
     }
 
-    fun setProvider(provider: LlmProvider) {
+    fun setProvider(provider: LlmProvider, persist: Boolean = true) {
         val oldName = _provider.value?.displayName ?: "None"
         _provider.value = provider
-        try {
-            LlmSettings.saveProvider(provider)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to save provider", e)
+        if (persist) {
+            try {
+                LlmSettings.saveProvider(provider)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save provider", e)
+            }
         }
         if (oldName != provider.displayName) {
             SessionLog.providerChange(oldName, provider.displayName, provider.model)
