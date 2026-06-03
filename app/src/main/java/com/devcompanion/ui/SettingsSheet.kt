@@ -284,6 +284,7 @@ private fun AiTab(
 ) {
     val currentProvider by (viewModel?.provider ?: MutableStateFlow(null)).collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // ── Form state ────────────────────────────────────────────────
     var selectedType by remember {
@@ -527,7 +528,7 @@ private fun AiTab(
                                     "apiKeyLen" to providerApiKey(newProvider).length.toString()
                                 ))
                                 android.widget.Toast.makeText(
-                                    LocalContext.current,
+                                    context,
                                     "✓ Saved",
                                     android.widget.Toast.LENGTH_SHORT
                                 ).show()
@@ -538,7 +539,7 @@ private fun AiTab(
                                     "error" to (e.message?.take(80) ?: "unknown")
                                 ))
                                 android.widget.Toast.makeText(
-                                    LocalContext.current,
+                                    context,
                                     "✗ Save failed: ${e.message?.take(50)}",
                                     android.widget.Toast.LENGTH_LONG
                                 ).show()
@@ -673,7 +674,7 @@ private fun AiTab(
                         customPrompt = ""
                         LlmSettings.saveCustomPrompt("")
                         android.widget.Toast.makeText(
-                            LocalContext.current, "✓ Custom instructions cleared", android.widget.Toast.LENGTH_SHORT
+                            context, "✓ Custom instructions cleared", android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }) {
                         Text("Clear")
@@ -682,7 +683,7 @@ private fun AiTab(
                     Button(onClick = {
                         LlmSettings.saveCustomPrompt(customPrompt.trim())
                         android.widget.Toast.makeText(
-                            LocalContext.current, "✓ Custom instructions saved", android.widget.Toast.LENGTH_SHORT
+                            context, "✓ Custom instructions saved", android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }) {
                         Text("Save")
