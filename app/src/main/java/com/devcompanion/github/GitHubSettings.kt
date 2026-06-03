@@ -32,7 +32,7 @@ object GitHubSettings {
     private var prefs: SharedPreferences? = null
 
     /** Whether we're using plaintext fallback (no secure enclave). */
-    var isUsingPlainStorage: Boolean = false
+    @Volatile var isUsingPlainStorage: Boolean = false
         private set
 
     @Synchronized
@@ -90,7 +90,7 @@ object GitHubSettings {
                     remove(KEY_PAT_SCOPES)
                 }
             }
-            apply()
+            }.commit()
         }
         Log.d(TAG, "PAT saved (type=${when (credential.patType) {
             is PatType.Classic -> "classic"
@@ -143,7 +143,7 @@ object GitHubSettings {
             remove(KEY_PAT_SCOPES)
             remove(KEY_PAT_FG_REPOS)
             remove(KEY_PAT_FG_PERMS)
-            apply()
+            }.commit()
         }
         Log.d(TAG, "PAT cleared")
     }
