@@ -3,6 +3,8 @@ package com.devcompanion.llm
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.devcompanion.logging.SessionLog
+import com.devcompanion.logging.EventType
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
@@ -65,12 +67,19 @@ object LlmSettings {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
             Log.i(TAG, "Encrypted settings initialized")
+            SessionLog.log(EventType.SETTINGS_INIT, mapOf(
+                "storage" to "encrypted",
+                "result" to "success"
+            ))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize encrypted preferences — falling back to standard prefs", e)
-            // Fallback to standard prefs so the app doesn't crash on devices
-            // where security-crypto may have issues (e.g. emulators without secure enclave)
             prefs = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
             isUsingPlainStorage = true
+            SessionLog.log(EventType.SETTINGS_INIT, mapOf(
+                "storage" to "plaintext_fallback",
+                "result" to "fallback",
+                "error" to (e.message?.take(80) ?: "unknown")
+            ))
         }
     }
 
@@ -119,8 +128,33 @@ object LlmSettings {
         val savedKey = p.getString(KEY_API_KEY, "")
         if (savedKey != apiKeyValue) {
             Log.e(TAG, "API KEY CORRUPTION: saved=${apiKeyValue.length}chars, read back=${savedKey?.length ?: 0}chars")
+            SessionLog.log(EventType.SETTINGS_SAVE, mapOf(
+                "provider" to provider.providerType,
+                "result" to "corruption",
+                "savedLen" to apiKeyValue.length.toString(),
+                "readBackLen" to (savedKey?.length ?: 0).toString(),
+                "baseUrl" to (when (provider) {
+                    is LlmProvider.Anthropic -> provider.baseUrl
+                    is LlmProvider.OpenAi -> provider.baseUrl
+                    is LlmProvider.Ollama -> provider.baseUrl
+                    is LlmProvider.Gemini -> provider.baseUrl
+                })
+            ))
         } else {
             Log.d(TAG, "Provider saved: ${provider.providerType}, apiKey=${apiKeyValue.take(4)}...${apiKeyValue.takeLast(4)} (${apiKeyValue.length}chars)")
+            SessionLog.log(EventType.SETTINGS_SAVE, mapOf(
+                "provider" to provider.providerType,
+                "result" to "ok",
+                "apiKeyLen" to apiKeyValue.length.toString(),
+                "apiKeyHead" to apiKeyValue.take(4),
+                "apiKeyTail" to apiKeyValue.takeLast(4),
+                "baseUrl" to (when (provider) {
+                    is LlmProvider.Anthropic -> provider.baseUrl
+                    is LlmProvider.OpenAi -> provider.baseUrl
+                    is LlmProvider.Ollama -> provider.baseUrl
+                    is LlmProvider.Gemini -> provider.baseUrl
+                })
+            ))
         }
     }
 
@@ -138,6 +172,14 @@ object LlmSettings {
         val version = p.getString(KEY_VERSION, "2023-06-01") ?: "2023-06-01"
 
         Log.d(TAG, "Loaded provider: type=$type, apiKey=${apiKey.take(4)}...${apiKey.takeLast(4)} (${apiKey.length}chars), baseUrl=$baseUrl")
+        SessionLog.log(EventType.SETTINGS_LOAD, mapOf(
+            "provider" to (type ?: "null"),
+            "result" to if (type != null) "ok" else "not_found",
+            "apiKeyLen" to apiKey.length.toString(),
+            "apiKeyHead" to apiKey.take(4),
+            "apiKeyTail" to apiKey.takeLast(4),
+            "baseUrl" to baseUrl
+        ))
 
         return when (type) {
             LlmProvider.Anthropic.TYPE -> LlmProvider.Anthropic(
@@ -152,16 +194,7 @@ object LlmSettings {
             )
             LlmProvider.Ollama.TYPE -> LlmProvider.Ollama(
                 apiKey = apiKey,
-                // Migration: old versions saved localhost as Ollama baseUrl.
-                // If the saved value is a localhost URL, replace with cloud default.
-                baseUrl = when {
-                    baseUrl.isEmpty() -> LlmProvider.Ollama.DEFAULT_BASE_URL
-                    baseUrl.contains("localhost") || baseUrl.contains("127.0.0.1") -> {
-                        Log.w(TAG, "Migrating Ollama baseUrl from localhost to cloud: $baseUrl")
-                        LlmProvider.Ollama.DEFAULT_BASE_URL
-                    }
-                    else -> baseUrl
-                },
+                baseUrl = baseUrl.ifEmpty { LlmProvider.Ollama.DEFAULT_BASE_URL },
                 model = model
             )
             LlmProvider.Gemini.TYPE -> LlmProvider.Gemini(

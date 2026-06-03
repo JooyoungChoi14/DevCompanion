@@ -368,6 +368,9 @@ enum class EventType(val key: String) {
     WEBVIEW_RECOVER("webview_recover"),
     NETWORK_ERROR("network_error"),
     ANR_DETECTED("anr_detected"),
+    SETTINGS_SAVE("settings_save"),
+    SETTINGS_LOAD("settings_load"),
+    SETTINGS_INIT("settings_init"),
     ERROR("error")
 }
 
