@@ -46,6 +46,6 @@ class BookmarksStore(context: Context) {
     }
 
     private fun saveList(list: List<Bookmark>) {
-        prefs.edit().putString(key, gson.toJson(list)).apply()
+        prefs.edit().putString(key, gson.toJson(list)).commit()
     }
 }

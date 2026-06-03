@@ -32,11 +32,11 @@ class UrlHistoryStore(context: Context) {
         current.add(0, url)
         // Trim to max
         val trimmed = current.take(maxItems)
-        prefs.edit().putString(key, gson.toJson(trimmed)).apply()
+        prefs.edit().putString(key, gson.toJson(trimmed)).commit()
         return trimmed
     }
 
     fun clear() {
-        prefs.edit().remove(key).apply()
+        prefs.edit().remove(key).commit()
     }
 }

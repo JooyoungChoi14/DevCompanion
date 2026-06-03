@@ -155,14 +155,14 @@ object GitHubSettings {
 
     var defaultRepo: String
         get() = requirePrefs().getString(KEY_DEFAULT_REPO, "") ?: ""
-        set(value) = requirePrefs().edit().putString(KEY_DEFAULT_REPO, value).apply()
+        set(value) { requirePrefs().edit().putString(KEY_DEFAULT_REPO, value).commit() }
 
     // ── Read-only mode ─────────────────────────────────────────────
 
     /** When true, all write actions are blocked regardless of PAT scopes. */
     var readOnlyMode: Boolean
         get() = requirePrefs().getBoolean(KEY_READ_ONLY_MODE, true)  // Default: read-only
-        set(value) = requirePrefs().edit().putBoolean(KEY_READ_ONLY_MODE, value).apply()
+        set(value) { requirePrefs().edit().putBoolean(KEY_READ_ONLY_MODE, value).commit() }
 
     // ── Validation status ──────────────────────────────────────────
 
@@ -175,6 +175,6 @@ object GitHubSettings {
         requirePrefs().edit()
             .putBoolean(KEY_PAT_VALIDATED, valid)
             .putLong(KEY_PAT_VALIDATED_AT, if (valid) System.currentTimeMillis() else 0L)
-            .apply()
+            .commit()
     }
 }
