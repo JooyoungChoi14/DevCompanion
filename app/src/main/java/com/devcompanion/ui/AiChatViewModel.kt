@@ -252,6 +252,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             _provider.value = LlmSettings.loadProvider()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to load saved provider", e)
+            SessionLog.log(com.devcompanion.logging.EventType.SETTINGS_LOAD, mapOf(
+                "result" to "exception_in_init",
+                "error" to (e.message?.take(80) ?: "unknown")
+            ))
         }
 
         // Auto-restore last conversation on startup
