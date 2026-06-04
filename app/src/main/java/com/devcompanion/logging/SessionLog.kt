@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import com.devcompanion.BuildConfig
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.withContext
@@ -59,10 +60,31 @@ object SessionLog {
             buffer.clear()
             lastFlushIndex = 0
         }
-        log(EventType.SESSION_START, mapOf(
+        val versionInfo = mutableMapOf(
             "sessionId" to currentSessionId,
-            "startTime" to sessionStartTime.toString()
-        ))
+            "startTime" to sessionStartTime.toString(),
+            "appVersion" to "",
+            "appVersionCode" to "",
+            "webViewPackage" to ""
+        )
+        appContext?.let { ctx ->
+            versionInfo["appVersion"] = BuildConfig.VERSION_NAME
+            versionInfo["appVersionCode"] = BuildConfig.VERSION_CODE.toString()
+            versionInfo["webViewPackage"] = getCurrentWebViewInfo(ctx)
+        }
+        log(EventType.SESSION_START, versionInfo)
+    }
+
+    /** Get current WebView package info (e.g. "com.google.android.webview@123.0.6312.42"). */
+    private fun getCurrentWebViewInfo(context: Context): String {
+        return try {
+            val pm = context.packageManager
+            val pkg = pm.getPackageInfo("com.google.android.webview", 0)
+            "${pkg.packageName}@${pkg.versionName}"
+        } catch (_: Exception) {
+            // WebView not found (emulator, non-GMS device, etc.)
+            "unknown"
+        }
     }
 
     /** Log a single event. Thread-safe via synchronized buffer. */
@@ -295,7 +317,8 @@ object SessionLog {
         if (!logDir.exists()) logDir.mkdirs()
 
         val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(sessionStartTime))
-        val logFile = File(logDir, "$dateStr-$currentSessionId.jsonl")
+        val versionSuffix = try { BuildConfig.VERSION_NAME } catch (_: Exception) { "unknown" }
+        val logFile = File(logDir, "$dateStr-v$versionSuffix-$currentSessionId.jsonl")
 
         try {
             logFile.appendText(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
