@@ -80,6 +80,26 @@ object SessionLog {
         }
     }
 
+    /** Strip query parameters and fragment from URL for privacy.
+     * Returns "https://example.com/path" from "https://example.com/path?token=xxx#section"
+     * If URL cannot be parsed, returns url.take(200) as fallback.
+     */
+    private fun sanitizeUrl(url: String): String {
+        return try {
+            val uri = Uri.parse(url)
+            val scheme = uri.scheme ?: ""
+            val host = uri.host ?: ""
+            val path = uri.path ?: ""
+            if (host.isNotBlank()) {
+                "$scheme://$host$path".take(200)
+            } else {
+                url.take(200) // non-standard URLs: truncate only
+            }
+        } catch (_: Exception) {
+            url.take(200)
+        }
+    }
+
     // ── Convenience methods for common event types ──────────────────────
 
     fun llmRequest(provider: String, model: String, messageCount: Int, hasTools: Boolean,
@@ -154,7 +174,7 @@ object SessionLog {
     fun capture(mode: String, url: String?, hasScreenshot: Boolean, screenshotStripped: Boolean = false) {
         log(EventType.CAPTURE, mapOf(
             "mode" to mode,
-            "url" to (url ?: ""),
+            "url" to (url?.let { sanitizeUrl(it) } ?: ""),
             "hasScreenshot" to hasScreenshot.toString(),
             "screenshotStripped" to screenshotStripped.toString()
         ))
@@ -162,9 +182,17 @@ object SessionLog {
 
     fun urlChange(from: String, to: String, trigger: String) {
         log(EventType.URL_CHANGE, mapOf(
-            "from" to from,
-            "to" to to,
+            "from" to sanitizeUrl(from),
+            "to" to sanitizeUrl(to),
             "trigger" to trigger
+        ))
+    }
+
+    fun networkError(url: String, statusCode: Int, reason: String) {
+        log(EventType.NETWORK_ERROR, mapOf(
+            "url" to sanitizeUrl(url),
+            "statusCode" to statusCode.toString(),
+            "reason" to reason
         ))
     }
 
@@ -222,7 +250,7 @@ object SessionLog {
     /** Log WebView outer state (viewport, scroll, URL). */
     fun uiWebviewState(url: String, viewportW: Int, viewportH: Int, scrollX: Int, scrollY: Int, contentH: Int) {
         log(EventType.UI_WEBVIEW_STATE, mapOf(
-            "url" to url.take(200),
+            "url" to sanitizeUrl(url),
             "viewport" to "${viewportW}x${viewportH}",
             "scroll" to "${scrollX},${scrollY}",
             "contentH" to contentH.toString()

@@ -499,10 +499,7 @@ fun BrowserTab(
                             val statusCode = errorResponse.statusCode
                             val reasonPhrase = errorResponse.reasonPhrase ?: "HTTP error"
                             debugger.trackHttpError(url, statusCode, reasonPhrase)
-                            com.devcompanion.logging.SessionLog.log(
-                                com.devcompanion.logging.EventType.NETWORK_ERROR,
-                                mapOf("url" to url, "statusCode" to statusCode.toString(), "reason" to reasonPhrase)
-                            )
+                            com.devcompanion.logging.SessionLog.networkError(url, statusCode, reasonPhrase)
                         }
 
                         override fun onRenderProcessGone(
