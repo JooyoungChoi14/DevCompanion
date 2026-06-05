@@ -466,16 +466,20 @@ fun BrowserTab(
                                 "(function(){document.documentElement.style.zoom='${viewportScale / 100.0}';})();",
                                 null
                             )
-                            view.evaluateJavascript(AUTOFILL_INJECTION, null)
-                            // WebView rendering fixes
-                            view.evaluateJavascript(VH_FIX_INJECTION, null)
-                            // KEYBOARD_FIX & OVERFLOW_FIX removed: adjustResize handles
-                            // viewport resizing natively. JS body locking caused
-                            // scroll-lock residue on pages like 서경포탈.
-                            view.evaluateJavascript(TEXT_SIZE_FIX_INJECTION, null)
-                            // WebView heartbeat: JS updates timestamp every second,
-                            // Android checks it periodically to detect JS engine freezes.
-                            view.evaluateJavascript(WEBVIEW_HEARTBEAT_INJECTION, null)
+                            // ── Flavor-conditional JS injections ───────────────────────
+                            // WebView (free flavor) needs JS fixes for rendering issues.
+                            // GeckoView (gecko flavor) doesn't — engine handles everything natively.
+                            if (com.devcompanion.engine.InjectionConfig.needsInjections) {
+                                view.evaluateJavascript(AUTOFILL_INJECTION, null)
+                                view.evaluateJavascript(VH_FIX_INJECTION, null)
+                                // KEYBOARD_FIX & OVERFLOW_FIX removed: adjustResize handles
+                                // viewport resizing natively. JS body locking caused
+                                // scroll-lock residue on pages like 서경포탈.
+                                view.evaluateJavascript(TEXT_SIZE_FIX_INJECTION, null)
+                            }
+                            if (com.devcompanion.engine.InjectionConfig.needsHeartbeat) {
+                                view.evaluateJavascript(WEBVIEW_HEARTBEAT_INJECTION, null)
+                            }
                             if (debugger.inspectorEnabled) {
                                 view.evaluateJavascript(INSPECTOR_IFRAME_INJECTION, null)
                             }

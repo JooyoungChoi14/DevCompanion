@@ -16,6 +16,37 @@ android {
         versionName = "1.0.0"
     }
 
+    // ── Product Flavors ──────────────────────────────────────────
+    // `free`: system WebView (local build friendly, small APK)
+    // `gecko`: GeckoView engine (CI-only build, larger APK)
+    flavorDimensions += "engine"
+    productFlavors {
+        create("free") {
+            dimension = "engine"
+            // No GeckoView dependency — uses system WebView
+        }
+        create("gecko") {
+            dimension = "engine"
+            // GeckoView engine — ABI-specific AARs to reduce build memory
+        }
+    }
+
+    // ── ABI configuration ────────────────────────────────────────
+    // Only split by ABI when building for GeckoView (CI-only).
+    // Free flavor has no native libs and should produce a single universal APK.
+    // Controlled via -PabiSplit=true Gradle property.
+    if (project.providers.gradleProperty("abiSplit").forUseAtConfigurationTime()
+            .orElse("false").get().toBoolean()) {
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "x86_64")
+                isUniversalApk = false
+            }
+        }
+    }
+
     signingConfigs {
         getByName("debug") {
             storeFile = file("debug.keystore")
@@ -38,8 +69,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {
@@ -47,11 +80,16 @@ android {
         buildConfig = true
     }
 
-
+    // GeckoView native libs need to be packaged without compression
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
-    // Compose BOM — compatible with Kotlin 2.1
+    // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2025.05.01")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
@@ -89,6 +127,9 @@ dependencies {
 
     // Encrypted SharedPreferences for secure API key storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // ── GeckoView (gecko flavor only) ────────────────────────────
+    "geckoImplementation"("org.mozilla.geckoview:geckoview:150.0.20260511200624")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
