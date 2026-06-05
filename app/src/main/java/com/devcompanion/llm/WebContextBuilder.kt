@@ -9,6 +9,8 @@ import android.webkit.ValueCallback
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -19,18 +21,35 @@ import kotlin.coroutines.resumeWithException
  *
  * Must be called from a coroutine context; the actual evaluation
  * is dispatched to the UI thread internally.
+ *
+ * Includes a 5-second timeout to prevent indefinite suspension when
+ * the WebView's JS engine is blocked (e.g. by an infinite MutationObserver loop).
+ * On timeout, returns an error string instead of throwing, so callers can
+ * gracefully report the unresponsive state.
  */
-suspend fun WebView.evalJs(js: String): String {
-    return suspendCancellableCoroutine { cont ->
-        // Ensure evaluation happens on the UI thread
-        post {
-            if (!cont.isActive) return@post
-            evaluateJavascript(js) { result ->
-                if (cont.isActive) {
-                    cont.resume(result ?: "")
+suspend fun WebView.evalJs(js: String, timeoutMs: Long = 5_000L): String {
+    return try {
+        withTimeout(timeoutMs) {
+            suspendCancellableCoroutine { cont ->
+                // Ensure evaluation happens on the UI thread
+                post {
+                    if (!cont.isActive) return@post
+                    evaluateJavascript(js) { result ->
+                        if (cont.isActive) {
+                            cont.resume(result ?: "")
+                        }
+                    }
                 }
             }
         }
+    } catch (e: TimeoutCancellationException) {
+        // WebView JS engine is unresponsive — return error instead of throwing
+        // so the agent loop can report this to the LLM and try alternatives
+        com.devcompanion.logging.SessionLog.log(
+            com.devcompanion.logging.EventType.WEBVIEW_CRASH,
+            mapOf("reason" to "eval_timeout", "timeoutMs" to timeoutMs.toString())
+        )
+        "{\"t\":\"error\",\"v\":\"WebView unresponsive: JavaScript evaluation timed out after ${timeoutMs}ms. The page JS engine may be blocked. Try reload or use non-JS tools.\"}"
     }
 }
 

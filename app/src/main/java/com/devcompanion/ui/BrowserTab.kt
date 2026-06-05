@@ -4,6 +4,11 @@ import android.graphics.Bitmap
 import android.webkit.WebView
 import android.util.Log
 import com.devcompanion.logging.SessionLog
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -468,6 +473,9 @@ fun BrowserTab(
                             // viewport resizing natively. JS body locking caused
                             // scroll-lock residue on pages like 서경포탈.
                             view.evaluateJavascript(TEXT_SIZE_FIX_INJECTION, null)
+                            // WebView heartbeat: JS updates timestamp every second,
+                            // Android checks it periodically to detect JS engine freezes.
+                            view.evaluateJavascript(WEBVIEW_HEARTBEAT_INJECTION, null)
                             if (debugger.inspectorEnabled) {
                                 view.evaluateJavascript(INSPECTOR_IFRAME_INJECTION, null)
                             }
@@ -678,6 +686,112 @@ fun BrowserTab(
             app?.bridgeServer?.attachWebView(null)
         }
     }
+
+    // WebView freeze detection: check JS heartbeat every 3 seconds.
+    // If heartbeat is stale by 5+ seconds, JS engine is frozen.
+    var webViewFrozen by remember { mutableStateOf(false) }
+    LaunchedEffect(webViewRef) {
+        var lastHeartbeat = 0L
+        var staleCount = 0
+        while (true) {
+            kotlinx.coroutines.delay(3_000L)
+            val wv = webViewRef ?: continue
+            // Read heartbeat via evaluateJavascript (non-blocking on UI thread)
+            var currentHeartbeat = 0L
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                try {
+                    val latch = java.util.concurrent.CountDownLatch(1)
+                    var result: String? = null
+                    wv.post {
+                        try {
+                            wv.evaluateJavascript(
+                                "window.__devCompanionHeartbeat || 0",
+                            ) { v ->
+                                result = v
+                                latch.countDown()
+                            }
+                        } catch (_: Exception) {
+                            latch.countDown()
+                        }
+                    }
+                    latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                    currentHeartbeat = result?.toLongOrNull() ?: 0L
+                } catch (_: Exception) {
+                    // WebView not ready
+                }
+            }
+            if (currentHeartbeat == 0L) continue // not yet injected
+            val now = System.currentTimeMillis()
+            if (now - currentHeartbeat > 5_000L) {
+                staleCount++
+                if (staleCount >= 2) {
+                    if (!webViewFrozen) {
+                        webViewFrozen = true
+                        com.devcompanion.logging.SessionLog.log(
+                            com.devcompanion.logging.EventType.WEBVIEW_CRASH,
+                            mapOf("reason" to "js_frozen", "staleMs" to (now - currentHeartbeat).toString())
+                        )
+                    }
+                }
+            } else {
+                if (webViewFrozen) {
+                    webViewFrozen = false
+                    com.devcompanion.logging.SessionLog.log(
+                        com.devcompanion.logging.EventType.WEBVIEW_RECOVER,
+                        mapOf("reason" to "heartbeat_resumed")
+                    )
+                }
+                staleCount = 0
+            }
+        }
+    }
+
+    // Freeze overlay — offer reload when WebView JS is frozen
+    if (webViewFrozen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.padding(Spacing.lg)
+            ) {
+                Icon(
+                    Icons.Filled.Warning,
+                    contentDescription = "WebView frozen",
+                    modifier = Modifier.size(48.dp),
+                    tint = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(Spacing.md))
+                Text(
+                    "WebView is unresponsive",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                Text(
+                    "The page JavaScript engine appears frozen.\nScroll, navigation, and agent tools may not work.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(Spacing.md))
+                Button(
+                    onClick = {
+                        webViewFrozen = false
+                        pendingAction = BrowserAction.Reload
+                    }
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(Spacing.xs))
+                    Text("Reload page")
+                }
+            }
+        }
+    }
 }
 
 // Inject inspector to all iframes recursively
@@ -823,6 +937,11 @@ private val AUTOFILL_INJECTION = """(function(){
  */
 private val VH_FIX_INJECTION = """(function(){
     var h = window.innerHeight;
+    var VH_MARKER = '__vhFixApplied';
+    var LOOP_LIMIT = 20; // max consecutive self-triggered fixes
+    var loopCount = 0;
+    var debounceTimer = null;
+    var observerActive = true;
 
     // 1. Set CSS custom property
     document.documentElement.style.setProperty('--webview-vh', (h * 0.01) + 'px');
@@ -832,61 +951,89 @@ private val VH_FIX_INJECTION = """(function(){
         h = window.innerHeight;
         document.documentElement.style.setProperty('--webview-vh', (h * 0.01) + 'px');
 
-        // Fix inline 100vh/100dvh styles
+        // Fix inline 100vh/100dvh styles — only if not already fixed by us
         var inlineSelectors = '.v-navigation-drawer, .navigation-container, .v-navigation-drawer__content, [style*="100vh"], [style*="100dvh"]';
         document.querySelectorAll(inlineSelectors).forEach(function(el) {
+            if (el.dataset[VH_MARKER] === '1') return;
             var style = el.getAttribute('style') || '';
             if (style.includes('100vh') || style.includes('100dvh')) {
                 el.style.setProperty('height', h + 'px', 'important');
+                el.dataset[VH_MARKER] = '1';
             }
         });
 
         // Fix Vuetify aside elements with computed height:0px
-        // Vuetify sets position:fixed + top:0 + bottom:Npx + height:0px
-        // CSS rule uses calc(-Npx + 100dvh) which evaluates to 0 in WebView
         var asideSelectors = '.v-navigation-drawer aside, .navigation-container aside, .system-menu, .system-depth-menu';
         document.querySelectorAll(asideSelectors).forEach(function(el) {
+            if (el.dataset[VH_MARKER] === '1') return;
             var computedHeight = window.getComputedStyle(el).height;
             if (computedHeight === '0px' && el.children.length > 0) {
                 var marginTop = parseInt(window.getComputedStyle(el).marginTop) || 0;
                 el.style.setProperty('height', (h - marginTop) + 'px', 'important');
                 el.style.removeProperty('bottom');
+                el.dataset[VH_MARKER] = '1';
             }
         });
 
         // Fix parent container collapse
         document.querySelectorAll('.v-navigation-drawer__content').forEach(function(el) {
+            if (el.dataset[VH_MARKER] === '1') return;
             var computedHeight = window.getComputedStyle(el).height;
             if (computedHeight === '0px') {
                 el.style.setProperty('height', '100%', 'important');
+                el.dataset[VH_MARKER] = '1';
             }
         });
     }
     fixVhUnits();
 
     // 5. MutationObserver: Vuetify/Vue re-renders reset inline styles
+    // DEBOUNCED + self-fix detection to prevent infinite loops
     var observer = new MutationObserver(function(mutations) {
-        var needsFix = false;
+        if (!observerActive) return;
+
+        // Ignore mutations from our own fixes
+        var externalChange = false;
         mutations.forEach(function(m) {
             if (m.type === 'attributes' && m.attributeName === 'style') {
                 var target = m.target;
+                // Skip if we already marked this element
+                if (target.dataset && target.dataset[VH_MARKER] === '1') return;
                 var style = target.getAttribute('style') || '';
-                if (style.includes('100vh') || style.includes('100dvh') || style.includes('height: 0px') || style.includes('height:0px')) {
-                    target.style.setProperty('height', window.innerHeight + 'px', 'important');
-                    needsFix = true;
+                // External change: framework reset our fix (removed height/vh)
+                if (style.includes('100vh') || style.includes('100dvh') ||
+                    style.includes('height: 0px') || style.includes('height:0px')) {
+                    externalChange = true;
                 }
-                // Catch Vuetify removing our fix on navigation elements
                 if (target.classList && (
                     target.classList.contains('v-navigation-drawer') ||
                     target.classList.contains('system-menu') ||
                     target.classList.contains('system-depth-menu') ||
                     target.classList.contains('navigation-container')
                 )) {
-                    needsFix = true;
+                    // Clear marker so fixVhUnits can re-apply
+                    delete target.dataset[VH_MARKER];
+                    externalChange = true;
                 }
             }
         });
-        if (needsFix) fixVhUnits();
+
+        if (!externalChange) return;
+
+        // Debounce: coalesce rapid mutations
+        if (debounceTimer) clearTimeout(debounceTimer);
+        loopCount++;
+        if (loopCount > LOOP_LIMIT) {
+            // Self-disconnect: infinite loop detected
+            observer.disconnect();
+            observerActive = false;
+            console.warn('[DevCompanion VH_FIX] Observer disconnected: loop limit reached');
+            return;
+        }
+        debounceTimer = setTimeout(function() {
+            fixVhUnits();
+            loopCount = 0; // reset on successful fix
+        }, 100);
     });
     observer.observe(document.documentElement, {
         attributes: true,
@@ -895,7 +1042,13 @@ private val VH_FIX_INJECTION = """(function(){
     });
 
     // 6. Viewport changes (rotation, split screen, keyboard)
-    window.addEventListener('resize', fixVhUnits);
+    window.addEventListener('resize', function() {
+        // Reset all markers on resize since viewport changed
+        document.querySelectorAll('[data-' + VH_MARKER + ']').forEach(function(el) {
+            delete el.dataset[VH_MARKER];
+        });
+        fixVhUnits();
+    });
 })();"""
 
 /**
@@ -919,4 +1072,17 @@ private val TEXT_SIZE_FIX_INJECTION = """(function(){
         '}'
     ].join('\\n');
     document.head.appendChild(style);
+})();"""
+
+/**
+ * WebView heartbeat: JS engine updates a global timestamp every second.
+ * Android code checks this periodically — if the timestamp is stale (5+ seconds),
+ * the JS engine is frozen (e.g. by an infinite MutationObserver loop).
+ * This is the JS side of the freeze detection mechanism.
+ */
+private val WEBVIEW_HEARTBEAT_INJECTION = """(function(){
+    window.__devCompanionHeartbeat = Date.now();
+    setInterval(function() {
+        window.__devCompanionHeartbeat = Date.now();
+    }, 1000);
 })();"""
