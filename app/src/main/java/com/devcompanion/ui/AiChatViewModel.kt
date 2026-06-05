@@ -799,10 +799,11 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             // Clear streaming buffer — content is now finalized
             _currentResponse.value = ""
 
-            if (streamError != null) {
+            val capturedError = streamError
+            if (capturedError != null) {
                 SessionLog.llmError(currentProvider.displayName, currentProvider.model,
-                    streamError, code = streamErrorCode)
-                LlmResponse(content = "Error: $streamError", toolCalls = emptyList(),
+                    capturedError, code = streamErrorCode)
+                LlmResponse(content = "Error: $capturedError", toolCalls = emptyList(),
                     inputTokens = lastUsage?.inputTokens, outputTokens = lastUsage?.outputTokens)
             } else {
                 LlmResponse(content = sb.toString(), toolCalls = toolCallsList ?: emptyList(),
