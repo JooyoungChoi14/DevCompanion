@@ -925,7 +925,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 // Flush immediately so AGENT_END is persisted even if the app
                 // goes to background right after the coroutine cancels.
                 val app = getApplication<Application>()
-                lifecycleScope.launch(Dispatchers.IO) { SessionLog.flush(app) }
+                viewModelScope.launch(Dispatchers.IO) { SessionLog.flush(app) }
                 // Stop foreground service when agent finishes
                 app.startService(Intent(app, AgentService::class.java).apply {
                     action = AgentService.ACTION_STOP
