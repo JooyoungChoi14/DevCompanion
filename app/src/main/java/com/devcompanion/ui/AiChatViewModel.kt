@@ -27,6 +27,7 @@ import com.devcompanion.llm.agent.ToolExecutor
 import com.devcompanion.llm.agent.WebViewTools
 import com.devcompanion.logging.EventType
 import com.devcompanion.logging.SessionLog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.*
@@ -921,8 +922,11 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 agentLoop = null
                 agentJob = null
                 SessionLog.log(EventType.AGENT_END, mapOf("reason" to "loop_finished"))
-                // Stop foreground service when agent finishes
+                // Flush immediately so AGENT_END is persisted even if the app
+                // goes to background right after the coroutine cancels.
                 val app = getApplication<Application>()
+                lifecycleScope.launch(Dispatchers.IO) { SessionLog.flush(app) }
+                // Stop foreground service when agent finishes
                 app.startService(Intent(app, AgentService::class.java).apply {
                     action = AgentService.ACTION_STOP
                 })
@@ -937,6 +941,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Stop the agent loop. */
     fun stopAgentLoop() {
+        SessionLog.log(EventType.AGENT_END, mapOf("reason" to "user_stop"))
         agentLoop?.stop()
         agentJob?.cancel()
         agentJob = null

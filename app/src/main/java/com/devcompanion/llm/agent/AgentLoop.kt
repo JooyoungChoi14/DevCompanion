@@ -248,6 +248,7 @@ class AgentLoop(
                 }
             } catch (e: CancellationException) {
                 Log.d(TAG, "Agent loop cancelled")
+                SessionLog.log(EventType.AGENT_END, mapOf("reason" to "cancelled"))
                 _state.value = AgentState.Idle
                 throw e
             } catch (e: Exception) {

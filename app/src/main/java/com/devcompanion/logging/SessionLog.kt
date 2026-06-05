@@ -350,6 +350,10 @@ object SessionLog {
 
     /**
      * Export full session log history (all flushed files + current buffer).
+     *
+     * Deduplication: events already flushed to disk (indices < lastFlushIndex)
+     * are excluded from the in-memory buffer output to prevent duplicates when
+     * the same session's disk file and buffer overlap.
      */
     fun exportFullHistory(context: Context): String {
         val sb = StringBuilder()
@@ -360,10 +364,20 @@ object SessionLog {
                 try {
                     sb.append(file.readText())
                 } catch (_: Exception) {}
+        }
+        }
+        // Append only unflushed events from current buffer to avoid duplicates
+        val unflushed: List<LogEvent>
+        synchronized(buffer) {
+            unflushed = if (lastFlushIndex < buffer.size) {
+                buffer.subList(lastFlushIndex, buffer.size).toList()
+            } else {
+                emptyList()
             }
         }
-        // Append current buffer
-        sb.append(exportAsString())
+        if (unflushed.isNotEmpty()) {
+            sb.append(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
+        }
         return sb.toString()
     }
 
