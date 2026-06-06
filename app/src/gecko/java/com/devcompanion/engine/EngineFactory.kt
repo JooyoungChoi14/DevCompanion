@@ -1,20 +1,22 @@
 package com.devcompanion.engine
 
 import android.content.Context
-import android.view.View
-import android.webkit.WebView
+import com.devcompanion.debug.WebViewDebugger
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 
 /**
- * Factory to create the browser View for the gecko flavor (GeckoView).
+ * Factory to create the browser engine for the gecko flavor (GeckoView).
+ *
+ * The [debugger] parameter is accepted for API parity with the free flavor
+ * but is not used — GeckoView has its own debugging tools.
  */
 object EngineFactory {
     private var runtime: GeckoRuntime? = null
 
-    fun createGeckoView(context: Context): Triple<GeckoView, GeckoSession, GeckoRuntime> {
+    fun create(context: Context, debugger: WebViewDebugger? = null): BrowserEngine {
         val rt = runtime ?: GeckoRuntime.create(context.applicationContext).also {
             runtime = it
         }
@@ -25,6 +27,6 @@ object EngineFactory {
         }
         val geckoView = GeckoView(context.applicationContext)
         geckoView.setSession(session)
-        return Triple(geckoView, session, rt)
+        return GeckoEngine(geckoView, session)
     }
 }

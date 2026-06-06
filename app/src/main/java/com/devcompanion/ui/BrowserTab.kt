@@ -3,6 +3,9 @@ package com.devcompanion.ui
 import android.graphics.Bitmap
 import android.webkit.WebView
 import android.util.Log
+import com.devcompanion.engine.BrowserEngine
+import com.devcompanion.engine.EngineFactory
+import com.devcompanion.engine.WebViewEngine
 import com.devcompanion.logging.SessionLog
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -72,7 +75,7 @@ fun BrowserTab(
     headerVisible: Boolean = true,
     onHeaderVisibilityToggle: (() -> Unit)? = null,
     onWebViewReady: ((() -> Boolean) -> Unit)? = null,
-    onWebViewCreated: ((WebView) -> Unit)? = null,
+    onEngineCreated: ((BrowserEngine) -> Unit)? = null,
     onAskAi: ((String) -> Unit)? = null,
     onNavigateHome: (() -> Unit)? = null,
     startPageVisible: Boolean = true,
@@ -86,10 +89,10 @@ fun BrowserTab(
     var pendingAction by remember { mutableStateOf<BrowserAction?>(null) }
     var urlExpanded by remember { mutableStateOf(false) }
     var viewportScale by remember { mutableIntStateOf(100) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var engineRef by remember { mutableStateOf<BrowserEngine?>(null) }
     var urlHadFocus by remember { mutableStateOf(false) }
-    var webViewCrashed by remember { mutableStateOf(false) }
-    var webViewKey by remember { mutableIntStateOf(0) }
+    var engineCrashed by remember { mutableStateOf(false) }
+    var engineKey by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -97,10 +100,10 @@ fun BrowserTab(
     val urlHistory by debugger.urlHistory.collectAsState(initial = emptyList())
 
     // Expose canGoBack to parent for back button handling
-    LaunchedEffect(webViewRef, canGoBack) {
+    LaunchedEffect(engineRef, canGoBack) {
         onWebViewReady?.invoke {
-            if (canGoBack && webViewRef != null) {
-                webViewRef?.goBack()
+            if (canGoBack && engineRef != null) {
+                engineRef?.goBack()
                 SessionLog.uiClick("webview_back")
                 true
             } else {
@@ -333,8 +336,8 @@ fun BrowserTab(
                             onClick = {
                                 viewportScale = scale
                                 SessionLog.uiClick("viewport_scale", "${scale}%")
-                                webViewRef?.settings?.textZoom = scale
-                                webViewRef?.evaluateJavascript(
+                                engineRef?.setTextZoom(scale)
+                                engineRef?.evaluateJavascript(
                                     "(function(){document.documentElement.style.zoom='${scale / 100.0}';})();",
                                     null
                                 )
@@ -417,43 +420,36 @@ fun BrowserTab(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            key(webViewKey) {
+            key(engineKey) {
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
-                Log.i(TAG, "Creating WebView with debugger (key=$webViewKey)")
+                Log.i(TAG, "Creating browser engine (key=$engineKey)")
                 // Reset crash state on factory re-invocation
-                webViewCrashed = false
+                engineCrashed = false
                 com.devcompanion.logging.SessionLog.log(
                     com.devcompanion.logging.EventType.WEBVIEW_RECOVER,
-                    mapOf("webViewKey" to webViewKey.toString())
+                    mapOf("engineKey" to engineKey.toString())
                 )
-                WebView(ctx.applicationContext).apply {
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.loadWithOverviewMode = true
-                    settings.useWideViewPort = true
-                    settings.builtInZoomControls = true
-                    settings.displayZoomControls = false
-                    settings.textZoom = viewportScale
-                    setInitialScale(viewportScale)
-                    settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36"
+                val engine = EngineFactory.create(ctx, debugger)
+                engineRef = engine
+                onEngineCreated?.invoke(engine)
 
-                    importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
-                    settings.saveFormData = true
-                    @Suppress("DEPRECATION")
-                    settings.savePassword = true
-                    isFocusable = true
-                    isFocusableInTouchMode = true
+                // WebView-specific setup (debugger, JS injections, etc.)
+                if (engine is WebViewEngine) {
+                    val wv = engine.underlyingWebView
+                    val dbg = engine.underlyingDebugger
 
-                    webChromeClient = debugger.DebugChromeClient()
-                    webViewClient = object : android.webkit.WebViewClient() {
+                    engine.configureDefaults(viewportScale)
+
+                    wv.webChromeClient = dbg.DebugChromeClient()
+                    wv.webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageStarted(view: WebView, pageUrl: String, favicon: Bitmap?) {
                             isLoading = true
                             urlTextValue = TextFieldValue(pageUrl, TextRange(pageUrl.length))
-                            debugger.addUrlToHistory(pageUrl)
+                            dbg.addUrlToHistory(pageUrl)
                             urlHistoryStore.addUrl(pageUrl)
-                            debugger.markPageStart()
+                            dbg.markPageStart()
                             SessionLog.uiWebviewState(pageUrl, view.width, view.height, view.scrollX, view.scrollY, view.contentHeight)
                         }
 
@@ -467,31 +463,26 @@ fun BrowserTab(
                                 "(function(){document.documentElement.style.zoom='${viewportScale / 100.0}';})();",
                                 null
                             )
-                            // ── Flavor-conditional JS injections ───────────────────────
-                            // WebView (free flavor) needs JS fixes for rendering issues.
-                            // GeckoView (gecko flavor) doesn't — engine handles everything natively.
+                            // Flavor-conditional JS injections
                             if (com.devcompanion.engine.InjectionConfig.needsInjections) {
                                 view.evaluateJavascript(AUTOFILL_INJECTION, null)
                                 view.evaluateJavascript(VH_FIX_INJECTION, null)
-                                // KEYBOARD_FIX & OVERFLOW_FIX removed: adjustResize handles
-                                // viewport resizing natively. JS body locking caused
-                                // scroll-lock residue on pages like 서경포탈.
                                 view.evaluateJavascript(TEXT_SIZE_FIX_INJECTION, null)
                             }
                             if (com.devcompanion.engine.InjectionConfig.needsHeartbeat) {
                                 view.evaluateJavascript(WEBVIEW_HEARTBEAT_INJECTION, null)
                             }
-                            if (debugger.inspectorEnabled) {
+                            if (dbg.inspectorEnabled) {
                                 view.evaluateJavascript(INSPECTOR_IFRAME_INJECTION, null)
                             }
-                            debugger.DebugWebViewClient().onPageFinished(view, url)
+                            dbg.DebugWebViewClient().onPageFinished(view, url)
                         }
 
                         override fun shouldInterceptRequest(
                             view: WebView,
                             request: android.webkit.WebResourceRequest
                         ): android.webkit.WebResourceResponse? {
-                            return debugger.DebugWebViewClient().shouldInterceptRequest(view, request)
+                            return dbg.DebugWebViewClient().shouldInterceptRequest(view, request)
                         }
 
                         override fun onReceivedError(
@@ -499,7 +490,7 @@ fun BrowserTab(
                             request: android.webkit.WebResourceRequest?,
                             error: android.webkit.WebResourceError?
                         ) {
-                            debugger.DebugWebViewClient().onReceivedError(view, request, error)
+                            dbg.DebugWebViewClient().onReceivedError(view, request, error)
                         }
 
                         override fun onReceivedHttpError(
@@ -507,11 +498,10 @@ fun BrowserTab(
                             request: android.webkit.WebResourceRequest,
                             errorResponse: android.webkit.WebResourceResponse
                         ) {
-                            // Track HTTP errors (4xx/5xx from server) in network log
                             val url = request.url.toString()
                             val statusCode = errorResponse.statusCode
                             val reasonPhrase = errorResponse.reasonPhrase ?: "HTTP error"
-                            debugger.trackHttpError(url, statusCode, reasonPhrase)
+                            dbg.trackHttpError(url, statusCode, reasonPhrase)
                             com.devcompanion.logging.SessionLog.networkError(url, statusCode, reasonPhrase)
                         }
 
@@ -525,53 +515,50 @@ fun BrowserTab(
                                 mapOf("didCrash" to detail.didCrash().toString())
                             )
                             if (detail.didCrash()) {
-                                // Render process crashed — mark crashed and trigger WebView recreation
-                                // Do NOT call view.destroy() directly: Compose manages the View lifecycle.
-                                // Incrementing webViewKey forces AndroidView factory to re-run.
-                                webViewCrashed = true
-                                webViewKey += 1
+                                engineCrashed = true
+                                engineKey += 1
                             }
                             return true
                         }
                     }
 
-                    debugger.attachWebView(this)
-                    webViewRef = this
-                    onWebViewCreated?.invoke(this)
+                    engine.attachDebugger()
 
-                    addJavascriptInterface(object {
+                    wv.addJavascriptInterface(object {
                         @JavascriptInterface
                         fun post(json: String) {
-                            debugger.onInspectorResult(json)
+                            dbg.onInspectorResult(json)
                         }
                     }, "__devCompanionInspector")
 
-                    addJavascriptInterface(object {
+                    wv.addJavascriptInterface(object {
                         @JavascriptInterface
                         fun post(json: String) {
-                            debugger.onPerformanceResult(json)
+                            dbg.onPerformanceResult(json)
                         }
                     }, "__devCompanionPerf")
 
-                    loadUrl("about:blank")
+                    engine.loadUrl("about:blank")
                 }
+
+                engine.view
             },
-            update = { webView ->
+            update = { _ ->
                 when (val action = pendingAction) {
                     is BrowserAction.Navigate -> {
-                        webView.loadUrl(action.url)
+                        engineRef?.loadUrl(action.url)
                         pendingAction = null
                     }
                     BrowserAction.GoBack -> {
-                        if (webView.canGoBack()) webView.goBack()
+                        if (engineRef?.canGoBack() == true) engineRef?.goBack()
                         pendingAction = null
                     }
                     BrowserAction.GoForward -> {
-                        if (webView.canGoForward()) webView.goForward()
+                        if (engineRef?.canGoForward() == true) engineRef?.goForward()
                         pendingAction = null
                     }
                     BrowserAction.Reload -> {
-                        webView.reload()
+                        engineRef?.reload()
                         pendingAction = null
                     }
                     null -> { }
@@ -581,7 +568,7 @@ fun BrowserTab(
         }
 
             // ── Crash overlay ───────────────────────────────────────
-            if (webViewCrashed) {
+            if (engineCrashed) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -614,8 +601,8 @@ fun BrowserTab(
                         Spacer(modifier = Modifier.height(Spacing.md))
                         Button(
                             onClick = {
-                                webViewCrashed = false
-                                webViewKey += 1
+                                engineCrashed = false
+                                engineKey += 1
                             }
                         ) {
                             Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -683,76 +670,74 @@ fun BrowserTab(
         WebViewDebuggerHolder.current = debugger
     }
 
-    // Connect WebView to BridgeServer for agent API access
-    DisposableEffect(webViewRef) {
+    // Connect browser engine to BridgeServer for agent API access
+    DisposableEffect(engineRef) {
         val app = context.applicationContext as? DevCompanionApp
-        app?.bridgeServer?.attachWebView(webViewRef)
+        val webView = (engineRef as? WebViewEngine)?.underlyingWebView
+        app?.bridgeServer?.attachWebView(webView)
         onDispose {
             app?.bridgeServer?.attachWebView(null)
         }
     }
 
-    // WebView freeze detection: check JS heartbeat every 3 seconds.
-    // If heartbeat is stale by 5+ seconds, JS engine is frozen.
+    // Freeze detection: only needed for WebView (heartbeat-based).
+    // GeckoView doesn't suffer from MutationObserver infinite loops.
     var webViewFrozen by remember { mutableStateOf(false) }
-    LaunchedEffect(webViewRef) {
-        var lastHeartbeat = 0L
-        var staleCount = 0
-        while (true) {
-            kotlinx.coroutines.delay(3_000L)
-            val wv = webViewRef ?: continue
-            // Read heartbeat via evaluateJavascript (non-blocking on UI thread)
-            var currentHeartbeat = 0L
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                try {
-                    val latch = java.util.concurrent.CountDownLatch(1)
-                    var result: String? = null
-                    wv.post {
-                        try {
-                            wv.evaluateJavascript(
-                                "window.__devCompanionHeartbeat || 0",
-                            ) { v ->
-                                result = v
-                                latch.countDown()
-                            }
-                        } catch (_: Exception) {
+    if (com.devcompanion.engine.InjectionConfig.needsHeartbeat) {
+        LaunchedEffect(engineRef) {
+            var lastHeartbeat = 0L
+            var staleCount = 0
+            while (true) {
+                kotlinx.coroutines.delay(3_000L)
+                val engine = engineRef ?: continue
+                // Only WebViewEngine needs heartbeat; skip for other engines
+                if (engine !is WebViewEngine) continue
+                var currentHeartbeat = 0L
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    try {
+                        val latch = java.util.concurrent.CountDownLatch(1)
+                        var result: String? = null
+                        engine.evaluateJavascript(
+                            "window.__devCompanionHeartbeat || 0"
+                        ) { v ->
+                            result = v
                             latch.countDown()
                         }
+                        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
+                        currentHeartbeat = result?.toLongOrNull() ?: 0L
+                    } catch (_: Exception) {
+                        // Engine not ready
                     }
-                    latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-                    currentHeartbeat = result?.toLongOrNull() ?: 0L
-                } catch (_: Exception) {
-                    // WebView not ready
                 }
-            }
-            if (currentHeartbeat == 0L) continue // not yet injected
-            val now = System.currentTimeMillis()
-            if (now - currentHeartbeat > 5_000L) {
-                staleCount++
-                if (staleCount >= 2) {
-                    if (!webViewFrozen) {
-                        webViewFrozen = true
+                if (currentHeartbeat == 0L) continue // not yet injected
+                val now = System.currentTimeMillis()
+                if (now - currentHeartbeat > 5_000L) {
+                    staleCount++
+                    if (staleCount >= 2) {
+                        if (!webViewFrozen) {
+                            webViewFrozen = true
+                            com.devcompanion.logging.SessionLog.log(
+                                com.devcompanion.logging.EventType.WEBVIEW_CRASH,
+                                mapOf("reason" to "js_frozen", "staleMs" to (now - currentHeartbeat).toString())
+                            )
+                        }
+                    }
+                } else {
+                    if (webViewFrozen) {
+                        webViewFrozen = false
                         com.devcompanion.logging.SessionLog.log(
-                            com.devcompanion.logging.EventType.WEBVIEW_CRASH,
-                            mapOf("reason" to "js_frozen", "staleMs" to (now - currentHeartbeat).toString())
+                            com.devcompanion.logging.EventType.WEBVIEW_RECOVER,
+                            mapOf("reason" to "heartbeat_resumed")
                         )
                     }
+                    staleCount = 0
                 }
-            } else {
-                if (webViewFrozen) {
-                    webViewFrozen = false
-                    com.devcompanion.logging.SessionLog.log(
-                        com.devcompanion.logging.EventType.WEBVIEW_RECOVER,
-                        mapOf("reason" to "heartbeat_resumed")
-                    )
-                }
-                staleCount = 0
             }
         }
     }
 
-    // Freeze overlay — offer reload when WebView JS is frozen
-    if (webViewFrozen) {
+    // Freeze overlay — offer reload when engine JS is frozen (WebView only)
+    if (com.devcompanion.engine.InjectionConfig.needsHeartbeat && webViewFrozen) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -956,7 +941,7 @@ private val VH_FIX_INJECTION = """(function(){
         h = window.innerHeight;
         document.documentElement.style.setProperty('--webview-vh', (h * 0.01) + 'px');
 
-        // Fix inline 100vh/100dvh styles — only if not already fixed by us
+        // Fix inline 100vh/100dvh styles - only if not already fixed by us
         var inlineSelectors = '.v-navigation-drawer, .navigation-container, .v-navigation-drawer__content, [style*="100vh"], [style*="100dvh"]';
         document.querySelectorAll(inlineSelectors).forEach(function(el) {
             if (el.dataset[VH_MARKER] === '1') return;
@@ -1081,7 +1066,7 @@ private val TEXT_SIZE_FIX_INJECTION = """(function(){
 
 /**
  * WebView heartbeat: JS engine updates a global timestamp every second.
- * Android code checks this periodically — if the timestamp is stale (5+ seconds),
+ * Android code checks this periodically - if the timestamp is stale (5+ seconds),
  * the JS engine is frozen (e.g. by an infinite MutationObserver loop).
  * This is the JS side of the freeze detection mechanism.
  */
