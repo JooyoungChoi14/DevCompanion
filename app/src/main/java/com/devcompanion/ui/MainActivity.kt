@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 // Removed: pointerInput — unused import
@@ -29,6 +30,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import com.devcompanion.llm.ChatHistory
+import com.devcompanion.ui.AiChatViewModel
 import com.devcompanion.DevCompanionApp
 import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.ui.theme.DevCompanionTheme
@@ -159,6 +161,7 @@ fun MainApp(
     var showSessionChoice by remember { mutableStateOf(false) }
     var matchedConversationId by remember { mutableStateOf<String?>(null) }
     var forceNewSession by remember { mutableStateOf(false) }
+    val chatViewModel: AiChatViewModel = viewModel()
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
 
     // ── UI navigation tracking ──
@@ -195,8 +198,12 @@ fun MainApp(
                             val url = engineRef?.getUrl()
                             currentUrlForChat = url
                             SessionLog.uiClick("ai_chat_btn", if (url != null) "has_url" else "no_url")
-                            if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
-                                // Real URL — show session choice dialog
+                            // If there's an active conversation, reopen it directly (no dialog)
+                            val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                            if (hasActiveChat) {
+                                showAiChat = true
+                            } else if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
+                                // Real URL but no active chat — show session choice dialog
                                 showSessionChoice = true
                             } else {
                                 // about:blank, chrome://, etc. — always new session
@@ -253,7 +260,11 @@ fun MainApp(
                     pendingAiQuestion = question
                     val url = engineRef?.getUrl()
                     currentUrlForChat = url
-                    if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
+                    // If there's an active conversation, reopen directly
+                    val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                    if (hasActiveChat) {
+                        showAiChat = true
+                    } else if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
                         showSessionChoice = true
                     } else {
                         forceNewSession = true

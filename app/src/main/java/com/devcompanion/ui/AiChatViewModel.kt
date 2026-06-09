@@ -85,11 +85,18 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private var _sourceUrl: String? = null
 
     fun loadConversation(conversationId: String) {
+        // If loading a different conversation while agent loop is running, stop it first
+        if (agentLoop != null && _conversationId.value != conversationId) {
+            stopAgentLoop()
+        }
         _conversationId.value = conversationId
         _messages.value = ChatHistory.load(getApplication<Application>(), conversationId)
         // Restore sourceUrl from saved metadata
         _sourceUrl = ChatHistory.listConversations(getApplication<Application>())
             .find { it.id == conversationId }?.sourceUrl
+        // Reset streaming state for the loaded conversation
+        _isStreaming.value = false
+        _agentState.value = AgentState.Idle
     }
 
     /** Whether the initial prompt from address bar has been sent (prevents re-send on recomposition). */
