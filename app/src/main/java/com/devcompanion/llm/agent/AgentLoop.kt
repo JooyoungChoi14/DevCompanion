@@ -8,6 +8,7 @@ import com.devcompanion.llm.WebContextBuilder
 import com.devcompanion.llm.WebContextPacket
 import com.devcompanion.logging.EventType
 import com.devcompanion.logging.SessionLog
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
