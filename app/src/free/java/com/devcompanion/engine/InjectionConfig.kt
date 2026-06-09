@@ -66,103 +66,24 @@ object InjectionConfig {
     }
 })();"""
 
-    /** Fix Android WebView vh/dvh unit miscalculation. */
+    /**
+     * Provide CSS custom property --webview-vh (1% of viewport height) for pages
+     * that need to use vh units but Android WebView computes them incorrectly.
+     *
+     * This injection does NOT force any element heights — it only sets a CSS
+     * custom property that page authors can reference (e.g. `height: calc(var(--webview-vh) * 100)`).
+     * Forced height overrides and MutationObserver-based fixes are removed because they
+     * break dynamic layouts, cause contentHeight miscalculation, and create
+     * observer→mutation→observer infinite loops.
+     */
     val VH_FIX_INJECTION = """(function(){
-    var h = window.innerHeight;
-    var VH_MARKER = '__vhFixApplied';
-    var LOOP_LIMIT = 20;
-    var loopCount = 0;
-    var debounceTimer = null;
-    var observerActive = true;
-
-    document.documentElement.style.setProperty('--webview-vh', (h * 0.01) + 'px');
-
-    function fixVhUnits() {
-        h = window.innerHeight;
-        document.documentElement.style.setProperty('--webview-vh', (h * 0.01) + 'px');
-
-        var inlineSelectors = '.v-navigation-drawer, .navigation-container, .v-navigation-drawer__content, [style*="100vh"], [style*="100dvh"]';
-        document.querySelectorAll(inlineSelectors).forEach(function(el) {
-            if (el.dataset[VH_MARKER] === '1') return;
-            var style = el.getAttribute('style') || '';
-            if (style.includes('100vh') || style.includes('100dvh')) {
-                el.style.setProperty('height', h + 'px', 'important');
-                el.dataset[VH_MARKER] = '1';
-            }
-        });
-
-        var asideSelectors = '.v-navigation-drawer aside, .navigation-container aside, .system-menu, .system-depth-menu';
-        document.querySelectorAll(asideSelectors).forEach(function(el) {
-            if (el.dataset[VH_MARKER] === '1') return;
-            var computedHeight = window.getComputedStyle(el).height;
-            if (computedHeight === '0px' && el.children.length > 0) {
-                var marginTop = parseInt(window.getComputedStyle(el).marginTop) || 0;
-                el.style.setProperty('height', (h - marginTop) + 'px', 'important');
-                el.style.removeProperty('bottom');
-                el.dataset[VH_MARKER] = '1';
-            }
-        });
-
-        document.querySelectorAll('.v-navigation-drawer__content').forEach(function(el) {
-            if (el.dataset[VH_MARKER] === '1') return;
-            var computedHeight = window.getComputedStyle(el).height;
-            if (computedHeight === '0px') {
-                el.style.setProperty('height', '100%', 'important');
-                el.dataset[VH_MARKER] = '1';
-            }
-        });
+    if (window.__dcVhFix) return "already-injected";
+    window.__dcVhFix = true;
+    function setVh() {
+        document.documentElement.style.setProperty('--webview-vh', (window.innerHeight * 0.01) + 'px');
     }
-    fixVhUnits();
-
-    var observer = new MutationObserver(function(mutations) {
-        if (!observerActive) return;
-        var externalChange = false;
-        mutations.forEach(function(m) {
-            if (m.type === 'attributes' && m.attributeName === 'style') {
-                var target = m.target;
-                if (target.dataset && target.dataset[VH_MARKER] === '1') return;
-                var style = target.getAttribute('style') || '';
-                if (style.includes('100vh') || style.includes('100dvh') ||
-                    style.includes('height: 0px') || style.includes('height:0px')) {
-                    externalChange = true;
-                }
-                if (target.classList && (
-                    target.classList.contains('v-navigation-drawer') ||
-                    target.classList.contains('system-menu') ||
-                    target.classList.contains('system-depth-menu') ||
-                    target.classList.contains('navigation-container')
-                )) {
-                    delete target.dataset[VH_MARKER];
-                    externalChange = true;
-                }
-            }
-        });
-        if (!externalChange) return;
-        if (debounceTimer) clearTimeout(debounceTimer);
-        loopCount++;
-        if (loopCount > LOOP_LIMIT) {
-            observer.disconnect();
-            observerActive = false;
-            console.warn('[DevCompanion VH_FIX] Observer disconnected: loop limit reached');
-            return;
-        }
-        debounceTimer = setTimeout(function() {
-            fixVhUnits();
-            loopCount = 0;
-        }, 100);
-    });
-    observer.observe(document.documentElement, {
-        attributes: true,
-        subtree: true,
-        attributeFilter: ['style']
-    });
-
-    window.addEventListener('resize', function() {
-        document.querySelectorAll('[data-' + VH_MARKER + ']').forEach(function(el) {
-            delete el.dataset[VH_MARKER];
-        });
-        fixVhUnits();
-    });
+    setVh();
+    window.addEventListener('resize', setVh);
 })();"""
 
     /** Fix text-size-adjust for WebView. */
