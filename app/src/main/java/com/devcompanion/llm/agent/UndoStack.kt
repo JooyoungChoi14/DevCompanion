@@ -1,10 +1,10 @@
 package com.devcompanion.llm.agent
 
 import android.util.Log
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 
 /**
- * URL-based undo/rollback for the WebView agent.
+ * URL-based undo/rollback for the browser engine agent.
  *
  * Before each navigation or form submission, the current URL is pushed
  * onto a stack. The user or agent can roll back to the previous URL
@@ -43,17 +43,17 @@ class UndoStack {
      *
      * @return The URL navigated to, or null if the stack is empty.
      */
-    suspend fun undo(webView: WebView): String? {
+    suspend fun undo(engine: BrowserEngine): String? {
         if (stack.isEmpty()) {
             Log.w(TAG, "Undo stack is empty")
             return null
         }
         val url = stack.removeLast()
         Log.d(TAG, "Undo to URL: $url (stack depth: ${stack.size})")
-        // Use WebView.goBack() which respects the browser's own history
+        // Use engine.goBack() which respects the browser's own history
         // and is more reliable than loadUrl for proper back navigation
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            webView.goBack()
+            engine.goBack()
         }
         return url
     }
@@ -62,10 +62,10 @@ class UndoStack {
      * Navigate back using WebView's own history.
      * This is simpler and more reliable for most cases.
      */
-    suspend fun goBack(webView: WebView): Boolean {
+    suspend fun goBack(engine: BrowserEngine): Boolean {
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            if (webView.canGoBack()) {
-                webView.goBack()
+            if (engine.canGoBack()) {
+                engine.goBack()
                 Log.d(TAG, "WebView goBack()")
                 true
             } else {

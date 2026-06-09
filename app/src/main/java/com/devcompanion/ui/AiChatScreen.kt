@@ -2,7 +2,7 @@ package com.devcompanion.ui
 
 import android.util.Log
 import com.devcompanion.logging.SessionLog
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -64,7 +64,7 @@ import android.content.Intent
 @Composable
 fun AiChatScreen(
     viewModel: AiChatViewModel = viewModel(),
-    webView: WebView?,
+    engine: BrowserEngine?,
     cdpClient: CdpClient,
     initialPrompt: String? = null,
     startNewConversation: Boolean = false,
@@ -139,7 +139,7 @@ fun AiChatScreen(
     // newConversation → resetInitialPromptSent → send prompt.
     LaunchedEffect(startNewConversation, initialPrompt) {
         if (startNewConversation && initialPrompt != null && !viewModel.initialPromptSent) {
-            viewModel.initializeWithPrompt(initialPrompt, webView, agentMode)
+            viewModel.initializeWithPrompt(initialPrompt, engine, agentMode)
         } else if (startNewConversation && initialPrompt == null) {
             viewModel.newConversation(sourceUrl = sourceUrl)
         }
@@ -440,9 +440,9 @@ fun AiChatScreen(
                                 if (inputText.isNotBlank()) {
                                     SessionLog.uiClick("send_msg", if (agentMode) "agent" else "chat")
                                     if (agentMode) {
-                                        viewModel.sendMessageAgent(inputText.trim(), webView)
+                                        viewModel.sendMessageAgent(inputText.trim(), engine)
                                     } else {
-                                        viewModel.sendMessage(inputText.trim(), webView)
+                                        viewModel.sendMessage(inputText.trim(), engine)
                                     }
                                     inputText = ""
                                 }
@@ -563,7 +563,7 @@ fun AiChatScreen(
                 }
             }
             // Auto-capture indicator — also serves as manual capture trigger (camera button removed from TopAppBar)
-            AnimatedVisibility(visible = lastContext == null && autoCapture && webView != null) {
+            AnimatedVisibility(visible = lastContext == null && autoCapture && engine != null) {
                 Surface(
                     color = MaterialTheme.colorScheme.tertiaryContainer,
                     modifier = Modifier.fillMaxWidth()
@@ -583,7 +583,7 @@ fun AiChatScreen(
                         )
                         Spacer(modifier = Modifier.weight(1f))
                         TextButton(onClick = {
-                            if (webView != null) showCaptureDialog = true
+                            if (engine != null) showCaptureDialog = true
                         }) {
                             Text("Capture", style = MaterialTheme.typography.labelSmall)
                         }
@@ -604,7 +604,7 @@ fun AiChatScreen(
 
             // Manual capture trigger — shown when auto-capture is off and no context captured
             // (camera button removed from TopAppBar; this is the alternative entry point)
-            AnimatedVisibility(visible = lastContext == null && !autoCapture && webView != null && !isInSelectMode) {
+            AnimatedVisibility(visible = lastContext == null && !autoCapture && engine != null && !isInSelectMode) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth()
@@ -612,7 +612,7 @@ fun AiChatScreen(
                     Row(
                         modifier = Modifier
                             .padding(horizontal = Spacing.md, vertical = Spacing.xs)
-                            .clickable { if (webView != null) showCaptureDialog = true },
+                            .clickable { if (engine != null) showCaptureDialog = true },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("\uD83D\uDCF7", style = MaterialTheme.typography.labelMedium)
@@ -767,7 +767,7 @@ fun AiChatScreen(
                 items(messages, key = { message -> message.id }) { message ->
                     MessageBubble(
                             message = message,
-                            webView = webView,
+                            engine = engine,
                             injectedStyles = injectedStyles,
                             isSelected = message.id in selectedMessageIds,
                             isSelectMode = isInSelectMode,
@@ -789,7 +789,7 @@ fun AiChatScreen(
                                 content = currentResponse
                             ),
                             isStreaming = true,
-                            webView = webView,
+                            engine = engine,
                             injectedStyles = injectedStyles,
                             // Streaming messages cannot be selected
                             isSelected = false,
@@ -821,9 +821,9 @@ fun AiChatScreen(
                 TextButton(
                     onClick = {
                         showCaptureDialog = false
-                        if (webView != null) {
+                        if (engine != null) {
                             scope.launch {
-                                viewModel.captureContext(webView)
+                                viewModel.captureContext(engine!!)
                             }
                         }
                     }
@@ -855,13 +855,13 @@ fun AiChatScreen(
  * Single message bubble in the chat list.
  *
  * CSS code blocks in assistant messages include Inject/Revert buttons
- * that inject styles into the WebView for live preview.
+ * that inject styles into the browser engine for live preview.
  */
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
     isStreaming: Boolean = false,
-    webView: WebView?,
+    engine: BrowserEngine?,
     injectedStyles: androidx.compose.runtime.snapshots.SnapshotStateMap<String, String>,
     isSelected: Boolean = false,
     isSelectMode: Boolean = false,
@@ -1008,19 +1008,19 @@ private fun MessageBubble(
                     val messageId = message.id
                     val onCssInject: (String, String) -> Unit = { styleId, css ->
                         val globalStyleId = "${messageId}-$styleId"
-                        if (webView != null) {
-                            val success = WebContextBuilder.injectCss(webView, css, globalStyleId)
+                        if (engine != null) {
+                            val success = WebContextBuilder.injectCss(engine!!, css, globalStyleId)
                             if (success) {
                                 injectedStyles[globalStyleId] = css
                             }
                         } else {
-                            Log.w("AiChatScreen", "No WebView available for CSS inject")
+                            Log.w("AiChatScreen", "No browser engine available for CSS inject")
                         }
                     }
                     val onCssRevert: (String) -> Unit = { styleId ->
                         val globalStyleId = "${messageId}-$styleId"
-                        if (webView != null) {
-                            WebContextBuilder.revertCss(webView, globalStyleId)
+                        if (engine != null) {
+                            WebContextBuilder.revertCss(engine!!, globalStyleId)
                             injectedStyles.remove(globalStyleId)
                         }
                     }

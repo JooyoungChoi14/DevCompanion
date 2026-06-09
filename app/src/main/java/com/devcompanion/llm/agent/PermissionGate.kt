@@ -1,8 +1,8 @@
 package com.devcompanion.llm.agent
 
 import android.util.Log
-import android.webkit.WebView
-import com.devcompanion.llm.evalJs
+import com.devcompanion.engine.BrowserEngine
+
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
@@ -63,9 +63,9 @@ class PermissionGate {
      * For [type] actions, this performs runtime DOM inspection via WebView
      * to check the target element's type, name, and autocomplete attributes.
      */
-    suspend fun classify(call: ToolCall, webView: WebView): ActionRisk = when (call.name) {
+    suspend fun classify(call: ToolCall, engine: BrowserEngine): ActionRisk = when (call.name) {
         "navigate" -> checkNavigateRisk(call)
-        "type" -> checkTypeRisk(call, webView)
+        "type" -> checkTypeRisk(call, engine)
         "eval_js" -> checkEvalRisk(call)
         "submit_form" -> ActionRisk.SENSITIVE
         "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs" -> ActionRisk.MODERATE
@@ -130,7 +130,7 @@ class PermissionGate {
      * Queries the WebView for the element's type, name, autocomplete
      * attributes to detect sensitive fields like passwords and credit cards.
      */
-    private suspend fun checkTypeRisk(call: ToolCall, webView: WebView): ActionRisk {
+    private suspend fun checkTypeRisk(call: ToolCall, engine: BrowserEngine): ActionRisk {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
             ?: return ActionRisk.SENSITIVE // No selector = can't verify = treat as sensitive
 
@@ -156,7 +156,7 @@ class PermissionGate {
         """.trimIndent()
 
         return try {
-            val result = webView.evalJs(js)
+            val result = engine.evalJs(js)
             val props = parseJsResult(result)
 
             val isSensitive = when {

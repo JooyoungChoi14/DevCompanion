@@ -3,7 +3,7 @@ package com.devcompanion.bridge
 import android.graphics.Bitmap
 import android.util.Base64
 import android.util.Log
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 import com.devcompanion.debug.ConsoleLevel
 import com.devcompanion.debug.WebViewDebuggerHolder
 import com.google.gson.Gson
@@ -38,14 +38,14 @@ class BridgeServer(
         private val gson = Gson()
     }
 
-    private var webView: WebView? = null
+    private var engine: BrowserEngine? = null
 
     /**
-     * Attach a WebView instance for JS evaluation and screenshots.
-     * Must be called from UI thread context.
+     * Attach a BrowserEngine for JS evaluation, screenshots, and navigation.
+     * Works with both WebViewEngine and GeckoEngine.
      */
-    fun attachWebView(wv: WebView?) {
-        webView = wv
+    fun attachEngine(eng: BrowserEngine?) {
+        engine = eng
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -119,7 +119,7 @@ class BridgeServer(
                 "GET  /network — Network events (?limit=50)",
                 "GET  /dom — DOM snapshot (?selector=body)",
                 "POST /navigate — Navigate to URL (body: {url: string})",
-                "GET  /screenshot — WebView screenshot (Base64 PNG)",
+                "GET  /screenshot — Browser engine screenshot (Base64 PNG)",
                 "GET  /perf — Performance metrics",
                 "POST /inspector — Toggle inspector (body: {enable: boolean})"
             )
@@ -134,17 +134,15 @@ class BridgeServer(
         val debugger = WebViewDebuggerHolder.current
             ?: return jsonResponse(503, mapOf("error" to "No debugger active — open a browser tab first"))
 
-        val wv = webView
-            ?: return jsonResponse(503, mapOf("error" to "No WebView attached"))
+        val eng = engine
+            ?: return jsonResponse(503, mapOf("error" to "No browser engine attached"))
 
         // Evaluate JS on UI thread, wait for result
         var result: String? = null
         var exception: String? = null
 
-        wv.post {
+        eng.view.post {
             try {
-                // Use the debugger's eval mechanism which returns structured results
-                // But we need synchronous result, so we use evaluateJavascript directly
                 val safeExpr = expression
                     .replace("\\", "\\\\")
                     .replace("\"", "\\\"")
@@ -175,7 +173,7 @@ class BridgeServer(
                     })()
                 """.trimIndent()
 
-                wv.evaluateJavascript(evalJs) { raw ->
+                eng.evaluateJavascript(evalJs) { raw ->
                     synchronized(this) {
                         result = raw
                         (this as Object).notifyAll()
@@ -302,8 +300,8 @@ class BridgeServer(
     }
 
     private fun handleDom(session: IHTTPSession): Response {
-        val wv = webView
-            ?: return jsonResponse(503, mapOf("error" to "No WebView attached"))
+        val eng = engine
+            ?: return jsonResponse(503, mapOf("error" to "No browser engine attached"))
 
         val params = session.parms
         val selector = params["selector"] ?: "body"
@@ -311,7 +309,7 @@ class BridgeServer(
         var result: String? = null
         var exception: String? = null
 
-        wv.post {
+        eng.view.post {
             try {
                 val js = """
                     (function(){
@@ -333,7 +331,7 @@ class BridgeServer(
                     })()
                 """.trimIndent()
 
-                wv.evaluateJavascript(js) { raw ->
+                eng.evaluateJavascript(js) { raw ->
                     synchronized(this) {
                         result = raw
                         (this as Object).notifyAll()
@@ -371,31 +369,30 @@ class BridgeServer(
         val map: Map<String, String> = gson.fromJson(body, object : TypeToken<Map<String, String>>() {}.type)
         val url = map["url"] ?: return jsonResponse(400, mapOf("error" to "Missing 'url' field"))
 
-        val wv = webView
-            ?: return jsonResponse(503, mapOf("error" to "No WebView attached"))
+        val eng = engine
+            ?: return jsonResponse(503, mapOf("error" to "No browser engine attached"))
 
-        wv.post {
-            wv.loadUrl(url)
+        eng.view.post {
+            eng.loadUrl(url)
         }
 
         return jsonResponse(200, mapOf("status" to "navigating", "url" to url))
     }
 
     private fun handleScreenshot(): Response {
-        val wv = webView
-            ?: return jsonResponse(503, mapOf("error" to "No WebView attached"))
+        val eng = engine
+            ?: return jsonResponse(503, mapOf("error" to "No browser engine attached"))
 
         var result: String? = null
         var exception: String? = null
 
-        wv.post {
+        eng.view.post {
             try {
-                val bitmap = Bitmap.createBitmap(
-                    wv.width.coerceAtLeast(1),
-                    wv.height.coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888
-                )
-                wv.draw(android.graphics.Canvas(bitmap))
+                val w = eng.viewportWidth().coerceAtLeast(1)
+                val h = eng.viewportHeight().coerceAtLeast(1)
+                val bitmap = android.graphics.Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                eng.view.draw(canvas)
 
                 val stream = java.io.ByteArrayOutputStream()
                 bitmap.compress(Bitmap.CompressFormat.PNG, 90, stream)
@@ -404,7 +401,7 @@ class BridgeServer(
                 bitmap.recycle()
 
                 synchronized(this) {
-                    result = """{"width":${wv.width},"height":${wv.height},"format":"png","base64":"${base64.replace("\\", "\\\\")}"}"""
+                    result = """{"width":${w},"height":${h},"format":"png","base64":"${base64.replace("\\", "\\\\")}"}"""
                     (this as Object).notifyAll()
                 }
             } catch (e: Exception) {

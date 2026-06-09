@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -49,9 +49,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         private const val TAG = "AiChatViewModel"
     }
 
-    /** Build system prompt with WebView URL context and URL history. */
-    private fun buildSystemPrompt(mode: String, webView: WebView? = null): String {
-        val url = try { webView?.url } catch (_: Exception) { null }
+    /** Build system prompt with browser engine URL context and URL history. */
+    private fun buildSystemPrompt(mode: String, engine: BrowserEngine? = null): String {
+        val url = try { engine?.getUrl() } catch (_: Exception) { null }
         val customPrompt = try {
             LlmSettings.loadCustomPrompt()
         } catch (_: Exception) { null }
@@ -124,14 +124,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
      * M2: merges newConversation + prompt sending into one atomic ViewModel operation.
      * Internal: only called from AiChatScreen's LaunchedEffect.
      */
-    internal fun initializeWithPrompt(prompt: String, webView: WebView?, isAgentMode: Boolean) {
+    internal fun initializeWithPrompt(prompt: String, engine: BrowserEngine?, isAgentMode: Boolean) {
         newConversation(sourceUrl = _sourceUrl)  // already resets initialPromptSent
         if (prompt.isNotBlank()) {
             markInitialPromptSent()
             if (isAgentMode) {
-                sendMessageAgent(prompt, webView)
+                sendMessageAgent(prompt, engine)
             } else {
-                sendMessage(prompt, webView)
+                sendMessage(prompt, engine)
             }
         }
     }
@@ -298,13 +298,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Capture the current WebView state as context for the next message.
+     * Capture the current browser engine state as context for the next message.
      * The UI layer should confirm before calling this.
      * @param mode Capture depth (defaults to Standard for rich context).
      */
-    suspend fun captureContext(webView: WebView, mode: CaptureMode = CaptureMode.Standard) {
+    suspend fun captureContext(engine: BrowserEngine, mode: CaptureMode = CaptureMode.Standard) {
         try {
-            val context = WebContextBuilder.buildContext(webView, mode)
+            val context = WebContextBuilder.buildContext(engine, mode)
             _lastContext.value = context
             Log.d(TAG, "Context captured: url=${context.url}, mode=${context.captureMode}")
         } catch (e: Exception) {
@@ -330,7 +330,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     /**
      * Send a user message and stream the LLM response.
      *
-     * If [webView] is provided and the user hasn't manually captured context,
+     * If [engine] is provided and the user hasn't manually captured context,
      * automatically captures a Standard-mode snapshot before sending.
      * Manually captured context (via 📷 button) takes priority.
      */
@@ -343,18 +343,18 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _autoCaptureEnabled.value = enabled
     }
 
-    fun sendMessage(text: String, webView: WebView? = null) {
+    fun sendMessage(text: String, engine: BrowserEngine? = null) {
         val currentProvider = _provider.value ?: run {
             _error.value = "No LLM provider configured"
             return
         }
 
         SessionLog.llmRequest(currentProvider.displayName, currentProvider.model, _messages.value.size,
-            hasTools = false, systemPromptLength = buildSystemPrompt("chat", webView).length)
+            hasTools = false, systemPromptLength = buildSystemPrompt("chat", engine).length)
 
-        // If no manually captured context and auto-capture is on, capture from WebView
+        // If no manually captured context and auto-capture is on, capture from browser engine
         val context = _lastContext.value ?: run {
-            if (_autoCaptureEnabled.value && webView != null) {
+            if (_autoCaptureEnabled.value && engine != null) {
                 // Use runBlocking alternatives — we'll launch a coroutine
                 // and capture context inline before sending
                 null // Will be captured in the streaming coroutine
@@ -362,7 +362,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         // Add user message
-        val hasContext = context != null || (_autoCaptureEnabled.value && webView != null)
+        val hasContext = context != null || (_autoCaptureEnabled.value && engine != null)
         val userMessage = ChatMessage(
             role = "user",
             content = text,
@@ -390,9 +390,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         streamingJob = viewModelScope.launch {
             try {
                 // Auto-capture context if needed
-                var capturedContext = context ?: if (_autoCaptureEnabled.value && webView != null) {
+                var capturedContext = context ?: if (_autoCaptureEnabled.value && engine != null) {
                     try {
-                        WebContextBuilder.buildContext(webView, CaptureMode.Standard)
+                        WebContextBuilder.buildContext(engine, CaptureMode.Standard)
                     } catch (e: Exception) {
                         Log.w(TAG, "Auto-context capture failed, sending without context", e)
                         null
@@ -425,7 +425,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                     },
                     getCurrentMode = { if (_agentMode.value) "agent" else "chat" }
                 )
-                val systemPrompt = buildSystemPrompt("chat", webView)
+                val systemPrompt = buildSystemPrompt("chat", engine)
                 var toolCallsToProcess = listOf<com.devcompanion.llm.agent.ToolCall>()
                 withTimeout(60_000L) {
                 repository.streamWithTools(_messages.value, capturedContext, systemPrompt, modeTools).collect { event ->
@@ -449,7 +449,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
                 // Process any mode-switch tool calls
                 if (toolCallsToProcess.isNotEmpty()) {
-                    val wv = webView ?: return@launch
+                    val wv = engine ?: return@launch
                     val toolResults = mutableListOf<String>()
                     for (call in toolCallsToProcess) {
                         val result = modeExecutor.execute(call, wv)
@@ -646,13 +646,13 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
      * If the text starts with `/do`, it's stripped and processed as an agent command
      * regardless of agentMode state (implicit activation).
      */
-    fun sendMessageAgent(text: String, webView: WebView?) {
+    fun sendMessageAgent(text: String, engine: BrowserEngine?) {
         val currentProvider = _provider.value ?: run {
             _error.value = "No LLM provider configured"
             return
         }
-        val wv = webView ?: run {
-            _error.value = "WebView not available for agent mode"
+        val wv = engine ?: run {
+            _error.value = "Browser engine not available for agent mode"
             return
         }
 
@@ -965,10 +965,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     /**
      * Navigate back to the previous page in the undo stack.
-     * Falls back to WebView.goBack() if the stack is empty.
+     * Falls back to engine.goBack() if the stack is empty.
      */
-    suspend fun undoNavigation(webView: WebView): Boolean {
-        return undoStack.undo(webView) != null || undoStack.goBack(webView)
+    suspend fun undoNavigation(engine: BrowserEngine): Boolean {
+        return undoStack.undo(engine!!) != null || undoStack.goBack(engine!!)
     }
 
     /** Clear the undo stack. */

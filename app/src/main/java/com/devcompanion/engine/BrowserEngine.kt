@@ -1,13 +1,15 @@
 package com.devcompanion.engine
 
+import android.graphics.Bitmap
+import android.view.View
+
 /**
  * Abstraction over browser engine implementations.
  *
- * Currently minimal — InjectionConfig controls flavor-specific JS injection behavior.
- * Future: full engine abstraction when BrowserTab is refactored to use this interface
- * instead of directly referencing WebView.
+ * Free flavor: WebViewEngine wrapping android.webkit.WebView
+ * Gecko flavor: GeckoEngine wrapping org.mozilla.geckoview.GeckoView + GeckoSession
  *
- * GeckoView eliminates the need for JS injection fixes:
+ * GeckoView eliminates JS injection needs:
  * - vh/dvh computed correctly → VH_FIX unnecessary
  * - Keyboard handling built-in → KEYBOARD_FIX unnecessary
  * - Overflow/scroll handled correctly → OVERFLOW_FIX unnecessary
@@ -15,3 +17,117 @@ package com.devcompanion.engine
  * - Autofill supported natively → AUTOFILL_INJECTION unnecessary
  * - No MutationObserver → no infinite loop freeze risk
  */
+interface BrowserEngine {
+
+    /** The Android View to embed in Compose (WebView or GeckoView). */
+    val view: View
+
+    /** Current page URL, or null if no page loaded. */
+    fun getUrl(): String?
+
+    /** Current page title, or null. */
+    fun getTitle(): String?
+
+    /** Whether the engine can navigate back. */
+    fun canGoBack(): Boolean
+
+    /** Whether the engine can navigate forward. */
+    fun canGoForward(): Boolean
+
+    /** Navigate back in history. */
+    fun goBack()
+
+    /** Navigate forward in history. */
+    fun goForward()
+
+    /** Reload the current page. */
+    fun reload()
+
+    /** Load a URL. */
+    fun loadUrl(url: String)
+
+    /**
+     * Evaluate JavaScript and return the result via callback.
+     * Callback receives the JSON string result (or null on error/no result).
+     */
+    fun evaluateJavascript(script: String, callback: ((String?) -> Unit)? = null)
+
+    /** Whether the current page is still loading. */
+    val isLoading: Boolean
+        get() = false
+
+    /** Current horizontal scroll position. */
+    fun scrollX(): Int
+
+    /** Current vertical scroll position. */
+    fun scrollY(): Int
+
+    /** Page content height in pixels. Returns -1 if unknown (GeckoView). */
+    fun contentHeight(): Int
+
+    /** Viewport width in pixels. */
+    fun viewportWidth(): Int
+
+    /** Viewport height in pixels. */
+    fun viewportHeight(): Int
+
+    /** Set text zoom percentage (e.g., 100, 120, 150, 200). */
+    fun setTextZoom(percent: Int)
+
+    /** Capture a screenshot of the current page. Returns null on failure. */
+    suspend fun screenshot(): Bitmap?
+
+    /** Destroy the engine and release resources. */
+    fun destroy()
+
+    /**
+     * Callbacks for engine lifecycle events.
+     * Implemented by BrowserTab to update UI state.
+     */
+    interface Callbacks {
+        fun onPageStarted(url: String)
+        fun onPageFinished(url: String, title: String?, canGoBack: Boolean, canGoForward: Boolean)
+        fun onRenderProcessGone()
+    }
+
+    /**
+     * Set callbacks for engine lifecycle events.
+     */
+    fun setCallbacks(callbacks: Callbacks)
+
+    /**
+     * Evaluate JavaScript synchronously (coroutine) with timeout.
+     * Wraps the engine's evaluateJavascript in a suspend function.
+     *
+     * @param js JavaScript code to evaluate.
+     * @param timeoutMs Timeout in milliseconds (default 5000).
+     * @return The result string, or error JSON on timeout.
+     */
+    suspend fun evalJs(js: String, timeoutMs: Long = 5_000L): String
+
+    /**
+     * Capture a screenshot as a Base64 JPEG string.
+     * Uses [screenshot] internally and encodes the result.
+     */
+    suspend fun screenshotBase64(): String
+
+    /**
+     * Get the current page URL (alias for getUrl, more Kotlin-idiomatic).
+     */
+    fun currentUrl(): String? = getUrl()
+
+    /**
+     * Get the current page title (alias for getTitle).
+     */
+    fun currentTitle(): String? = getTitle()
+
+    /**
+     * Perform engine-specific setup after construction.
+     * Called by BrowserTab after creating the engine via EngineFactory.
+     * Each implementation handles its own client/delegate installation.
+     *
+     * @param viewportScale Current viewport zoom scale (100/120/150/200).
+     * @param urlHistoryStore Persistent URL history store.
+     */
+    fun setup(viewportScale: Int, urlHistoryStore: com.devcompanion.data.UrlHistoryStore)
+}

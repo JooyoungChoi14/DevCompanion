@@ -36,7 +36,7 @@ import com.devcompanion.ui.theme.ThemePreferences
 import com.devcompanion.ui.theme.ColorPreset
 import com.devcompanion.ui.theme.LocalThemePreferences
 import com.devcompanion.ui.theme.Spacing
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -52,7 +52,7 @@ class MainActivity : ComponentActivity() {
         private const val TAG = "MainActivity"
     }
 
-    private var webViewCanGoBack: (() -> Boolean)? = null
+    private var engineCanGoBack: (() -> Boolean)? = null
 
     override fun onPause() {
         super.onPause()
@@ -85,13 +85,14 @@ class MainActivity : ComponentActivity() {
                 Log.w(TAG, "onCreate: enableEdgeToEdge failed, continuing without it", e)
             }
 
-            android.webkit.WebView.setWebContentsDebuggingEnabled(true)
-            Log.i(TAG, "onCreate: WebView debugging enabled")
+            // WebView debugging — only relevant for free flavor (WebView engine)
+            try { try { android.webkit.WebView.setWebContentsDebuggingEnabled(true) } catch (_: Exception) {} } catch (_: Exception) {}
+            Log.i(TAG, "onCreate: WebView debugging enabled (free flavor)")
 
-            // Handle back button: WebView history first, then finish
+            // Handle back button: browser engine history first, then finish
             onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    val canGoBack = webViewCanGoBack?.invoke() ?: false
+                    val canGoBack = engineCanGoBack?.invoke() ?: false
                     if (!canGoBack) {
                         finish()
                     }
@@ -114,8 +115,8 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalThemePreferences provides themePrefs) {
                     DevCompanionTheme(preset = currentPreset, darkModeOverride = currentDarkMode) {
                     MainApp(
-                        onWebViewReady = { canGoBackCallback ->
-                            webViewCanGoBack = canGoBackCallback
+                        onEngineReady = { canGoBackCallback ->
+                            engineCanGoBack = canGoBackCallback
                         },
                         bridgeAuthToken = bridgeAuthToken,
                         bridgePort = bridgePort,
@@ -137,7 +138,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainApp(
-    onWebViewReady: ((() -> Boolean) -> Unit)? = null,
+    onEngineReady: ((() -> Boolean) -> Unit)? = null,
     bridgeAuthToken: String = "",
     bridgePort: Int = 8765,
     tunnelUrl: String? = null,
@@ -151,7 +152,7 @@ fun MainApp(
     var showSettings by remember { mutableStateOf(false) }
     var showAiChat by remember { mutableStateOf(false) }
     var pendingAiQuestion by remember { mutableStateOf<String?>(null) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var engineRef by remember { mutableStateOf<BrowserEngine?>(null) }
     var showSessionChoice by remember { mutableStateOf(false) }
     var matchedConversationId by remember { mutableStateOf<String?>(null) }
     var forceNewSession by remember { mutableStateOf(false) }
@@ -188,7 +189,7 @@ fun MainApp(
                             modifier = Modifier.padding(end = Spacing.xs)
                         )
                         IconButton(onClick = {
-                            val url = webViewRef?.url
+                            val url = engineRef?.getUrl()
                             currentUrlForChat = url
                             SessionLog.uiClick("ai_chat_btn", if (url != null) "has_url" else "no_url")
                             if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
@@ -237,17 +238,17 @@ fun MainApp(
         },
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
-            // Browser is always in composition — preserves WebView state
+            // Browser is always in composition — preserves browser engine state
             BrowserTab(
                 clearAddressFocus = showDevTools || showBridgeInfo || showAiChat,
                 headerExpanded = headerVisible && !showAiChat,
                 headerVisible = !showAiChat,
                 onHeaderVisibilityToggle = { headerVisible = !headerVisible },
-                onWebViewReady = onWebViewReady,
-                onWebViewCreated = { webView -> webViewRef = webView },
+                onEngineReady = onEngineReady,
+                onEngineCreated = { engine -> engineRef = engine },
                 onAskAi = { question ->
                     pendingAiQuestion = question
-                    val url = webViewRef?.url
+                    val url = engineRef?.getUrl()
                     currentUrlForChat = url
                     if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
                         showSessionChoice = true
@@ -314,7 +315,7 @@ fun MainApp(
                 }
             }
 
-            // AI Chat as bottom sheet — WebView stays visible behind
+            // AI Chat as bottom sheet — browser engine stays visible behind
             if (showAiChat) {
                 ModalBottomSheet(
                     onDismissRequest = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; SessionLog.uiNav("ai_chat", "close") },
@@ -324,7 +325,7 @@ fun MainApp(
                     ),
                 ) {
                     AiChatScreen(
-                        webView = webViewRef,
+                        engine = engineRef,
                         cdpClient = app!!.cdpClient,
                         initialPrompt = pendingAiQuestion,
                         startNewConversation = forceNewSession || (matchedConversationId == null && pendingAiQuestion != null),
@@ -543,7 +544,7 @@ private fun BridgeInfoPanel(
                     "GET /network" to "Network events",
                     "GET /dom" to "DOM snapshot",
                     "POST /navigate" to "Navigate URL",
-                    "GET /screenshot" to "WebView screenshot",
+                    "GET /screenshot" to "Browser engine screenshot",
                     "GET /perf" to "Performance metrics",
                     "POST /inspector" to "Toggle inspector",
                 )

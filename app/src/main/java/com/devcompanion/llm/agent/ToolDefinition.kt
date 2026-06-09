@@ -33,11 +33,18 @@ data class ToolCall(
 
 /**
  * Result of executing a tool call.
+ *
+ * [semanticError] indicates a logical failure where the tool executed successfully
+ * (isError=false) but the result is unusable for the agent's purpose.
+ * Examples: CSP blocking eval_js, get_dom truncation, download triggers in WebView.
+ * AgentLoop uses this to accumulate per-tool-category semantic failures
+ * and disable the tool after repeated issues.
  */
 data class ToolResult(
     val id: String,
     val output: String,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val semanticError: String? = null
 )
 
 /**

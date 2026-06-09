@@ -1,21 +1,20 @@
 package com.devcompanion.llm.agent
 
 import android.util.Log
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 import com.devcompanion.llm.CaptureMode
 import com.devcompanion.llm.WebContextBuilder
-import com.devcompanion.llm.evalJs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Executes tool calls on the WebView.
+ * Executes tool calls on the browser engine (WebView or GeckoView).
  *
- * All WebView operations are dispatched to the Main thread via
+ * All engine operations are dispatched to the Main thread via
  * [withContext(Dispatchers.Main)][withContext] to avoid
  * [CalledFromWrongThreadException].
  *
- * Uses [WebView.evalJs] for async JavaScript execution with coroutine support.
+ * Uses [BrowserEngine.evalJs] for async JavaScript execution with coroutine support.
  */
 class ToolExecutor(
     private val onSwitchMode: ((String) -> Unit)? = null,
@@ -33,27 +32,27 @@ class ToolExecutor(
     }
 
     /**
-     * Execute a tool call on the given WebView.
+     * Execute a tool call on the given browser engine.
      *
      * @param call The tool call to execute.
-     * @param webView The WebView to operate on.
+     * @param engine The browser engine to operate on.
      * @return A [ToolResult] with the output or error.
      */
-    suspend fun execute(call: ToolCall, webView: WebView): ToolResult {
+    suspend fun execute(call: ToolCall, engine: BrowserEngine): ToolResult {
         return try {
             when (call.name) {
-                "navigate" -> executeNavigate(call, webView)
-                "click" -> executeClick(call, webView)
-                "type" -> executeType(call, webView)
-                "scroll" -> executeScroll(call, webView)
-                "eval_js" -> executeEval(call, webView)
-                "get_dom" -> executeGetDom(call, webView)
-                "extract_text" -> executeExtractText(call, webView)
-                "get_computed_style" -> executeGetComputedStyle(call, webView)
-                "set_style" -> executeSetStyle(call, webView)
-                "screenshot" -> executeScreenshot(call, webView)
-                "submit_form" -> executeSubmit(call, webView)
-                "get_console_logs" -> executeGetConsoleLogs(call, webView)
+                "navigate" -> executeNavigate(call, engine)
+                "click" -> executeClick(call, engine)
+                "type" -> executeType(call, engine)
+                "scroll" -> executeScroll(call, engine)
+                "eval_js" -> executeEval(call, engine)
+                "get_dom" -> executeGetDom(call, engine)
+                "extract_text" -> executeExtractText(call, engine)
+                "get_computed_style" -> executeGetComputedStyle(call, engine)
+                "set_style" -> executeSetStyle(call, engine)
+                "screenshot" -> executeScreenshot(call, engine)
+                "submit_form" -> executeSubmit(call, engine)
+                "get_console_logs" -> executeGetConsoleLogs(call, engine)
                 "switch_mode" -> executeSwitchMode(call)
                 "get_current_mode" -> executeGetCurrentMode(call)
                 "recall" -> executeRecall(call)
@@ -67,7 +66,7 @@ class ToolExecutor(
 
     // ── Tool implementations ────────────────────────────────────────────
 
-    private suspend fun executeNavigate(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeNavigate(call: ToolCall, engine: BrowserEngine): ToolResult {
         val url = call.arguments.getAsJsonPrimitive("url")?.asString
             ?: return ToolResult(call.id, "Missing 'url' parameter", isError = true)
 
@@ -81,12 +80,12 @@ class ToolExecutor(
         }
 
         return withContext(Dispatchers.Main) {
-            webView.loadUrl(url)
+            engine.loadUrl(url)
             ToolResult(call.id, "Navigated to $url")
         }
     }
 
-    private suspend fun executeClick(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeClick(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
             ?: return ToolResult(call.id, "Missing 'selector' parameter", isError = true)
 
@@ -99,11 +98,11 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeType(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeType(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
             ?: return ToolResult(call.id, "Missing 'selector' parameter", isError = true)
         val text = call.arguments.getAsJsonPrimitive("text")?.asString
@@ -122,11 +121,11 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeScroll(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeScroll(call: ToolCall, engine: BrowserEngine): ToolResult {
         val direction = call.arguments.getAsJsonPrimitive("direction")?.asString ?: "down"
         val amount = call.arguments.getAsJsonPrimitive("amount")?.asInt ?: 300
 
@@ -140,11 +139,11 @@ class ToolExecutor(
 
         val js = "window.scrollBy($x, $y); JSON.stringify({success:true,scrolled:{x:$x,y:$y}})"
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeEval(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeEval(call: ToolCall, engine: BrowserEngine): ToolResult {
         val expression = call.arguments.getAsJsonPrimitive("expression")?.asString
             ?: return ToolResult(call.id, "Missing 'expression' parameter", isError = true)
 
@@ -170,30 +169,31 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
 
         // Append WebView environment warning for specific result patterns
-        val enhancedResult = if (result.contains(""""t":"error"""")) {
+        // Also detect semantic errors: tool executed (isError=false) but result is unusable
+        val (enhancedResult, semanticError) = if (result.contains(""""t":"error"""")) {
             // Check for CSP error specifically
             if (result.contains("Content Security Policy", ignoreCase = true) ||
                 result.contains("unsafe-eval", ignoreCase = true)) {
-                "$result\n\n[WebView: CSP blocks eval on this site. Do NOT retry eval_js. Use get_dom, extract_text, click, or navigate to backend APIs instead.]"
+                "$result\n\n[WebView: CSP blocks eval on this site. Do NOT retry eval_js. Use get_dom, extract_text, click, or navigate to backend APIs instead.]" to "csp"
             } else {
-                "$result\n\n[WebView: eval_js returned an error. Consider alternative tools.]"
+                "$result\n\n[WebView: eval_js returned an error. Consider alternative tools.]" to "eval_error"
             }
         } else if (result.contains("download", ignoreCase = true) ||
                    result.contains("saved", ignoreCase = true) ||
                    result.contains("exported", ignoreCase = true)) {
             // Flag potential false positives — JS return values don't mean actual file I/O
-            "$result\n\n[WebView WARNING: eval_js cannot trigger real file downloads or save files. This string only means JS code executed, NOT that a file was saved to the device. To provide data to the user, include it in your response text.]"
+            "$result\n\n[WebView WARNING: eval_js cannot trigger real file downloads or save files. This string only means JS code executed, NOT that a file was saved to the device. To provide data to the user, include it in your response text.]" to "download_false_positive"
         } else {
-            result
+            result to null
         }
 
-        return ToolResult(call.id, enhancedResult)
+        return ToolResult(call.id, enhancedResult, semanticError = semanticError)
     }
 
-    private suspend fun executeGetDom(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeGetDom(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString ?: "body"
 
         val js = """
@@ -221,11 +221,13 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
-        return ToolResult(call.id, result)
+        val result = engine.evalJs(js)
+        // Detect truncation as semantic error
+        val semanticError = if (result.contains(""""truncated":true"""")) "truncated" else null
+        return ToolResult(call.id, result, semanticError = semanticError)
     }
 
-    private suspend fun executeExtractText(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeExtractText(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString ?: "body"
         val includeHeadings = call.arguments.getAsJsonPrimitive("includeHeadings")?.asBoolean ?: true
 
@@ -294,14 +296,14 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeScreenshot(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeScreenshot(call: ToolCall, engine: BrowserEngine): ToolResult {
         return withContext(Dispatchers.Main) {
             try {
-                val context = WebContextBuilder.buildContext(webView, CaptureMode.Quick)
+                val context = WebContextBuilder.buildContext(engine, CaptureMode.Quick)
                 // Return metadata only (base64 is too large for tool result)
                 ToolResult(call.id, "Screenshot captured: ${context.url}, ${context.screenshotMimeType}, available in context")
             } catch (e: Exception) {
@@ -310,7 +312,7 @@ class ToolExecutor(
         }
     }
 
-    private suspend fun executeSubmit(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeSubmit(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
             ?: return ToolResult(call.id, "Missing 'selector' parameter", isError = true)
 
@@ -324,11 +326,11 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeGetConsoleLogs(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeGetConsoleLogs(call: ToolCall, engine: BrowserEngine): ToolResult {
         val limit = call.arguments.getAsJsonPrimitive("limit")?.asInt ?: 50
         val level = call.arguments.getAsJsonPrimitive("level")?.asString ?: "all"
 
@@ -366,11 +368,11 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeGetComputedStyle(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeGetComputedStyle(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
             ?: return ToolResult(call.id, "Missing 'selector' parameter", isError = true)
         val properties = call.arguments.getAsJsonPrimitive("properties")?.asString ?: ""
@@ -396,11 +398,11 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 
-    private suspend fun executeSetStyle(call: ToolCall, webView: WebView): ToolResult {
+    private suspend fun executeSetStyle(call: ToolCall, engine: BrowserEngine): ToolResult {
         val selector = call.arguments.getAsJsonPrimitive("selector")?.asString
             ?: return ToolResult(call.id, "Missing 'selector' parameter", isError = true)
         val styles = call.arguments.getAsJsonPrimitive("styles")?.asString
@@ -421,7 +423,7 @@ class ToolExecutor(
             })()
         """.trimIndent()
 
-        val result = webView.evalJs(js)
+        val result = engine.evalJs(js)
         return ToolResult(call.id, result)
     }
 

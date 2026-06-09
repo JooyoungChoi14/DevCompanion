@@ -1,7 +1,7 @@
 package com.devcompanion.llm.agent
 
 import android.util.Log
-import android.webkit.WebView
+import com.devcompanion.engine.BrowserEngine
 import com.devcompanion.llm.ChatMessage
 import com.devcompanion.llm.CaptureMode
 import com.devcompanion.llm.WebContextBuilder
@@ -22,10 +22,10 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
 
 /**
- * Agent loop that orchestrates LLM tool calling with WebView execution.
+ * Agent loop that orchestrates LLM tool calling with browser engine execution.
  *
  * The loop works as follows:
- * 1. Capture WebView context (screenshot + DOM)
+ * 1. Capture browser engine context (screenshot + DOM)
  * 2. Send to LLM with tool definitions
  * 3. If LLM responds with tool_calls → execute via ToolExecutor (with permission checks)
  * 4. Feed tool results back to LLM with correct message pairing
@@ -60,6 +60,7 @@ class AgentLoop(
         private const val ESTIMATED_CONTEXT_TOKEN_BUDGET = 8000
         /** Reserve ratio: fraction of context to keep free for new content (LibreChat pattern). */
         private const val CONTEXT_RESERVE_RATIO = 0.15f
+        const val MAX_SEMANTIC_ERRORS = 3
     }
 
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)
@@ -79,6 +80,10 @@ class AgentLoop(
     /** Tracks (toolName, keyParam) signature for same-action detection. */
     private var lastActionSignature: ActionSignature? = null
     private var sameActionCount = 0
+
+    // ── Semantic failure tracking (semanticError from ToolResult) ──────
+    /** Tracks consecutive semantic errors per tool category. Key = tool name. */
+    private val semanticErrorCounts = mutableMapOf<String, Int>()
 
     /** Whether the current provider supports vision (image input). Set by ViewModel. */
     var supportsVision: Boolean = true
@@ -230,20 +235,20 @@ class AgentLoop(
      * Start the agent loop.
      *
      * @param userMessage The initial user message.
-     * @param webView The WebView to operate on.
+     * @param engine The browser engine to operate on.
      * @param history Prior conversation messages for multi-turn context.
      * @return A flow of [AgentEvent]s for the UI to consume.
      */
     fun start(
         userMessage: String,
-        webView: WebView,
+        engine: BrowserEngine,
         history: List<ChatMessage> = emptyList()
     ): Flow<AgentEvent> = callbackFlow {
         currentJob?.cancel()
 
         currentJob = CoroutineScope(Dispatchers.Default).launch {
             try {
-                runAgentLoop(userMessage, webView, history) { event ->
+                runAgentLoop(userMessage, engine, history) { event ->
                     trySend(event)
                 }
             } catch (e: CancellationException) {
@@ -273,7 +278,7 @@ class AgentLoop(
 
     private suspend fun runAgentLoop(
         userMessage: String,
-        webView: WebView,
+        engine: BrowserEngine,
         history: List<ChatMessage>,
         emit: (AgentEvent) -> Unit
     ) {
@@ -284,6 +289,7 @@ class AgentLoop(
         recallRepeatCount = 0
         lastActionSignature = null
         sameActionCount = 0
+        semanticErrorCounts.clear()
 
         // Reset scratchpad for new session and set user intent
         scratchpad = SessionScratchpad()
@@ -302,7 +308,7 @@ class AgentLoop(
         messages.addAll(history)
         messages.add(ChatMessage(role = "user", content = userMessage, hasContext = true))
 
-        val completed = runAgentLoopBody(messages, webView, maxIterations, 0, 0, null, 0, emit)
+        val completed = runAgentLoopBody(messages, engine, maxIterations, 0, 0, null, 0, emit)
 
         if (!completed) return // aborted due to error
 
@@ -315,7 +321,7 @@ class AgentLoop(
             }
             if (shouldContinue) {
                 messages.add(ChatMessage(role = "system", content = "[User approved continuing beyond $maxIterations iterations. Proceed carefully.]"))
-                runAgentLoopBody(messages, webView, maxIterations, 0, maxIterations, null, 0, emit)
+                runAgentLoopBody(messages, engine, maxIterations, 0, maxIterations, null, 0, emit)
             } else {
                 emit(AgentEvent.Error("Max iterations reached ($maxIterations)"))
                 _state.value = AgentState.Error("Max iterations")
@@ -330,7 +336,7 @@ class AgentLoop(
      */
     private suspend fun runAgentLoopBody(
         messages: MutableList<ChatMessage>,
-        webView: WebView,
+        engine: BrowserEngine,
         iterations: Int,
         startConsecutiveErrors: Int = 0,
         startIterationOffset: Int = 0,
@@ -382,14 +388,14 @@ class AgentLoop(
             }
 
             // Capture URL before any tool execution for URL_CHANGE tracking
-            val urlBefore = withContext(Dispatchers.Main) { webView.url ?: "" }
+            val urlBefore = withContext(Dispatchers.Main) { engine.getUrl() ?: "" }
 
             // Capture context — screenshot every iteration (Quick mode after 1st for token efficiency)
             // WebView methods MUST run on the main thread
             var context = try {
                 val mode = if (iteration == 0) CaptureMode.Standard else CaptureMode.Quick
                 val ctx = withContext(Dispatchers.Main) {
-                    WebContextBuilder.buildContext(webView, mode)
+                    WebContextBuilder.buildContext(engine, mode)
                 }
                 // Strip screenshot for non-vision models to avoid API errors
                 val stripped = if (!supportsVision && ctx.screenshotBase64.isNotEmpty()) {
@@ -487,7 +493,7 @@ class AgentLoop(
                     // Permission check
                     _state.value = AgentState.CheckingPermission(call, iteration + 1)
                     SessionLog.toolCall(call.name, call.arguments.toString(), call.id)
-                    val risk = permissionGate.classify(call, webView)
+                    val risk = permissionGate.classify(call, engine)
 
                     if (risk == ActionRisk.SENSITIVE) {
                         val details = permissionGate.getConfirmationDetails(call)
@@ -523,19 +529,19 @@ class AgentLoop(
                     // Push current URL to undo stack before navigation/submission
                     if (call.name == "navigate" || call.name == "submit_form") {
                         withContext(Dispatchers.Main) {
-                            undoStack.push(webView.url ?: "")
+                            undoStack.push(engine.getUrl() ?: "")
                         }
                     }
 
                     val result = try {
-                        toolExecutor.execute(call, webView)
+                        toolExecutor.execute(call, engine)
                     } catch (e: Exception) {
                         ToolResult(call.id, "Error: ${e.message}", isError = true)
                     }
 
                     // Track URL changes after navigation/submission/eval
                     if (call.name == "navigate" || call.name == "submit_form" || call.name == "eval_js") {
-                        val urlAfter = withContext(Dispatchers.Main) { webView.url ?: "" }
+                        val urlAfter = withContext(Dispatchers.Main) { engine.getUrl() ?: "" }
                         if (urlAfter != urlBefore) {
                             SessionLog.urlChange(urlBefore, urlAfter, call.name)
                         }
@@ -555,6 +561,23 @@ class AgentLoop(
                         SessionLog.toolResult(call.id, result.output, false)
                     }
 
+                    // Semantic error tracking: tool executed (isError=false) but result is unusable
+                    if (result.semanticError != null) {
+                        val count = (semanticErrorCounts[call.name] ?: 0) + 1
+                        semanticErrorCounts[call.name] = count
+                        if (count >= MAX_SEMANTIC_ERRORS) {
+                            messages.add(ChatMessage(
+                                role = "system",
+                                content = "[SYSTEM: Tool '${call.name}' has produced $count unusable results (semantic errors: ${result.semanticError}). STOP using this tool for this task. Switch to an alternative approach or inform the user of the limitation.]"
+                            ))
+                            // Reset count to allow one more attempt if user insists
+                            semanticErrorCounts[call.name] = 0
+                        }
+                    } else {
+                        // Successful non-semantic result resets the counter for this tool
+                        semanticErrorCounts.remove(call.name)
+                    }
+
                     emit(AgentEvent.ToolExecuted(call, result))
 
                     // Store full result in scratchpad (untruncated)
@@ -563,7 +586,7 @@ class AgentLoop(
                     // Compute budget based on remaining context capacity and iterations
                     val adaptiveBudget = computeToolResultBudget(messages, remainingIterations)
                     val isTruncated = result.output.length > adaptiveBudget
-                    val errorType = detectErrorType(result.output) ?: if (result.isError) "error" else null
+                    val errorType = result.semanticError ?: detectErrorType(result.output) ?: if (result.isError) "error" else null
                     val entry = scratchpad.store(
                         toolName = call.name,
                         selector = selector,

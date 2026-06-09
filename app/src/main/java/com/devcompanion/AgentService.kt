@@ -65,17 +65,15 @@ class AgentService : Service() {
 
     @Suppress("DEPRECATION")
     private fun buildNotification(text: String): Notification {
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
+        val openIntent = Intent(this, MainActivity::class.java)
+        openIntent.flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         val pendingIntent = PendingIntent.getActivity(
             this, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val stopIntent = Intent(this, AgentService::class.java).apply {
-            action = ACTION_STOP
-        }
+        val stopIntent = Intent(this, AgentService::class.java)
+        stopIntent.action = ACTION_STOP
         val stopPendingIntent = PendingIntent.getService(
             this, 1, stopIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
