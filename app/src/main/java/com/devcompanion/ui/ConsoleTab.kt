@@ -60,7 +60,7 @@ private fun formatTime(ts: Long): String = timeFormatter.format(Instant.ofEpochM
 fun ConsoleTab(
     vm: ConsoleViewModel = viewModel(),
 ) {
-    val debugger = WebViewDebuggerHolder.current
+    val debugger = BrowserDebuggerHolder.current
     val context = LocalContext.current
     val items by vm.filteredItems.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
@@ -554,7 +554,7 @@ private fun InspectorPanel(
                 )
                 Spacer(modifier = Modifier.width(Spacing.xs))
                 Text(
-                    "Tap element in WebView",
+                    "Tap element in browser",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

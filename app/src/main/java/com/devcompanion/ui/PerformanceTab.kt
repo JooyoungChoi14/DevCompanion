@@ -9,7 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import com.devcompanion.debug.WebViewDebuggerHolder
+import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.debug.PerformanceMetric
 import com.devcompanion.ui.theme.Spacing
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PerformanceTab() {
-    val debugger = WebViewDebuggerHolder.current
+    val debugger = BrowserDebuggerHolder.current
     val metrics by (debugger?.performanceMetrics
         ?: MutableStateFlow<List<PerformanceMetric>>(emptyList()))
         .collectAsState(initial = emptyList())
@@ -46,7 +46,7 @@ fun PerformanceTab() {
                 )
                 Spacer(modifier = Modifier.width(Spacing.sm))
                 Text(
-                    if (debugger != null) "WebView debugger active" else "Open browser tab to start debugging",
+                    if (debugger != null) "Browser debugger active" else "Open browser tab to start debugging",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
@@ -88,7 +88,7 @@ fun PerformanceTab() {
                             color = MaterialTheme.colorScheme.onSurface)
                         Spacer(modifier = Modifier.height(Spacing.xs))
                         Text(
-                            "Heap and DOM data require WebView with --enable-precise-memory-info flag. " +
+                            "Heap and DOM data require the browser with --enable-precise-memory-info flag. " +
                             "Tap refresh after page load to collect DOM node count.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline

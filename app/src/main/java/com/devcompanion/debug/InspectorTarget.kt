@@ -2,7 +2,7 @@ package com.devcompanion.debug
 
 /**
  * Represents a DOM element selected via Inspector mode.
- * Populated by JS injection into the WebView.
+ * Populated by JS injection into the browser engine.
  */
 data class InspectorTarget(
     val tagName: String,

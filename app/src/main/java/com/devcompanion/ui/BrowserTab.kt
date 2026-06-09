@@ -48,8 +48,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.devcompanion.data.Bookmark
 import com.devcompanion.data.BookmarksStore
 import com.devcompanion.data.UrlHistoryStore
-import com.devcompanion.debug.WebViewDebugger
-import com.devcompanion.debug.WebViewDebuggerHolder
+import com.devcompanion.debug.BrowserDebugger
+import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.DevCompanionApp
 import com.devcompanion.llm.routeUrlInput
 import com.devcompanion.llm.UrlRoute
@@ -94,16 +94,22 @@ fun BrowserTab(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Debugger is only needed for WebView (free flavor)
-    val debugger = remember { if (InjectionConfig.needsInjections) WebViewDebugger() else null }
-    val urlHistory by (debugger?.urlHistory?.collectAsState(initial = emptyList()) ?: remember { mutableStateOf(emptyList<String>()) })
+    // ── Start page / Bookmarks state ──────────────────────────────────
+    val context = LocalContext.current
+    val bookmarksStore = remember { BookmarksStore(context) }
+    val urlHistoryStore = remember { UrlHistoryStore(context) }
+
+    // Debugger: flavor-specific (WebViewDebugger for free, NoOpDebugger for gecko)
+    val debugger: BrowserDebugger = remember { EngineFactory.createDebugger() }
+    // URL history comes from UrlHistoryStore (persistent) — not coupled to debugger
+    val urlHistory by urlHistoryStore.urlsFlow.collectAsState(initial = emptyList())
 
     // Expose canGoBack to parent for back button handling
     LaunchedEffect(engineRef, canGoBack) {
         onEngineReady?.invoke {
             if (canGoBack && engineRef != null) {
                 engineRef?.goBack()
-                SessionLog.uiClick("webview_back")
+                SessionLog.uiClick("browser_back")
                 true
             } else {
                 false
@@ -119,22 +125,16 @@ fun BrowserTab(
         }
     }
 
-    // ── Start page / Bookmarks state ──────────────────────────────────
-    val context = LocalContext.current
-    val bookmarksStore = remember { BookmarksStore(context) }
-    val urlHistoryStore = remember { UrlHistoryStore(context) }
     var bookmarks by remember { mutableStateOf(bookmarksStore.getBookmarks()) }
     var showStartPage by remember { mutableStateOf(startPageVisible) }
     val startPageSheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = false
     )
 
-    // Initialize urlHistory from persistent store
+    // Initialize debugger's URL history from persistent store
     LaunchedEffect(Unit) {
         val persisted = urlHistoryStore.getUrls()
-        if (persisted.isNotEmpty() && debugger != null) {
-            debugger.restoreUrlHistory(persisted)
-        }
+        debugger.restoreUrlHistory(persisted)
     }
 
     // Navigate away from start page
@@ -495,13 +495,13 @@ fun BrowserTab(
                     ) {
                         Icon(
                             Icons.Filled.Warning,
-                            contentDescription = "WebView crashed",
+                            contentDescription = "Browser crashed",
                             modifier = Modifier.size(48.dp),
                             tint = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(Spacing.md))
                         Text(
-                            "WebView has stopped",
+                            "Browser has stopped",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -580,9 +580,7 @@ fun BrowserTab(
     } // Box
 
     LaunchedEffect(Unit) {
-        if (debugger != null) {
-            WebViewDebuggerHolder.current = debugger
-        }
+        BrowserDebuggerHolder.current = debugger
     }
 
     // Connect browser engine to BridgeServer for agent API access
@@ -665,13 +663,13 @@ fun BrowserTab(
             ) {
                 Icon(
                     Icons.Filled.Warning,
-                    contentDescription = "WebView frozen",
+                    contentDescription = "Browser frozen",
                     modifier = Modifier.size(48.dp),
                     tint = MaterialTheme.colorScheme.error
                 )
                 Spacer(modifier = Modifier.height(Spacing.md))
                 Text(
-                    "WebView is unresponsive",
+                    "Browser is unresponsive",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )

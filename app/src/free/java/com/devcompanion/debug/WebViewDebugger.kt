@@ -18,9 +18,12 @@ import java.util.concurrent.atomic.AtomicInteger
  * Captures console logs, network requests/responses, and performance metrics
  * directly from WebView callbacks.
  *
+ * Implements [BrowserDebugger] for use via [BrowserDebuggerHolder].
+ * Only exists in the `free` flavor source set (requires android.webkit.*).
+ *
  * StateFlow-based: all event streams retain latest state for new subscribers.
  */
-class WebViewDebugger {
+class WebViewDebugger : BrowserDebugger {
     companion object {
         private const val TAG = "WebViewDebugger"
         private const val MAX_CONSOLE_ITEMS = 500
@@ -101,9 +104,9 @@ class WebViewDebugger {
 
     // ── URL History ────────────────────────────────────────────────────
     private val _urlHistory = MutableStateFlow<List<String>>(emptyList())
-    val urlHistory: StateFlow<List<String>> = _urlHistory.asStateFlow()
+    override val urlHistory: StateFlow<List<String>> = _urlHistory.asStateFlow()
 
-    fun addUrlToHistory(url: String) {
+    override fun addUrlToHistory(url: String) {
         _urlHistory.update { history ->
             val filtered = history.filter { it != url }
             (listOf(url) + filtered).take(50)
@@ -111,16 +114,16 @@ class WebViewDebugger {
     }
 
     /** Restore URL history from persistent storage (called on startup). */
-    fun restoreUrlHistory(urls: List<String>) {
+    override fun restoreUrlHistory(urls: List<String>) {
         _urlHistory.update { urls }
     }
 
     // ── Console (unified timeline) ──────────────────────────────────────
     private val _consoleItems = MutableStateFlow<List<ConsoleItem>>(emptyList())
-    val consoleItems: StateFlow<List<ConsoleItem>> = _consoleItems.asStateFlow()
+    override val consoleItems: StateFlow<List<ConsoleItem>> = _consoleItems.asStateFlow()
 
     /** Add a console log item from WebChromeClient */
-    fun addConsoleLog(level: ConsoleLevel, text: String, source: String? = null, line: Int? = null) {
+    override fun addConsoleLog(level: ConsoleLevel, text: String, source: String?, line: Int?) {
         val item = ConsoleItem.Log(
             uid = nextConsoleItemId(),
             timestamp = System.currentTimeMillis(),
@@ -133,7 +136,7 @@ class WebViewDebugger {
     }
 
     /** Add a JS input item and return its uid for linking with the result */
-    fun addJsInput(expression: String): Long {
+    override fun addJsInput(expression: String): Long {
         val uid = nextConsoleItemId()
         val item = ConsoleItem.Input(
             uid = uid,
@@ -145,7 +148,7 @@ class WebViewDebugger {
     }
 
     /** Add a JS result item linked to the input */
-    fun addJsResult(inputUid: Long, expression: String, result: JsEvalResult) {
+    override fun addJsResult(inputUid: Long, expression: String, result: JsEvalResult) {
         val item = ConsoleItem.Result(
             uid = nextConsoleItemId(),
             timestamp = System.currentTimeMillis(),
@@ -157,7 +160,7 @@ class WebViewDebugger {
     }
 
     /** Clear all console items */
-    fun clearConsole() {
+    override fun clearConsole() {
         _consoleItems.value = emptyList()
     }
 
@@ -168,7 +171,7 @@ class WebViewDebugger {
      * Uses JSON-based transport to avoid delimiter collision issues.
      * Automatically adds Input and Result items to the console timeline.
      */
-    fun evaluateJs(expression: String) {
+    override fun evaluateJs(expression: String) {
         val wv = webView
         if (wv == null) {
             val inputUid = addJsInput(expression)
@@ -271,22 +274,22 @@ class WebViewDebugger {
 
     // ── Network (StateFlow-based) ──────────────────────────────────────
     private val _networkEntries = MutableStateFlow<Map<String, NetworkEntry>>(emptyMap())
-    val networkEntries: StateFlow<Map<String, NetworkEntry>> = _networkEntries.asStateFlow()
+    override val networkEntries: StateFlow<Map<String, NetworkEntry>> = _networkEntries.asStateFlow()
 
     // Pending requests for duration tracking
     private val pendingRequests = mutableMapOf<String, Long>()
 
     /** Clear all network entries */
-    fun clearNetwork() {
+    override fun clearNetwork() {
         _networkEntries.value = emptyMap()
         pendingRequests.clear()
     }
 
     // ── Performance (StateFlow-based) ──────────────────────────────────
     private val _performanceMetrics = MutableStateFlow<List<PerformanceMetric>>(emptyList())
-    val performanceMetrics: StateFlow<List<PerformanceMetric>> = _performanceMetrics.asStateFlow()
+    override val performanceMetrics: StateFlow<List<PerformanceMetric>> = _performanceMetrics.asStateFlow()
 
-    fun emitMetric(metric: PerformanceMetric) {
+    override fun emitMetric(metric: PerformanceMetric) {
         _performanceMetrics.update { (it + metric).takeLast(100) }
     }
 
@@ -294,7 +297,7 @@ class WebViewDebugger {
      * Inject JS to collect performance data (heap, DOM, FPS) from the WebView.
      * Called after page load and on demand from PerformanceTab.
      */
-    fun collectPerformanceData() {
+    override fun collectPerformanceData() {
         val wv = webView ?: return
         val js = """
             (function(){
@@ -318,7 +321,7 @@ class WebViewDebugger {
     /**
      * Called from JavascriptInterface when performance JS sends data.
      */
-    fun onPerformanceResult(json: String) {
+    override fun onPerformanceResult(json: String) {
         try {
             val obj = JSONObject(json)
             val existing = _performanceMetrics.value.lastOrNull()
@@ -465,7 +468,7 @@ class WebViewDebugger {
     }
 
     /** Track HTTP error (4xx/5xx from server) — matched by URL since WebView doesn't give requestId for HTTP errors */
-    fun trackHttpError(url: String, statusCode: Int, reasonPhrase: String) {
+    override fun trackHttpError(url: String, statusCode: Int, reasonPhrase: String) {
         val now = System.currentTimeMillis()
         _networkEntries.update { map ->
             // Find existing pending entry for this URL that doesn't have a response yet
@@ -512,17 +515,18 @@ class WebViewDebugger {
     // ── Inspector mode ──────────────────────────────────────────────────
 
     private val _inspectorTarget = MutableStateFlow<InspectorTarget?>(null)
-    val inspectorTarget: StateFlow<InspectorTarget?> = _inspectorTarget.asStateFlow()
+    override val inspectorTarget: StateFlow<InspectorTarget?> = _inspectorTarget.asStateFlow()
 
-    var inspectorEnabled = false
-        private set
+    private var _inspectorEnabled = false
+    override val inspectorEnabled: Boolean
+        get() = _inspectorEnabled
 
     /**
      * Enable Inspector mode: injects JS to highlight tapped elements
      * and send element info back via __devCompanionInspector bridge.
      */
-    fun enableInspector() {
-        inspectorEnabled = true
+    override fun enableInspector() {
+        _inspectorEnabled = true
         val wv = webView ?: return
         wv.post {
             wv.evaluateJavascript(INSPECTOR_JS, null)
@@ -532,8 +536,8 @@ class WebViewDebugger {
     /**
      * Disable Inspector mode: removes overlay and event listener from WebView.
      */
-    fun disableInspector() {
-        inspectorEnabled = false
+    override fun disableInspector() {
+        _inspectorEnabled = false
         _inspectorTarget.value = null
         val wv = webView ?: return
         wv.post {
@@ -564,7 +568,7 @@ class WebViewDebugger {
     /**
      * Called from WebView JavascriptInterface when inspector JS sends element data.
      */
-    fun onInspectorResult(json: String) {
+    override fun onInspectorResult(json: String) {
         try {
             val obj = JSONObject(json)
             val attrsObj = obj.optJSONObject("attributes")
@@ -602,98 +606,4 @@ class WebViewDebugger {
             // Malformed JSON — ignore
         }
     }
-
-
-}
-
-// ── Global holder ─────────────────────────────────────────────────────────
-
-/**
- * Holder to share debugger instance with DevTools tabs.
- * Uses StateFlow for reactive null-safety.
- */
-object WebViewDebuggerHolder {
-    private val _current = MutableStateFlow<WebViewDebugger?>(null)
-    val currentFlow: StateFlow<WebViewDebugger?> = _current.asStateFlow()
-
-    var current: WebViewDebugger?
-        get() = _current.value
-        set(value) { _current.value = value }
-
-    fun clear() { _current.value = null }
-}
-
-// ── Data classes ─────────────────────────────────────────────────────────
-
-enum class ConsoleLevel { Log, Warn, Error, Info, Debug }
-
-private val consoleUidCounter = java.util.concurrent.atomic.AtomicLong(0)
-
-data class ConsoleEntry(
-    val timestamp: Long,
-    val level: ConsoleLevel,
-    val text: String,
-    val source: String? = null,
-    val line: Int? = null,
-    val uid: Long = consoleUidCounter.incrementAndGet(),
-)
-
-data class NetworkRequest(
-    val requestId: String,
-    val url: String,
-    val method: String = "GET",
-    val headers: Map<String, String> = emptyMap(),
-    val timestamp: Long,
-)
-
-data class NetworkResponse(
-    val requestId: String,
-    val url: String,
-    val statusCode: Int,
-    val headers: Map<String, String> = emptyMap(),
-    val timestamp: Long,
-    val durationMs: Long = 0,
-)
-
-data class NetworkLoadFailure(
-    val requestId: String,
-    val url: String,
-    val errorCode: Int,
-    val description: String,
-    val timestamp: Long,
-)
-
-data class NetworkEntry(
-    val request: NetworkRequest,
-    val response: NetworkResponse? = null,
-    val failure: NetworkLoadFailure? = null,
-    val completedAt: Long? = null,
-) {
-    val durationMs: Long? get() = completedAt?.let { it - request.timestamp }
-    val statusDisplay: String get() = when {
-        failure != null -> "ERR"
-        response != null -> response.statusCode.toString()
-        else -> "…"
-    }
-}
-
-data class PerformanceMetric(
-    val timestamp: Long = System.currentTimeMillis(),
-    val fps: Float = 0f,
-    val jsHeapUsed: Float = 0f,
-    val jsHeapTotal: Float = 0f,
-    val domNodes: Int = 0,
-    val loadTimeMs: Long = 0,
-)
-
-data class JsEvalResult(
-    val success: Boolean,
-    val value: String,
-    val type: String = "unknown",
-    val rawJson: String? = null,
-) {
-    val isExpandable: Boolean get() = type == "object" || type == "function"
-    val displayValue: String get() = if (isExpandable) {
-        value.take(80).replace(Regex("\\s+"), " ") + if (value.length > 80) "…" else ""
-    } else value
 }

@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import com.devcompanion.ui.theme.Spacing
-import com.devcompanion.debug.WebViewDebuggerHolder
+import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.debug.NetworkEntry
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.Instant
@@ -78,7 +78,7 @@ private object ColMin {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NetworkTab() {
-    val debugger = WebViewDebuggerHolder.current
+    val debugger = BrowserDebuggerHolder.current
     val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var selectedEntry by remember { mutableStateOf<NetworkEntry?>(null) }

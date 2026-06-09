@@ -8,11 +8,11 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel for ConsoleTab — survives bottom sheet dismiss / tab switches.
- * Owns the filtered view of WebViewDebugger's unified console timeline.
+ * Owns the filtered view of BrowserDebugger's unified console timeline.
  */
 class ConsoleViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val debugger get() = WebViewDebuggerHolder.current
+    private val debugger get() = BrowserDebuggerHolder.current
 
     // ── UI state ────────────────────────────────────────────────────────
     private val _searchQuery = MutableStateFlow("")

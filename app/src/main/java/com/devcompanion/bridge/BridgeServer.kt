@@ -5,7 +5,7 @@ import android.util.Base64
 import android.util.Log
 import com.devcompanion.engine.BrowserEngine
 import com.devcompanion.debug.ConsoleLevel
-import com.devcompanion.debug.WebViewDebuggerHolder
+import com.devcompanion.debug.BrowserDebuggerHolder
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import fi.iki.elonen.NanoHTTPD
@@ -106,7 +106,7 @@ class BridgeServer(
     // ── Handlers ────────────────────────────────────────────────────
 
     private fun handleInfo(): Response {
-        val debugger = WebViewDebuggerHolder.current
+        val debugger = BrowserDebuggerHolder.current
         return jsonResponse(200, mapOf(
             "name" to "DevCompanion Bridge",
             "version" to "1.0.0",
@@ -131,7 +131,7 @@ class BridgeServer(
         val map: Map<String, String> = gson.fromJson(body, object : TypeToken<Map<String, String>>() {}.type)
         val expression = map["expression"] ?: return jsonResponse(400, mapOf("error" to "Missing 'expression' field"))
 
-        val debugger = WebViewDebuggerHolder.current
+        val debugger = BrowserDebuggerHolder.current
             ?: return jsonResponse(503, mapOf("error" to "No debugger active — open a browser tab first"))
 
         val eng = engine
@@ -208,7 +208,7 @@ class BridgeServer(
     }
 
     private fun handleConsole(session: IHTTPSession): Response {
-        val debugger = WebViewDebuggerHolder.current
+        val debugger = BrowserDebuggerHolder.current
             ?: return jsonResponse(503, mapOf("error" to "No debugger active"))
 
         val params = session.parms
@@ -261,7 +261,7 @@ class BridgeServer(
     }
 
     private fun handleNetwork(session: IHTTPSession): Response {
-        val debugger = WebViewDebuggerHolder.current
+        val debugger = BrowserDebuggerHolder.current
             ?: return jsonResponse(503, mapOf("error" to "No debugger active"))
 
         val params = session.parms
@@ -432,7 +432,7 @@ class BridgeServer(
     }
 
     private fun handlePerf(): Response {
-        val debugger = WebViewDebuggerHolder.current
+        val debugger = BrowserDebuggerHolder.current
             ?: return jsonResponse(503, mapOf("error" to "No debugger active"))
 
         val metrics = debugger.performanceMetrics.value
@@ -467,7 +467,7 @@ class BridgeServer(
         val map: Map<String, String> = gson.fromJson(body, object : TypeToken<Map<String, String>>() {}.type)
         val enable = map["enable"]?.toBoolean() ?: (map["action"] == "enable")
 
-        val debugger = WebViewDebuggerHolder.current
+        val debugger = BrowserDebuggerHolder.current
             ?: return jsonResponse(503, mapOf("error" to "No debugger active"))
 
         if (enable) debugger.enableInspector() else debugger.disableInspector()

@@ -30,13 +30,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import com.devcompanion.llm.ChatHistory
 import com.devcompanion.DevCompanionApp
-import com.devcompanion.debug.WebViewDebuggerHolder
+import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.ui.theme.DevCompanionTheme
 import com.devcompanion.ui.theme.ThemePreferences
 import com.devcompanion.ui.theme.ColorPreset
 import com.devcompanion.ui.theme.LocalThemePreferences
 import com.devcompanion.ui.theme.Spacing
 import com.devcompanion.engine.BrowserEngine
+import com.devcompanion.engine.InjectionConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -86,8 +87,10 @@ class MainActivity : ComponentActivity() {
             }
 
             // WebView debugging — only relevant for free flavor (WebView engine)
-            try { try { android.webkit.WebView.setWebContentsDebuggingEnabled(true) } catch (_: Exception) {} } catch (_: Exception) {}
-            Log.i(TAG, "onCreate: WebView debugging enabled (free flavor)")
+            if (InjectionConfig.needsInjections) {
+                try { android.webkit.WebView.setWebContentsDebuggingEnabled(true) } catch (_: Exception) {}
+                Log.i(TAG, "onCreate: WebView debugging enabled (free flavor)")
+            }
 
             // Handle back button: browser engine history first, then finish
             onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -165,7 +168,7 @@ fun MainApp(
     LaunchedEffect(showBridgeInfo) { SessionLog.uiNav("bridge_info", if (showBridgeInfo) "open" else "close") }
     LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
     LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; else -> "unknown" }) }
-    val debugger = WebViewDebuggerHolder.current
+    val debugger = BrowserDebuggerHolder.current
     val isActive = debugger != null
 
     Scaffold(

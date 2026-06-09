@@ -1,7 +1,8 @@
 package com.devcompanion.engine
 
 import android.content.Context
-import com.devcompanion.debug.WebViewDebugger
+import com.devcompanion.debug.BrowserDebugger
+import com.devcompanion.debug.NoOpDebugger
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
@@ -16,7 +17,10 @@ import org.mozilla.geckoview.GeckoView
 object EngineFactory {
     private var runtime: GeckoRuntime? = null
 
-    fun create(context: Context, debugger: WebViewDebugger? = null): BrowserEngine {
+    /** Create the flavor-appropriate debugger instance (no-op for GeckoView). */
+    fun createDebugger(): BrowserDebugger = NoOpDebugger()
+
+    fun create(context: Context, debugger: BrowserDebugger? = null): BrowserEngine {
         val rt = runtime ?: GeckoRuntime.create(context.applicationContext).also {
             runtime = it
         }
