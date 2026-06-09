@@ -19,6 +19,8 @@ object InjectionConfig {
 
     /** Inject autocomplete/autofill attributes into form fields. */
     val AUTOFILL_INJECTION = """(function(){
+    if (window.__dcAutofill) return "already-injected";
+    window.__dcAutofill = true;
     var autofillMap = {
         'username': ['text','email'],
         'email': ['email'],
@@ -165,6 +167,8 @@ object InjectionConfig {
 
     /** Fix text-size-adjust for WebView. */
     val TEXT_SIZE_FIX_INJECTION = """(function(){
+    if (window.__dcTextSizeFix) return "already-injected";
+    window.__dcTextSizeFix = true;
     var style = document.createElement('style');
     style.textContent = [
         'html {',
@@ -182,6 +186,8 @@ object InjectionConfig {
 
     /** WebView heartbeat: JS engine updates timestamp every second. */
     val HEARTBEAT_INJECTION = """(function(){
+    if (window.__dcHeartbeat) return "already-injected";
+    window.__dcHeartbeat = true;
     window.__devCompanionHeartbeat = Date.now();
     setInterval(function() {
         window.__devCompanionHeartbeat = Date.now();

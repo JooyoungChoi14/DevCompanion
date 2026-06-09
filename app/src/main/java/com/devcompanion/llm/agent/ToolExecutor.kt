@@ -364,8 +364,8 @@ class ToolExecutor(
                 }
                 var logs = window.__devCompanionLogs;
                 var filtered = logs;
-                if ('$level' !== 'all') filtered = logs.filter(function(e){ return e.level === '$level'; });
-                return JSON.stringify(filtered.slice(-$limit));
+                if (${com.devcompanion.engine.JsUtils.escapeJsString(level)} !== 'all') filtered = logs.filter(function(e){ return e.level === ${com.devcompanion.engine.JsUtils.escapeJsString(level)}; });
+                return JSON.stringify(filtered.slice(-${limit}));
             })()
         """.trimIndent()
 

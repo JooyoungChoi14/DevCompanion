@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,6 +68,7 @@ class AgentLoop(
     val state: StateFlow<AgentState> = _state.asStateFlow()
 
     private var currentJob: Job? = null
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** Scratchpad for storing full tool results during this agent session. */
     private var scratchpad: SessionScratchpad = SessionScratchpad()
@@ -251,7 +253,7 @@ class AgentLoop(
         // Brief yield to let old coroutine finish its finally block
         // before we read mutable state in the new one
 
-        currentJob = CoroutineScope(Dispatchers.Default).launch {
+        currentJob = engineScope.launch {
             try {
                 runAgentLoop(userMessage, engine, history) { event ->
                     trySend(event)
