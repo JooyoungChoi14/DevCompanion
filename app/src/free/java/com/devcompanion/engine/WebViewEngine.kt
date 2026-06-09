@@ -43,9 +43,9 @@ class WebViewEngine(
 
     /**
      * Direct access to the debugger for flavor-specific operations.
-     * @suppress Internal use only.
+     * Internal — only for use within the free flavor source set.
      */
-    val underlyingDebugger: WebViewDebugger get() = debugger
+    internal val underlyingDebugger: WebViewDebugger get() = debugger
 
     /** WebView tracks loading state internally via WebViewClient callbacks. */
     override val isLoading: Boolean

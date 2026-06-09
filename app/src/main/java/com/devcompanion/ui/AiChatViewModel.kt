@@ -1009,5 +1009,8 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         if (msgs.isNotEmpty()) {
             ChatHistory.save(getApplication<Application>(), _conversationId.value, msgs, _sourceUrl)
         }
+        // Release agent loop scope to prevent coroutine leaks
+        agentLoop?.destroy()
+        agentLoop = null
     }
 }

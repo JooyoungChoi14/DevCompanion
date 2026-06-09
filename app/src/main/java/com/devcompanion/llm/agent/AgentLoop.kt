@@ -281,6 +281,14 @@ class AgentLoop(
         _state.value = AgentState.Idle
     }
 
+    /** Cancel scope and release resources. Call when the owning ViewModel is cleared. */
+    fun destroy() {
+        Log.d(TAG, "Agent loop destroyed")
+        currentJob?.cancel()
+        engineScope.cancel()
+        _state.value = AgentState.Idle
+    }
+
     // ── Internal ─────────────────────────────────────────────────────────
 
     private suspend fun runAgentLoop(

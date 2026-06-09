@@ -33,15 +33,15 @@ class GeckoEngine(
 
     /**
      * Direct access to the underlying GeckoSession for delegate setup.
-     * @suppress Internal use only — do not use outside the gecko flavor source set.
+     * Internal — only for use within the gecko flavor source set.
      */
-    val underlyingSession: GeckoSession get() = session
+    internal val underlyingSession: GeckoSession get() = session
 
     /**
      * Direct access to the underlying GeckoView for view-level operations.
-     * @suppress Internal use only.
+     * Internal — only for use within the gecko flavor source set.
      */
-    val underlyingGeckoView: GeckoView get() = geckoView
+    internal val underlyingGeckoView: GeckoView get() = geckoView
 
     // ── Navigation state tracked via delegates (all @Volatile for thread safety) ──
 
@@ -168,10 +168,12 @@ class GeckoEngine(
 
     override fun getUrl(): String? = _url
 
-    /** Returns View scroll, not page scroll. Use JS-based query for page scroll position. */
+    /** Returns `UNKNOWN` — GeckoView doesn't expose View scroll as page scroll.
+     * TODO: Implement JS-based scroll position query for GeckoView. */
     override fun scrollX(): Int = BrowserEngine.UNKNOWN
 
-    /** Returns View scroll, not page scroll. Use JS-based query for page scroll position. */
+    /** Returns `UNKNOWN` — GeckoView doesn't expose View scroll as page scroll.
+     * TODO: Implement JS-based scroll position query for GeckoView. */
     override fun scrollY(): Int = BrowserEngine.UNKNOWN
 
     override fun contentHeight(): Int = BrowserEngine.UNKNOWN

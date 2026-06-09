@@ -207,21 +207,4 @@ class PermissionGate {
         }
     }
 
-    private fun JsUtils.escapeJsString(s: String): String {
-        return buildString {
-            append('"')
-            for (ch in s) {
-                when (ch) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    '\u0000' -> append("\\0")
-                    else -> append(ch)
-                }
-            }
-            append('"')
-        }
-    }
 }

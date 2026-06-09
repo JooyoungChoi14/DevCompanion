@@ -364,7 +364,7 @@ class ToolExecutor(
                 }
                 var logs = window.__devCompanionLogs;
                 var filtered = logs;
-                if (${com.devcompanion.engine.JsUtils.escapeJsString(level)} !== 'all') filtered = logs.filter(function(e){ return e.level === ${com.devcompanion.engine.JsUtils.escapeJsString(level)}; });
+                if (${JsUtils.escapeJsString(level)} !== 'all') filtered = logs.filter(function(e){ return e.level === ${JsUtils.escapeJsString(level)}; });
                 return JSON.stringify(filtered.slice(-${limit}));
             })()
         """.trimIndent()
@@ -521,24 +521,4 @@ class ToolExecutor(
         }
     }
 
-    /**
-     * Escape a string for safe embedding in a JavaScript string literal.
-     */
-    private fun JsUtils.escapeJsString(s: String): String {
-        return buildString {
-            append('"')
-            for (ch in s) {
-                when (ch) {
-                    '\\' -> append("\\\\")
-                    '"' -> append("\\\"")
-                    '\n' -> append("\\n")
-                    '\r' -> append("\\r")
-                    '\t' -> append("\\t")
-                    '\u0000' -> append("\\0")
-                    else -> append(ch)
-                }
-            }
-            append('"')
-        }
-    }
 }

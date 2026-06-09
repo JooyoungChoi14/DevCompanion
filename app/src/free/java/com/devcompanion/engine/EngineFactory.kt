@@ -12,9 +12,9 @@ object EngineFactory {
     /** Create the flavor-appropriate debugger instance. */
     fun createDebugger(): BrowserDebugger = WebViewDebugger()
 
-    fun create(context: Context, debugger: BrowserDebugger?): BrowserEngine {
+    fun create(context: Context, debugger: BrowserDebugger? = null): BrowserEngine {
         val webView = WebView(context.applicationContext)
-        val wvd = (debugger as? WebViewDebugger) ?: WebViewDebugger()
+        val wvd = (debugger as? WebViewDebugger) ?: createDebugger() as WebViewDebugger
         return WebViewEngine(webView, wvd)
     }
 }

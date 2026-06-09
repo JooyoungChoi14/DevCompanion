@@ -4,17 +4,6 @@ package com.devcompanion.debug
 
 enum class ConsoleLevel { Log, Warn, Error, Info, Debug }
 
-private val consoleUidCounter = java.util.concurrent.atomic.AtomicLong(0)
-
-data class ConsoleEntry(
-    val timestamp: Long,
-    val level: ConsoleLevel,
-    val text: String,
-    val source: String? = null,
-    val line: Int? = null,
-    val uid: Long = consoleUidCounter.incrementAndGet(),
-)
-
 // ── Network ────────────────────────────────────────────────────────────
 
 data class NetworkRequest(
