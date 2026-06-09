@@ -61,7 +61,7 @@ object WebContextBuilder {
     private const val MAX_DOM_LENGTH = 4000
 
     // Track injected style IDs to prevent duplicates
-    private val injectedStyleIds = mutableSetOf<String>()
+    private val injectedStyleIds: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
 
     /**
      * JavaScript that extracts a sanitized DOM snapshot.
@@ -238,8 +238,8 @@ object WebContextBuilder {
     fun injectCss(engine: BrowserEngine, css: String, styleId: String): Boolean {
         if (css.isBlank()) return false
         try {
-            // Escape the CSS for safe embedding in a JS string
-            val escapedCss = css
+            // Escape the CSS for safe embedding in a JS string + prevent </style> breakout
+            val escapedCss = com.devcompanion.engine.JsUtils.escapeCssForStyleTag(css)
                 .replace("\\", "\\\\")
                 .replace("\n", "\\n")
                 .replace("\r", "")

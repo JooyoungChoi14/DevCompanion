@@ -2,6 +2,7 @@ package com.devcompanion.llm.agent
 
 import android.util.Log
 import com.devcompanion.engine.BrowserEngine
+import com.devcompanion.engine.JsUtils
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -143,7 +144,7 @@ class PermissionGate {
         // Runtime DOM inspection
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
                 if (!el) return JSON.stringify({error:'not found'});
                 return JSON.stringify({
                     tagName: el.tagName,
@@ -156,7 +157,8 @@ class PermissionGate {
         """.trimIndent()
 
         return try {
-            val result = engine.evalJs(js)
+            // W9 fix: use 500ms timeout for DOM inspection to avoid UI freeze on unresponsive WebView
+            val result = engine.evalJs(js, timeoutMs = 500L)
             val props = parseJsResult(result)
 
             val isSensitive = when {
@@ -205,7 +207,7 @@ class PermissionGate {
         }
     }
 
-    private fun escapeJsString(s: String): String {
+    private fun JsUtils.escapeJsString(s: String): String {
         return buildString {
             append('"')
             for (ch in s) {

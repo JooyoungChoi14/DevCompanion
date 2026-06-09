@@ -49,6 +49,9 @@ interface BrowserEngine {
     /**
      * Evaluate JavaScript and return the result via callback.
      * Callback receives the JSON string result (or null on error/no result).
+     *
+     * Note: prefer [evalJs] for coroutine-based calls. This callback-based
+     * method exists for compatibility with WebView.evaluateJavascript.
      */
     fun evaluateJavascript(script: String, callback: ((String?) -> Unit)? = null)
 
@@ -56,13 +59,13 @@ interface BrowserEngine {
     val isLoading: Boolean
         get() = false
 
-    /** Current horizontal scroll position. */
+    /** Current horizontal scroll position. -1 if unknown (GeckoView). */
     fun scrollX(): Int
 
-    /** Current vertical scroll position. */
+    /** Current vertical scroll position. -1 if unknown (GeckoView). */
     fun scrollY(): Int
 
-    /** Page content height in pixels. Returns -1 if unknown (GeckoView). */
+    /** Page content height in pixels. -1 if unknown (GeckoView). */
     fun contentHeight(): Int
 
     /** Viewport width in pixels. */
@@ -77,7 +80,7 @@ interface BrowserEngine {
     /** Capture a screenshot of the current page. Returns null on failure. */
     suspend fun screenshot(): Bitmap?
 
-    /** Destroy the engine and release resources. */
+    /** Destroy the engine and release resources. Callers must remove the view from composition first. */
     fun destroy()
 
     /**
@@ -92,12 +95,17 @@ interface BrowserEngine {
 
     /**
      * Set callbacks for engine lifecycle events.
+     * Must be called before [setup] or on the UI thread.
      */
     fun setCallbacks(callbacks: Callbacks)
 
     /**
      * Evaluate JavaScript synchronously (coroutine) with timeout.
      * Wraps the engine's evaluateJavascript in a suspend function.
+     *
+     * Note: timeout cancels the coroutine await but does NOT cancel the
+     * pending JS execution. The JS will still run to completion in the engine.
+     * Use PermissionGate for dangerous operations.
      *
      * @param js JavaScript code to evaluate.
      * @param timeoutMs Timeout in milliseconds (default 5000).
@@ -112,16 +120,6 @@ interface BrowserEngine {
     suspend fun screenshotBase64(): String
 
     /**
-     * Get the current page URL (alias for getUrl, more Kotlin-idiomatic).
-     */
-    fun currentUrl(): String? = getUrl()
-
-    /**
-     * Get the current page title (alias for getTitle).
-     */
-    fun currentTitle(): String? = getTitle()
-
-    /**
      * Perform engine-specific setup after construction.
      * Called by BrowserTab after creating the engine via EngineFactory.
      * Each implementation handles its own client/delegate installation.
@@ -130,4 +128,19 @@ interface BrowserEngine {
      * @param urlHistoryStore Persistent URL history store.
      */
     fun setup(viewportScale: Int, urlHistoryStore: com.devcompanion.data.UrlHistoryStore)
+
+    companion object {
+        /**
+         * Encode a [Bitmap] as Base64 JPEG string.
+         * Shared implementation to avoid duplication across engine implementations.
+         */
+        fun bitmapToBase64(bitmap: Bitmap): String {
+            val stream = java.io.ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+            return android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+        }
+
+        /** Constant indicating a scroll/content value is unknown. */
+        const val UNKNOWN = -1
+    }
 }

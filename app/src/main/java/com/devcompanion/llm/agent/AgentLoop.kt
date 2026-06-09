@@ -244,7 +244,12 @@ class AgentLoop(
         engine: BrowserEngine,
         history: List<ChatMessage> = emptyList()
     ): Flow<AgentEvent> = callbackFlow {
-        currentJob?.cancel()
+        // W8 fix: join the old job before starting new one to prevent state races
+        val oldJob = currentJob
+        currentJob = null // clear immediately to prevent stale reads
+        oldJob?.cancel()
+        // Brief yield to let old coroutine finish its finally block
+        // before we read mutable state in the new one
 
         currentJob = CoroutineScope(Dispatchers.Default).launch {
             try {

@@ -2,6 +2,7 @@ package com.devcompanion.llm.agent
 
 import android.util.Log
 import com.devcompanion.engine.BrowserEngine
+import com.devcompanion.engine.JsUtils
 import com.devcompanion.llm.CaptureMode
 import com.devcompanion.llm.WebContextBuilder
 import kotlinx.coroutines.Dispatchers
@@ -91,8 +92,8 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
-                if (!el) return JSON.stringify({success:false, error:'Element not found', selector:${escapeJsString(selector)}});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
+                if (!el) return JSON.stringify({success:false, error:'Element not found', selector:${JsUtils.escapeJsString(selector)}});
                 el.click();
                 return JSON.stringify({success:true, tagName:el.tagName, text:el.textContent?el.textContent.substring(0,50):''});
             })()
@@ -111,10 +112,10 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
                 if (!el) return JSON.stringify({success:false, error:'Element not found'});
                 if ($clear) el.value = '';
-                el.value = ${escapeJsString(text)};
+                el.value = ${JsUtils.escapeJsString(text)};
                 el.dispatchEvent(new Event('input', {bubbles:true}));
                 el.dispatchEvent(new Event('change', {bubbles:true}));
                 return JSON.stringify({success:true, value:el.value?el.value.substring(0,50):''});
@@ -151,7 +152,7 @@ class ToolExecutor(
         val js = """
             (function(){
                 try {
-                    var r = eval(${escapeJsString(expression)});
+                    var r = eval(${JsUtils.escapeJsString(expression)});
                     if (r === undefined) return JSON.stringify({t:"undefined",v:null});
                     if (r === null) return JSON.stringify({t:"null",v:null});
                     var t = typeof r;
@@ -198,8 +199,8 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
-                if (!el) return JSON.stringify({error:'not found', selector:${escapeJsString(selector)}});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
+                if (!el) return JSON.stringify({error:'not found', selector:${JsUtils.escapeJsString(selector)}});
                 
                 // Mask sensitive fields
                 var html = el.outerHTML;
@@ -233,8 +234,8 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
-                if (!el) return JSON.stringify({error:'not found', selector:${escapeJsString(selector)}});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
+                if (!el) return JSON.stringify({error:'not found', selector:${JsUtils.escapeJsString(selector)}});
                 
                 // Extract text content with structure preservation
                 var maxLen = 8000;
@@ -290,7 +291,7 @@ class ToolExecutor(
                 
                 return JSON.stringify({
                     text: result.substring(0, maxLen),
-                    selector: ${escapeJsString(selector)},
+                    selector: ${JsUtils.escapeJsString(selector)},
                     _meta: { truncated: truncated, totalLength: totalLen, capturedLength: Math.min(result.length, maxLen) }
                 });
             })()
@@ -318,7 +319,7 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var form = document.querySelector(${escapeJsString(selector)});
+                var form = document.querySelector(${JsUtils.escapeJsString(selector)});
                 if (!form) return JSON.stringify({success:false, error:'Form not found'});
                 if (form.tagName !== 'FORM') return JSON.stringify({success:false, error:'Element is not a form'});
                 form.submit();
@@ -385,10 +386,10 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
-                if (!el) return JSON.stringify({error:'Element not found',selector:${escapeJsString(selector)}});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
+                if (!el) return JSON.stringify({error:'Element not found',selector:${JsUtils.escapeJsString(selector)}});
                 var cs = window.getComputedStyle(el);
-                var props = ${escapeJsString(propsList)}.split(',');
+                var props = ${JsUtils.escapeJsString(propsList)}.split(',');
                 var result = {};
                 props.forEach(function(p){
                     try { result[p.trim()] = cs.getPropertyValue(p.trim()); } catch(e){}
@@ -410,16 +411,16 @@ class ToolExecutor(
 
         val js = """
             (function(){
-                var el = document.querySelector(${escapeJsString(selector)});
-                if (!el) return JSON.stringify({success:false, error:'Element not found', selector:${escapeJsString(selector)}});
-                var decls = ${escapeJsString(styles)}.split(';').filter(function(s){return s.trim().length > 0});
+                var el = document.querySelector(${JsUtils.escapeJsString(selector)});
+                if (!el) return JSON.stringify({success:false, error:'Element not found', selector:${JsUtils.escapeJsString(selector)}});
+                var decls = ${JsUtils.escapeJsString(styles)}.split(';').filter(function(s){return s.trim().length > 0});
                 decls.forEach(function(d){
                     var parts = d.split(':');
                     if (parts.length === 2) {
                         try { el.style[parts[0].trim().replace(/-([a-z])/g, function(m,c){return c.toUpperCase()})] = parts[1].trim(); } catch(e){}
                     }
                 });
-                return JSON.stringify({success:true, applied:decls.length, selector:${escapeJsString(selector)}});
+                return JSON.stringify({success:true, applied:decls.length, selector:${JsUtils.escapeJsString(selector)}});
             })()
         """.trimIndent()
 
@@ -523,7 +524,7 @@ class ToolExecutor(
     /**
      * Escape a string for safe embedding in a JavaScript string literal.
      */
-    private fun escapeJsString(s: String): String {
+    private fun JsUtils.escapeJsString(s: String): String {
         return buildString {
             append('"')
             for (ch in s) {

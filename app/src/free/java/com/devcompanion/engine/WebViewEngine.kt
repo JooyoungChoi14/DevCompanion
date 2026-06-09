@@ -3,6 +3,8 @@ package com.devcompanion.engine
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -24,7 +26,7 @@ import kotlinx.coroutines.withContext
  *
  * Used by the `free` flavor. Encapsulates all WebView-specific setup:
  * settings, client callbacks, JS injections, debugger, and heartbeat.
- * BrowserTab receives high-level callbacks via [EngineCallbacks].
+ * BrowserTab receives high-level callbacks via [BrowserEngine.Callbacks].
  */
 class WebViewEngine(
     private val webView: WebView,
@@ -33,27 +35,38 @@ class WebViewEngine(
 
     override val view: android.view.View get() = webView
 
-    /** Direct access to the underlying WebView for flavor-specific operations. */
+    /**
+     * Direct access to the underlying WebView for flavor-specific operations.
+     * @suppress Internal use only — do not use outside the free flavor source set.
+     */
     val underlyingWebView: WebView get() = webView
 
-    /** The debugger instance for WebView-specific debugging. */
+    /**
+     * Direct access to the debugger for flavor-specific operations.
+     * @suppress Internal use only.
+     */
     val underlyingDebugger: WebViewDebugger get() = debugger
 
     /** WebView tracks loading state internally via WebViewClient callbacks. */
     override val isLoading: Boolean
         get() = _isLoading
+    @Volatile
     private var _isLoading: Boolean = false
 
     // ── Callbacks ──────────────────────────────────────────────────
 
+    @Volatile
     private var browserCallbacks: BrowserEngine.Callbacks? = null
 
-    /** Set BrowserEngine-level callbacks (universal across flavors). */
-    override fun setCallbacks(callbacks: BrowserEngine.Callbacks) { browserCallbacks = callbacks }
+    /** Set BrowserEngine-level callbacks (universal across flavors). Must be called on UI thread. */
+    override fun setCallbacks(callbacks: BrowserEngine.Callbacks) {
+        browserCallbacks = callbacks
+    }
 
     // ── Configuration ───────────────────────────────────────────────
 
     private var urlHistoryStore: com.devcompanion.data.UrlHistoryStore? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
     fun configureDefaults(viewportScale: Int) {
@@ -78,9 +91,6 @@ class WebViewEngine(
     /**
      * Install WebViewClient, WebChromeClient, and JavascriptInterfaces.
      * Must be called after [configureDefaults] and from the UI thread.
-     *
-     * @param viewportScale Current viewport zoom scale.
-     * @param urlHistoryStore URL history store for tracking visited URLs.
      */
     fun installClients(
         viewportScale: Int,
@@ -120,7 +130,7 @@ class WebViewEngine(
                     null
                 )
 
-                // Flavor-conditional JS injections
+                // Flavor-conditional JS injections with sentinel guards
                 if (InjectionConfig.needsInjections) {
                     view.evaluateJavascript(InjectionConfig.AUTOFILL_INJECTION, null)
                     view.evaluateJavascript(InjectionConfig.VH_FIX_INJECTION, null)
@@ -246,7 +256,7 @@ class WebViewEngine(
 
     override suspend fun screenshot(): Bitmap? {
         return try {
-            val bitmap = withContext(Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
                 if (webView.width <= 0 || webView.height <= 0) return@withContext null
                 val bmp = Bitmap.createBitmap(
                     webView.width.coerceAtLeast(1),
@@ -257,7 +267,6 @@ class WebViewEngine(
                 webView.draw(canvas)
                 bmp
             }
-            bitmap
         } catch (e: Exception) {
             null
         }
@@ -267,9 +276,18 @@ class WebViewEngine(
         return try {
             kotlinx.coroutines.withTimeout(timeoutMs) {
                 val deferred = CompletableDeferred<String>()
-                webView.post {
+                // Use Handler(Looper.getMainLooper()) as fallback if webView.post fails
+                val posted = webView.post {
                     webView.evaluateJavascript(js) { result ->
                         deferred.complete(result ?: "")
+                    }
+                }
+                if (!posted) {
+                    // WebView not attached — try main handler
+                    mainHandler.post {
+                        webView.evaluateJavascript(js) { result ->
+                            deferred.complete(result ?: "")
+                        }
                     }
                 }
                 deferred.await()
@@ -286,9 +304,7 @@ class WebViewEngine(
     override suspend fun screenshotBase64(): String {
         val bitmap = screenshot() ?: return ""
         return try {
-            val stream = java.io.ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-            android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+            BrowserEngine.bitmapToBase64(bitmap)
         } finally {
             if (!bitmap.isRecycled) bitmap.recycle()
         }
@@ -296,6 +312,13 @@ class WebViewEngine(
 
     override fun destroy() {
         debugger.detachWebView()
+        // C5 fix: destroy the WebView to release native resources
+        // Callers must remove the view from composition before calling this
+        try {
+            webView.destroy()
+        } catch (e: Exception) {
+            Log.w(TAG, "WebView.destroy() failed", e)
+        }
     }
 
     companion object {

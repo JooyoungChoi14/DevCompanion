@@ -1,6 +1,9 @@
 package com.devcompanion.engine
 
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.View
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -8,6 +11,8 @@ import kotlinx.coroutines.withContext
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
+import com.devcompanion.logging.SessionLog
+import com.devcompanion.logging.EventType
 
 /**
  * BrowserEngine implementation wrapping GeckoView + GeckoSession.
@@ -15,9 +20,9 @@ import org.mozilla.geckoview.GeckoView
  * Used by the `gecko` flavor. GeckoView handles rendering natively,
  * eliminating the need for JS injections (vh fix, autofill, heartbeat, etc.).
  *
- * JS evaluation uses GeckoSession's evaluateJavaScript API.
- * Navigation callbacks are wired via NavigationDelegate, ProgressDelegate,
- * and ContentDelegate.
+ * Thread safety: All mutable state is @Volatile. Gecko delegate callbacks
+ * arrive on the Gecko thread; we dispatch UI-affecting callbacks to the
+ * main thread via [mainHandler].
  */
 class GeckoEngine(
     private val geckoView: GeckoView,
@@ -26,26 +31,35 @@ class GeckoEngine(
 
     override val view: View get() = geckoView
 
-    /** Direct access to the underlying GeckoSession for delegate setup. */
+    /**
+     * Direct access to the underlying GeckoSession for delegate setup.
+     * @suppress Internal use only — do not use outside the gecko flavor source set.
+     */
     val underlyingSession: GeckoSession get() = session
 
-    /** Direct access to the underlying GeckoView for view-level operations. */
+    /**
+     * Direct access to the underlying GeckoView for view-level operations.
+     * @suppress Internal use only.
+     */
     val underlyingGeckoView: GeckoView get() = geckoView
 
-    // ── Navigation state tracked via delegates ──────────────────────
+    // ── Navigation state tracked via delegates (all @Volatile for thread safety) ──
 
-    private var _canGoBack = false
-    private var _canGoForward = false
-    private var _title: String? = null
-    private var _url: String? = null
-    private var _isLoading = false
+    @Volatile private var _canGoBack = false
+    @Volatile private var _canGoForward = false
+    @Volatile private var _title: String? = null
+    @Volatile private var _url: String? = null
+    @Volatile private var _isLoading = false
 
     /** Whether the current page is still loading. */
     override val isLoading: Boolean get() = _isLoading
 
+    @Volatile
     private var browserCallbacks: BrowserEngine.Callbacks? = null
 
-    /** Set BrowserEngine-level callbacks (universal across flavors). */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Set BrowserEngine-level callbacks. Thread-safe via @Volatile. */
     override fun setCallbacks(callbacks: BrowserEngine.Callbacks) {
         browserCallbacks = callbacks
     }
@@ -60,7 +74,7 @@ class GeckoEngine(
 
     /**
      * Set up navigation tracking delegates and progress callbacks.
-     * Called internally by [setup].
+     * All callbacks dispatch to the main thread for UI safety.
      */
     fun setupDelegates() {
         session.navigationDelegate = object : GeckoSession.NavigationDelegate {
@@ -85,12 +99,26 @@ class GeckoEngine(
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 _isLoading = true
-                browserCallbacks?.onPageStarted(url)
+                // Dispatch callback to main thread (Gecko callbacks run on Gecko thread)
+                mainHandler.post {
+                    browserCallbacks?.onPageStarted(url)
+                }
             }
 
             override fun onPageStop(session: GeckoSession, success: Boolean) {
                 _isLoading = false
-                browserCallbacks?.onPageFinished(_url ?: "", _title, _canGoBack, _canGoForward)
+                val url = _url ?: ""
+                val title = _title
+                val canBack = _canGoBack
+                val canFwd = _canGoForward
+                // Dispatch callback to main thread
+                mainHandler.post {
+                    browserCallbacks?.onPageFinished(url, title, canBack, canFwd)
+                }
+                SessionLog.uiWebviewState(
+                    url, geckoView.width, geckoView.height,
+                    BrowserEngine.UNKNOWN, BrowserEngine.UNKNOWN, BrowserEngine.UNKNOWN
+                )
             }
         }
 
@@ -99,6 +127,8 @@ class GeckoEngine(
                 _title = title
             }
         }
+
+        Log.i(TAG, "GeckoEngine delegates installed")
     }
 
     // ── BrowserEngine contract ──────────────────────────────────────
@@ -138,15 +168,13 @@ class GeckoEngine(
 
     override fun getUrl(): String? = _url
 
-    override fun scrollX(): Int = geckoView.scrollX
+    /** Returns View scroll, not page scroll. Use JS-based query for page scroll position. */
+    override fun scrollX(): Int = BrowserEngine.UNKNOWN
 
-    override fun scrollY(): Int = geckoView.scrollY
+    /** Returns View scroll, not page scroll. Use JS-based query for page scroll position. */
+    override fun scrollY(): Int = BrowserEngine.UNKNOWN
 
-    override fun contentHeight(): Int {
-        // GeckoView doesn't expose contentHeight like WebView.
-        // Return -1 to signal "unknown" — callers should use viewportHeight() instead.
-        return -1
-    }
+    override fun contentHeight(): Int = BrowserEngine.UNKNOWN
 
     override fun viewportWidth(): Int = geckoView.width
 
@@ -170,6 +198,7 @@ class GeckoEngine(
                 bitmap
             }
         } catch (e: Exception) {
+            SessionLog.log(EventType.WEBVIEW_CRASH, mapOf("reason" to "screenshot_failed", "error" to (e.message ?: "")))
             null
         }
     }
@@ -179,6 +208,8 @@ class GeckoEngine(
             kotlinx.coroutines.withTimeout(timeoutMs) {
                 val deferred = CompletableDeferred<String>()
                 val result: GeckoResult<String> = session.evaluateJavaScript(js)
+                // GeckoResult.then() fires on the Gecko thread.
+                // CompletableDeferred.complete() is thread-safe and idempotent.
                 result.then({ value ->
                     deferred.complete(value ?: "")
                     GeckoResult<Void>()
@@ -189,6 +220,10 @@ class GeckoEngine(
                 deferred.await()
             }
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            SessionLog.log(
+                EventType.WEBVIEW_CRASH,
+                mapOf("reason" to "eval_timeout", "timeoutMs" to timeoutMs.toString())
+            )
             """{"t":"error","v":"GeckoView unresponsive: JS evaluation timed out after ${timeoutMs}ms."}"""
         }
     }
@@ -196,16 +231,23 @@ class GeckoEngine(
     override suspend fun screenshotBase64(): String {
         val bitmap = screenshot() ?: return ""
         return try {
-            val stream = java.io.ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-            android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
+            BrowserEngine.bitmapToBase64(bitmap)
         } finally {
             if (!bitmap.isRecycled) bitmap.recycle()
         }
     }
 
     override fun destroy() {
-        // Don't close the session — Compose manages the view lifecycle
-        // Session cleanup happens when the view is detached
+        // C4 fix: close the GeckoSession to release native resources
+        try {
+            session.close()
+        } catch (e: Exception) {
+            Log.w(TAG, "GeckoSession.close() failed", e)
+        }
+        Log.i(TAG, "GeckoEngine destroyed, session closed")
+    }
+
+    companion object {
+        private const val TAG = "GeckoEngine"
     }
 }
