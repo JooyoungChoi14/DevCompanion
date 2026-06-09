@@ -136,7 +136,7 @@ class WebViewDebugger : BrowserDebugger {
     }
 
     /** Add a JS input item and return its uid for linking with the result */
-    override fun addJsInput(expression: String): Long {
+    fun addJsInput(expression: String): Long {
         val uid = nextConsoleItemId()
         val item = ConsoleItem.Input(
             uid = uid,
@@ -148,7 +148,7 @@ class WebViewDebugger : BrowserDebugger {
     }
 
     /** Add a JS result item linked to the input */
-    override fun addJsResult(inputUid: Long, expression: String, result: JsEvalResult) {
+    fun addJsResult(inputUid: Long, expression: String, result: JsEvalResult) {
         val item = ConsoleItem.Result(
             uid = nextConsoleItemId(),
             timestamp = System.currentTimeMillis(),
@@ -321,7 +321,7 @@ class WebViewDebugger : BrowserDebugger {
     /**
      * Called from JavascriptInterface when performance JS sends data.
      */
-    override fun onPerformanceResult(json: String) {
+    fun onPerformanceResult(json: String) {
         try {
             val obj = JSONObject(json)
             val existing = _performanceMetrics.value.lastOrNull()
@@ -508,7 +508,7 @@ class WebViewDebugger : BrowserDebugger {
     }
 
     /** Mark page load start for performance tracking */
-    fun markPageStart() {
+    override fun markPageStart() {
         pendingRequests["__page_start__"] = System.currentTimeMillis()
     }
 
@@ -568,7 +568,7 @@ class WebViewDebugger : BrowserDebugger {
     /**
      * Called from WebView JavascriptInterface when inspector JS sends element data.
      */
-    override fun onInspectorResult(json: String) {
+    fun onInspectorResult(json: String) {
         try {
             val obj = JSONObject(json)
             val attrsObj = obj.optJSONObject("attributes")
