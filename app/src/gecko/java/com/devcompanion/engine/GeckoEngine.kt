@@ -249,6 +249,14 @@ class GeckoEngine(
         Log.i(TAG, "GeckoEngine destroyed, session closed")
     }
 
+    override fun pause() {
+        session.setActive(false)
+    }
+
+    override fun resume() {
+        session.setActive(true)
+    }
+
     companion object {
         private const val TAG = "GeckoEngine"
     }

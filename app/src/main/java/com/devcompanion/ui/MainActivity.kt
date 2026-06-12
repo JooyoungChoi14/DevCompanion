@@ -56,14 +56,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private var engineCanGoBack: (() -> Boolean)? = null
+    private var engineRef: BrowserEngine? = null
 
     override fun onPause() {
         super.onPause()
+        engineRef?.pause()
         lifecycleScope.launch { SessionLog.flush(this@MainActivity) }
     }
 
     override fun onResume() {
         super.onResume()
+        engineRef?.resume()
         SessionLog.startAutoFlush(lifecycleScope)
     }
 
@@ -123,6 +126,9 @@ class MainActivity : ComponentActivity() {
                         onEngineReady = { canGoBackCallback ->
                             engineCanGoBack = canGoBackCallback
                         },
+                        onEngineCreated = { engine ->
+                            engineRef = engine
+                        },
                         bridgeAuthToken = bridgeAuthToken,
                         bridgePort = bridgePort,
                         tunnelUrl = tunnelUrl,
@@ -144,6 +150,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainApp(
     onEngineReady: ((() -> Boolean) -> Unit)? = null,
+    onEngineCreated: ((BrowserEngine) -> Unit)? = null,
     bridgeAuthToken: String = "",
     bridgePort: Int = 8765,
     tunnelUrl: String? = null,
@@ -255,7 +262,10 @@ fun MainApp(
                 headerVisible = !showAiChat,
                 onHeaderVisibilityToggle = { headerVisible = !headerVisible },
                 onEngineReady = onEngineReady,
-                onEngineCreated = { engine -> engineRef = engine },
+                onEngineCreated = { engine ->
+                    engineRef = engine
+                    onEngineCreated?.invoke(engine)
+                },
                 onAskAi = { question ->
                     pendingAiQuestion = question
                     val url = engineRef?.getUrl()

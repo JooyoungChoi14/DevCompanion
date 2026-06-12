@@ -321,6 +321,14 @@ class WebViewEngine(
         }
     }
 
+    override fun pause() {
+        // WebView doesn't need explicit pause/resume — handled by the View system
+    }
+
+    override fun resume() {
+        // WebView doesn't need explicit pause/resume — handled by the View system
+    }
+
     companion object {
         private const val TAG = "WebViewEngine"
     }

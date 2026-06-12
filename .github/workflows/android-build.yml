@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -30,31 +30,55 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
-      - name: Build Debug APK
+      - name: Build Free Debug APK
         run: |
           chmod +x gradlew-real
           ./gradlew-real assembleFreeDebug
 
-      - name: Build Release APK
+      - name: Build Free Release APK
         run: ./gradlew-real assembleFreeRelease
 
-      - name: Upload Debug APK
+      - name: Build Gecko Debug APK (with ABI splits)
+        run: ./gradlew-real assembleGeckoDebug -PabiSplit=true
+
+      - name: Build Gecko Release APK (with ABI splits)
+        run: ./gradlew-real assembleGeckoRelease -PabiSplit=true
+
+      - name: Upload Free Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: app-free-debug
           path: app/build/outputs/apk/free/debug/*.apk
 
-      - name: Upload Release APK
+      - name: Upload Free Release APK
         uses: actions/upload-artifact@v4
         with:
           name: app-free-release
           path: app/build/outputs/apk/free/release/*.apk
 
-      - name: Upload R8 Mapping
+      - name: Upload Gecko Debug APKs
         uses: actions/upload-artifact@v4
         with:
-          name: r8-mapping
+          name: app-gecko-debug
+          path: app/build/outputs/apk/gecko/debug/*.apk
+
+      - name: Upload Gecko Release APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-gecko-release
+          path: app/build/outputs/apk/gecko/release/*.apk
+
+      - name: Upload R8 Mapping (free)
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-free
           path: app/build/outputs/mapping/freeRelease/mapping.txt
+
+      - name: Upload R8 Mapping (gecko)
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-mapping-gecko
+          path: app/build/outputs/mapping/geckoRelease/mapping.txt
 
       - name: Create Release on tag
         if: startsWith(github.ref, 'refs/tags/v')
@@ -63,6 +87,8 @@ jobs:
           files: |
             app/build/outputs/apk/free/debug/*.apk
             app/build/outputs/apk/free/release/*.apk
+            app/build/outputs/apk/gecko/debug/*.apk
+            app/build/outputs/apk/gecko/release/*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -83,6 +83,12 @@ interface BrowserEngine {
     /** Destroy the engine and release resources. Callers must remove the view from composition first. */
     fun destroy()
 
+    /** Pause the engine (e.g., on Activity onPause). GeckoView needs session.pause(). */
+    fun pause()
+
+    /** Resume the engine (e.g., on Activity onResume). GeckoView needs session.resume(). */
+    fun resume()
+
     /**
      * Callbacks for engine lifecycle events.
      * Implemented by BrowserTab to update UI state.
