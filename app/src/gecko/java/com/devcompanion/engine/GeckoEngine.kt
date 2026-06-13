@@ -5,10 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.View
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 import com.devcompanion.logging.SessionLog
@@ -138,14 +136,11 @@ class GeckoEngine(
     }
 
     override fun evaluateJavascript(script: String, callback: ((String?) -> Unit)?) {
-        val result: GeckoResult<String> = session.evaluateJs(script)
-        result.then({ value ->
-            callback?.invoke(value)
-            GeckoResult<Void>()
-        }, { _ ->
-            callback?.invoke(null)
-            GeckoResult<Void>()
-        })
+        // GeckoView 150: evaluateJs removed from GeckoSession API.
+        // Use loadUri("javascript:...") as a fallback, or implement via WebExtension.
+        // For now, log and invoke callback with null — JS eval not available.
+        Log.w(TAG, "evaluateJavascript: GeckoView 150 does not support evaluateJs; falling back to no-op")
+        callback?.invoke(null)
     }
 
     override fun goBack() {
@@ -208,28 +203,11 @@ class GeckoEngine(
     }
 
     override suspend fun evalJs(js: String, timeoutMs: Long): String {
-        return try {
-            kotlinx.coroutines.withTimeout(timeoutMs) {
-                val deferred = CompletableDeferred<String>()
-                val result: GeckoResult<String> = session.evaluateJs(js)
-                // GeckoResult.then() fires on the Gecko thread.
-                // CompletableDeferred.complete() is thread-safe and idempotent.
-                result.then({ value ->
-                    deferred.complete(value ?: "")
-                    GeckoResult<Void>()
-                }, { _ ->
-                    deferred.complete("")
-                    GeckoResult<Void>()
-                })
-                deferred.await()
-            }
-        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            SessionLog.log(
-                EventType.WEBVIEW_CRASH,
-                mapOf("reason" to "eval_timeout", "timeoutMs" to timeoutMs.toString())
-            )
-            """{"t":"error","v":"GeckoView unresponsive: JS evaluation timed out after ${timeoutMs}ms."}"""
-        }
+        // GeckoView 150: evaluateJs removed from GeckoSession API.
+        // JS evaluation via evaluateJavascript (which also falls back to no-op for now).
+        // TODO: Implement via WebExtension messaging or data: URI injection.
+        Log.w(TAG, "evalJs: GeckoView 150 does not support evaluateJs; returning error")
+        return """{"t":"error","v":"GeckoView 150 does not support evaluateJs. JS evaluation not available."}"""
     }
 
     override suspend fun screenshotBase64(): String {

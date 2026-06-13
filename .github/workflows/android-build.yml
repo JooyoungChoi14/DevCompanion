@@ -46,6 +46,10 @@ jobs:
           if [ -n "$GECKO_JAR" ]; then
             echo "=== GeckoSession methods containing 'eval' or 'js' ==="
             javap -public -classpath "$GECKO_JAR" org.mozilla.geckoview.GeckoSession 2>/dev/null | grep -iE 'eval|js|javascript|script' || echo '(no matches)'
+            echo "=== GeckoSession ALL public methods ==="
+            javap -public -classpath "$GECKO_JAR" org.mozilla.geckoview.GeckoSession 2>/dev/null | head -100 || echo '(not found)'
+            echo "=== GeckoResult public methods ==="
+            javap -public -classpath "$GECKO_JAR" org.mozilla.geckoview.GeckoResult 2>/dev/null | head -30 || echo '(not found)'
             echo "=== GeckoSessionSettings fields ==="
             javap -public -classpath "$GECKO_JAR" org.mozilla.geckoview.GeckoSessionSettings 2>/dev/null | head -40 || echo '(not found)'
           else
