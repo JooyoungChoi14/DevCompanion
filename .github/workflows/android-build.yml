@@ -38,6 +38,22 @@ jobs:
       - name: Build Free Release APK
         run: ./gradlew-real assembleFreeRelease
 
+      - name: Dump GeckoView API (GeckoSession methods)
+        run: |
+          chmod +x gradlew-real
+          # Find the cached GeckoView AAR/JAR and dump GeckoSession public methods
+          GECKO_JAR=$(find ~/.gradle/caches -name 'geckoview-150.0.20260511200624*' -name '*.jar' 2>/dev/null | head -1)
+          if [ -n "$GECKO_JAR" ]; then
+            echo "=== GeckoSession methods containing 'eval' or 'js' ==="
+            javap -public -classpath "$GECKO_JAR" org.mozilla.geckoview.GeckoSession 2>/dev/null | grep -iE 'eval|js|javascript|script' || echo '(no matches)'
+            echo "=== GeckoSessionSettings fields ==="
+            javap -public -classpath "$GECKO_JAR" org.mozilla.geckoview.GeckoSessionSettings 2>/dev/null | head -40 || echo '(not found)'
+          else
+            echo "JAR not found in Gradle cache, checking transformed jars..."
+            find ~/.gradle/caches -path '*geckoview*' -name '*.jar' 2>/dev/null | head -5
+            find ~/.gradle -path '*geckoview*' -name '*.aar' 2>/dev/null | head -5
+          fi
+
       - name: Build Gecko Debug APK (with ABI splits)
         run: ./gradlew-real assembleGeckoDebug -PabiSplit=true
 
