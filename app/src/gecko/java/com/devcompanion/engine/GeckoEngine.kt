@@ -81,7 +81,7 @@ class GeckoEngine(
             override fun onLocationChange(
                 session: GeckoSession,
                 url: String?,
-                perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>?,
+                perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
                 _url = url
@@ -138,7 +138,7 @@ class GeckoEngine(
     }
 
     override fun evaluateJavascript(script: String, callback: ((String?) -> Unit)?) {
-        val result: GeckoResult<String> = session.evaluateJavaScript(script)
+        val result: GeckoResult<String> = session.evaluateJs(script)
         result.then({ value ->
             callback?.invoke(value)
             GeckoResult<Void>()
@@ -183,7 +183,9 @@ class GeckoEngine(
     override fun viewportHeight(): Int = geckoView.height
 
     override fun setTextZoom(percent: Int) {
-        session.settings.textZoom = percent
+        // GeckoView 150: textZoom was removed from GeckoSessionSettings.
+        // Font scaling is handled via CSS zoom in BrowserTab (same as WebView zoom).
+        // No-op here — BrowserTab applies CSS zoom via evaluateJavascript.
     }
 
     override suspend fun screenshot(): Bitmap? {
@@ -209,7 +211,7 @@ class GeckoEngine(
         return try {
             kotlinx.coroutines.withTimeout(timeoutMs) {
                 val deferred = CompletableDeferred<String>()
-                val result: GeckoResult<String> = session.evaluateJavaScript(js)
+                val result: GeckoResult<String> = session.evaluateJs(js)
                 // GeckoResult.then() fires on the Gecko thread.
                 // CompletableDeferred.complete() is thread-safe and idempotent.
                 result.then({ value ->
@@ -250,11 +252,20 @@ class GeckoEngine(
     }
 
     override fun pause() {
-        session.setActive(false)
+        // GeckoView: no explicit pause needed — setActive(false) reduces resource usage
+        try {
+            session.setActive(false)
+        } catch (_: Exception) {
+            // Not all GeckoView versions support setActive
+        }
     }
 
     override fun resume() {
-        session.setActive(true)
+        try {
+            session.setActive(true)
+        } catch (_: Exception) {
+            // Not all GeckoView versions support setActive
+        }
     }
 
     companion object {
