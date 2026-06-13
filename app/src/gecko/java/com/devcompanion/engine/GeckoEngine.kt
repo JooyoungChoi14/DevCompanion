@@ -80,7 +80,7 @@ class GeckoEngine(
                 session: GeckoSession,
                 url: String?,
                 perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
-                hasUserGesture: Boolean?
+                hasUserGesture: Boolean
             ) {
                 _url = url
             }
