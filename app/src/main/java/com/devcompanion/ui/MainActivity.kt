@@ -80,8 +80,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate: starting")
-        SessionLog.init(this)
-        SessionLog.startSession()
+        // SessionLog.init/startSession moved to DevCompanionApp.onCreate
+        // AppHealthMonitor.install moved to DevCompanionApp.onCreate
 
         try {
             try {
@@ -172,9 +172,9 @@ fun MainApp(
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
 
     // ── UI navigation tracking ──
-    LaunchedEffect(showAiChat) { SessionLog.uiNav("ai_chat", if (showAiChat) "open" else "close") }
-    LaunchedEffect(showDevTools) { SessionLog.uiNav("devtools", if (showDevTools) "open" else "close") }
-    LaunchedEffect(showSettings) { SessionLog.uiNav("settings", if (showSettings) "open" else "close") }
+    LaunchedEffect(showAiChat) { SessionLog.uiNav("ai_chat", if (showAiChat) "open" else "close"); SessionLog.currentScreen = if (showAiChat) "ai_chat" else "browser" }
+    LaunchedEffect(showDevTools) { SessionLog.uiNav("devtools", if (showDevTools) "open" else "close"); if (showDevTools) SessionLog.currentScreen = "devtools" }
+    LaunchedEffect(showSettings) { SessionLog.uiNav("settings", if (showSettings) "open" else "close"); if (showSettings) SessionLog.currentScreen = "settings" }
     LaunchedEffect(showBridgeInfo) { SessionLog.uiNav("bridge_info", if (showBridgeInfo) "open" else "close") }
     LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
     LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; else -> "unknown" }) }

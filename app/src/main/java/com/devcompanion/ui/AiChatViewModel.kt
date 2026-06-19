@@ -25,7 +25,7 @@ import com.devcompanion.llm.agent.ToolCall
 import com.devcompanion.llm.agent.ToolConfirmationDetails
 import com.devcompanion.llm.agent.ToolExecutor
 import com.devcompanion.llm.agent.WebViewTools
-import com.devcompanion.logging.EventType
+import com.devcompanion.logging.AppHealthMonitor
 import com.devcompanion.logging.SessionLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview

@@ -447,6 +447,120 @@ object SessionLog {
         appContext = context.applicationContext
     }
 
+    // ── App health convenience methods ──────────────────────────────────
+
+    /** Log main thread blocking detected via handler delay.
+     * @param durationMs measured delay in milliseconds
+     * @param screen current screen name (e.g. "ai_chat", "settings")
+     * @param component Composable or class name
+     * @param trigger what caused the block (e.g. "message_send", "recomposition")
+     */
+    fun appMainThreadBlock(durationMs: Long, screen: String, component: String, trigger: String) {
+        if (!healthSamplingAllowed()) return
+        log(EventType.APP_MAIN_THREAD_BLOCK, mapOf(
+            "durationMs" to durationMs.toString(),
+            "screen" to screen,
+            "component" to component,
+            "trigger" to trigger
+        ))
+    }
+
+    /** Log dropped frames (jank) detected via Choreographer.
+     * @param droppedFrames count of consecutive dropped frames
+     * @param screen current screen name
+     * @param component Composable experiencing jank
+     */
+    fun appFrameDrop(droppedFrames: Int, screen: String, component: String) {
+        if (!healthSamplingAllowed()) return
+        log(EventType.APP_FRAME_DROP, mapOf(
+            "droppedFrames" to droppedFrames.toString(),
+            "screen" to screen,
+            "component" to component
+        ))
+    }
+
+    /** Log uncaught coroutine exception.
+     * @param scope coroutine scope name (e.g. "viewModelScope", "lifecycleScope")
+     * @param exception exception class simple name
+     * @param message exception message (truncated)
+     * @param component ViewModel or class name
+     * @param screen current screen name
+     */
+    fun appCoroutineError(scope: String, exception: String, message: String, component: String, screen: String) {
+        log(EventType.APP_COROUTINE_ERROR, mapOf(
+            "scope" to scope,
+            "exception" to exception.take(100),
+            "message" to message.take(200),
+            "component" to component,
+            "screen" to screen
+        ))
+    }
+
+    /** Log memory pressure from onTrimMemory callback.
+     * @param level trim level (TRIM_MEMORY_*)
+     * @param levelLabel human-readable label ("low", "moderate", "critical")
+     * @param freeMb approximate free memory in MB
+     * @param totalMb approximate total memory in MB
+     * @param screen current screen name
+     */
+    fun appMemoryPressure(level: Int, levelLabel: String, freeMb: Long, totalMb: Long, screen: String) {
+        if (!healthSamplingAllowed()) return
+        log(EventType.APP_MEMORY_PRESSURE, mapOf(
+            "level" to levelLabel,
+            "levelInt" to level.toString(),
+            "freeMb" to freeMb.toString(),
+            "totalMb" to totalMb.toString(),
+            "screen" to screen
+        ))
+    }
+
+    /** Log input latency (keyboard press → render).
+     * @param latencyMs delay in milliseconds from input event to render
+     * @param screen current screen name
+     * @param component Composable receiving input
+     * @param inputType "keyboard", "touch", "scroll"
+     */
+    fun appInputLatency(latencyMs: Long, screen: String, component: String, inputType: String) {
+        if (!healthSamplingAllowed()) return
+        log(EventType.APP_INPUT_LATENCY, mapOf(
+            "latencyMs" to latencyMs.toString(),
+            "screen" to screen,
+            "component" to component,
+            "inputType" to inputType
+        ))
+    }
+
+    /** Log network request latency.
+     * @param endpoint provider/adapter name
+     * @param ttfbMs time to first byte in milliseconds
+     * @param totalMs total request duration in milliseconds
+     * @param statusCode HTTP status code
+     * @param screen current screen name
+     */
+    fun appNetworkLatency(endpoint: String, ttfbMs: Long?, totalMs: Long, statusCode: Int?, screen: String) {
+        log(EventType.APP_NETWORK_LATENCY, mapOf(
+            "endpoint" to endpoint,
+            "ttfbMs" to (ttfbMs?.toString() ?: ""),
+            "totalMs" to totalMs.toString(),
+            "statusCode" to (statusCode?.toString() ?: ""),
+            "screen" to screen
+        ))
+    }
+
+    // ── Health sampling ────────────────────────────────────────────────
+
+    /**
+     * Whether health events should be logged for this call.
+     * Debug builds: always log.
+     * Release builds: 1% sampling rate.
+     */
+    private fun healthSamplingAllowed(): Boolean {
+        return BuildConfig.DEBUG || (System.currentTimeMillis() % 100 == 0L)
+    }
+
+    /** Current screen name for health event context. Set by composables. */
+    var currentScreen: String = "unknown"
+
     /** Start periodic auto-flush (every 30 seconds). Call from Activity.onCreate(). */
     fun startAutoFlush(scope: kotlinx.coroutines.CoroutineScope) {
         flushJob?.cancel()
@@ -509,6 +623,14 @@ enum class EventType(val key: String) {
     UI_SCROLL("ui_scroll"),         // significant scroll position
     UI_WEBVIEW_STATE("ui_webview_state"), // viewport size, scroll, URL
     UI_DATA_SNAPSHOT("ui_data_snapshot"), // message count, cache state
+
+    // ── App health events (performance & error tracking) ──
+    APP_MAIN_THREAD_BLOCK("app_main_thread_block"),   // main thread blocked > threshold
+    APP_FRAME_DROP("app_frame_drop"),                 // dropped frames (jank)
+    APP_COROUTINE_ERROR("app_coroutine_error"),       // uncaught coroutine exception
+    APP_MEMORY_PRESSURE("app_memory_pressure"),       // onTrimMemory callback
+    APP_INPUT_LATENCY("app_input_latency"),           // keyboard→render delay
+    APP_NETWORK_LATENCY("app_network_latency"),       // TTFB + total latency per request
 
     ERROR("error")
 }

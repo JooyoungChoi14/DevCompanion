@@ -1,5 +1,6 @@
 package com.devcompanion.llm
 
+import com.devcompanion.logging.AppHealthMonitor
 import kotlinx.coroutines.flow.Flow
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -45,6 +46,7 @@ interface LlmAdapter {
          */
         internal val SHARED_CLIENT: OkHttpClient by lazy {
             OkHttpClient.Builder()
+                .addInterceptor(AppHealthMonitor.NetworkLatencyInterceptor())
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .writeTimeout(30, TimeUnit.SECONDS)

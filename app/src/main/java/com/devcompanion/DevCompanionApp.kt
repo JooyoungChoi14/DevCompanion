@@ -4,6 +4,8 @@ import android.app.Application
 import android.util.Log
 import com.devcompanion.bridge.BridgeServer
 import com.devcompanion.bridge.BoreTunnel
+import com.devcompanion.logging.AppHealthMonitor
+import com.devcompanion.logging.SessionLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +34,13 @@ class DevCompanionApp : Application() {
         super.onCreate()
         Log.i(TAG, "DevCompanionApp.onCreate() starting")
         CrashHandler.install(this)
+
+        // Initialize session logging
+        SessionLog.init(this)
+        SessionLog.startSession()
+
+        // Install app health monitoring
+        AppHealthMonitor.install(this)
 
         // Initialize LLM settings (encrypted preferences)
         com.devcompanion.llm.LlmSettings.initialize(this)
