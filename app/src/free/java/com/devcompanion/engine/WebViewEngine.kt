@@ -126,11 +126,18 @@ class WebViewEngine(
                     view.scrollX, view.scrollY, view.contentHeight
                 )
 
-                // Flavor-conditional JS injections with sentinel guards
+                // Flavor-conditional JS injections with timing
                 if (InjectionConfig.needsInjections) {
+                    val injectStart = System.currentTimeMillis()
                     view.evaluateJavascript(InjectionConfig.AUTOFILL_INJECTION, null)
                     view.evaluateJavascript(InjectionConfig.VH_FIX_INJECTION, null)
                     view.evaluateJavascript(InjectionConfig.TEXT_SIZE_FIX_INJECTION, null)
+                    SessionLog.appMainThreadBlock(
+                        durationMs = System.currentTimeMillis() - injectStart,
+                        screen = "browser",
+                        component = "WebViewEngine",
+                        trigger = "js_injections"
+                    )
                 }
                 if (InjectionConfig.needsHeartbeat) {
                     view.evaluateJavascript(InjectionConfig.HEARTBEAT_INJECTION, null)

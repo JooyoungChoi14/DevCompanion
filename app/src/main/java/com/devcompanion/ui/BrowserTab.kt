@@ -423,8 +423,8 @@ fun BrowserTab(
                 // Reset crash state on factory re-invocation
                 engineCrashed = false
                 SessionLog.log(
-                    EventType.WEBVIEW_RECOVER,
-                    mapOf("engineKey" to engineKey.toString())
+                    EventType.UI_NAV,
+                    mapOf("target" to "browser_engine", "action" to "create", "detail" to "key=$engineKey")
                 )
                 val engine = EngineFactory.create(ctx, debugger)
                 engineRef = engine
