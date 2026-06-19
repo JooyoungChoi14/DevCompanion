@@ -38,7 +38,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.devcompanion.llm.ChatMessage
 import com.devcompanion.llm.ConversationMeta
-import com.devcompanion.cdp.CdpClient
 import com.devcompanion.llm.LlmRepositoryImpl
 // Removed: EventType, SessionLog imports — no longer used after gesture code removal
 import com.devcompanion.llm.LlmSettings
@@ -65,7 +64,6 @@ import android.content.Intent
 fun AiChatScreen(
     viewModel: AiChatViewModel = viewModel(),
     engine: BrowserEngine?,
-    cdpClient: CdpClient,
     initialPrompt: String? = null,
     startNewConversation: Boolean = false,
     resumeConversationId: String? = null,
@@ -842,7 +840,6 @@ fun AiChatScreen(
     // ── Settings sheet (unified: Appearance / AI / Integrations) ──
     if (showSettings) {
         SettingsSheet(
-            cdpClient = cdpClient,
             onDismiss = { showSettings = false },
             initialTab = settingsInitialTab,
             viewModel = viewModel

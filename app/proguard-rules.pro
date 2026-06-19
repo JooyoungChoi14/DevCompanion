@@ -8,9 +8,6 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 
-# CDP event models
--keep class com.devcompanion.cdp.** { *; }
-
 # JavascriptInterface bridge methods must be kept
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;

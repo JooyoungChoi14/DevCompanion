@@ -3,24 +3,17 @@ package com.devcompanion.ui
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.devcompanion.cdp.CdpClient
 import com.devcompanion.github.ui.GitHubPatSection
 import com.devcompanion.llm.LlmProvider
 import com.devcompanion.logging.SessionLog
@@ -67,7 +60,6 @@ const val SETTINGS_TAB_INTEGRATIONS = 2
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsSheet(
-    cdpClient: CdpClient,
     onDismiss: () -> Unit,
     initialTab: Int = SETTINGS_TAB_APPEARANCE,
     settingsViewModel: SettingsViewModel = viewModel(),
@@ -134,7 +126,7 @@ fun SettingsSheet(
                 settingsViewModel = settingsViewModel,
                 chatViewModel = viewModel,
             )
-            SETTINGS_TAB_INTEGRATIONS -> IntegrationsTab(cdpClient = cdpClient)
+            SETTINGS_TAB_INTEGRATIONS -> IntegrationsTab()
         }
     }
     } // ModalBottomSheet
@@ -611,16 +603,10 @@ private fun AiTab(
 // ═══════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IntegrationsTab(
-    cdpClient: CdpClient,
-) {
-    val connected by cdpClient.connected.collectAsState()
+private fun IntegrationsTab() {
     val scope = rememberCoroutineScope()
     val logContext = LocalContext.current
 
-    var hostInput by remember { mutableStateOf(cdpClient.discoveryHost) }
-    var portInput by remember { mutableStateOf(cdpClient.discoveryPort) }
-    var connecting by remember { mutableStateOf(false) }
     var showClearLogDialog by remember { mutableStateOf(false) }
 
     Column(
@@ -628,172 +614,6 @@ private fun IntegrationsTab(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
-        // ── CDP Connection ────────────────────────────────────────
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(modifier = Modifier.padding(Spacing.md)) {
-                Text("CDP Connection", style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                Text(
-                    "Connect to Chrome DevTools Protocol on your development machine.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.sm))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (connected) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(Spacing.sm),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (connected) Icons.Default.CheckCircle else Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = if (connected) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(Spacing.sm))
-                        Text(
-                            if (connected) "Connected to ${cdpClient.discoveryHost}:${cdpClient.discoveryPort}"
-                            else "Disconnected",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.sm))
-
-                OutlinedTextField(
-                    value = hostInput,
-                    onValueChange = { hostInput = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Host") },
-                    placeholder = { Text("e.g. 192.168.1.100") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Next
-                    ),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    enabled = !connected && !connecting
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.sm))
-
-                OutlinedTextField(
-                    value = portInput,
-                    onValueChange = { portInput = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Port") },
-                    placeholder = { Text("9222") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (!connected && !connecting) {
-                                connecting = true
-                                cdpClient.discoveryHost = hostInput
-                                cdpClient.discoveryPort = portInput
-                                scope.launch {
-                                    cdpClient.connect()
-                                    connecting = false
-                                }
-                            }
-                        }
-                    ),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                    enabled = !connected && !connecting
-                )
-
-                Spacer(modifier = Modifier.height(Spacing.sm))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(Spacing.md)) {
-                        Text("Setup", style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(modifier = Modifier.height(Spacing.xs))
-                        Text(
-                            "1. Launch Chrome on PC with:\n" +
-                            "   chrome --remote-debugging-port=9222\n" +
-                            "2. Find your PC's LAN IP\n" +
-                            "   (ipconfig / ifconfig)\n" +
-                            "3. Enter IP above and tap Connect",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.sm))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                ) {
-                    if (connected) {
-                        OutlinedButton(
-                            onClick = { cdpClient.disconnect() },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Icon(Icons.Default.LinkOff, contentDescription = null)
-                            Spacer(modifier = Modifier.width(Spacing.xs))
-                            Text("Disconnect")
-                        }
-                    } else {
-                        Button(
-                            onClick = {
-                                connecting = true
-                                cdpClient.discoveryHost = hostInput
-                                cdpClient.discoveryPort = portInput
-                                scope.launch {
-                                    cdpClient.connect()
-                                    connecting = false
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = !connecting
-                        ) {
-                            if (connecting) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary
-                                )
-                            } else {
-                                Icon(Icons.Default.Link, contentDescription = null)
-                            }
-                            Spacer(modifier = Modifier.width(Spacing.xs))
-                            Text(if (connecting) "Connecting…" else "Connect")
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.md))
-
         // ── GitHub PAT ────────────────────────────────────────────
         GitHubPatSection()
 

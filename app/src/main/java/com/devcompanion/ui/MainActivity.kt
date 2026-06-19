@@ -350,7 +350,6 @@ fun MainApp(
                 ) {
                     AiChatScreen(
                         engine = engineRef,
-                        cdpClient = app!!.cdpClient,
                         initialPrompt = pendingAiQuestion,
                         startNewConversation = forceNewSession || (matchedConversationId == null && pendingAiQuestion != null),
                         resumeConversationId = matchedConversationId,
@@ -407,7 +406,6 @@ fun MainApp(
                     ),
                 ) {
                     SettingsSheet(
-                        cdpClient = app!!.cdpClient,
                         onDismiss = { showSettings = false }
                     )
                 }

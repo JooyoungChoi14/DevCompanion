@@ -4,9 +4,6 @@ import android.app.Application
 import android.util.Log
 import com.devcompanion.bridge.BridgeServer
 import com.devcompanion.bridge.BoreTunnel
-import com.devcompanion.cdp.CdpClient
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,10 +18,6 @@ class DevCompanionApp : Application() {
 
     lateinit var boreTunnel: BoreTunnel
         private set
-
-    val cdpClient: CdpClient by lazy {
-        CdpClient(scope = CoroutineScope(Dispatchers.IO))
-    }
 
     var bridgeAuthToken: String = ""
         private set
