@@ -461,7 +461,7 @@ object SessionLog {
             "durationMs" to durationMs.toString(),
             "screen" to screen,
             "component" to component,
-            "trigger" to trigger
+            "trigger" to trigger.take(300)
         ))
     }
 

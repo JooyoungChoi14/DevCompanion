@@ -145,11 +145,15 @@ object AppHealthMonitor {
         if (postedAt == 0L) return@Runnable
         val elapsed = System.currentTimeMillis() - postedAt
         if (elapsed >= MAIN_THREAD_BLOCK_THRESHOLD_MS) {
+            // Capture stack trace to identify the blocking code
+            val stackTrace = Looper.getMainLooper().thread.stackTrace
+                .take(8)
+                .joinToString(" | ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
             SessionLog.appMainThreadBlock(
                 durationMs = elapsed,
                 screen = SessionLog.currentScreen,
                 component = "MainThread",
-                trigger = "handler_delay"
+                trigger = "handler_delay:$stackTrace"
             )
         }
         // Schedule next check

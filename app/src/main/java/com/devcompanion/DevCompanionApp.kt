@@ -1,6 +1,7 @@
 package com.devcompanion
 
 import android.app.Application
+import android.os.StrictMode
 import android.util.Log
 import com.devcompanion.bridge.BridgeServer
 import com.devcompanion.bridge.BoreTunnel
@@ -41,6 +42,18 @@ class DevCompanionApp : Application() {
 
         // Install app health monitoring
         AppHealthMonitor.install(this)
+
+        // Enable StrictMode in debug builds for main thread violations
+        if (BuildConfig.DEBUG) {
+            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder()
+                .detectAll()
+                .penaltyLog()
+                .build())
+            StrictMode.setVmPolicy(StrictMode.VmPolicy.Builder()
+                .detectAll()
+                .penaltyLog()
+                .build())
+        }
 
         // Initialize LLM settings (encrypted preferences)
         com.devcompanion.llm.LlmSettings.initialize(this)
