@@ -67,38 +67,99 @@ object InjectionConfig {
 })();"""
 
     /**
-     * Provide CSS custom property --webview-vh (1% of viewport height) and
-     * safety guard for JS framework drawers that compute height from viewport.
+     * Provide CSS custom property --webview-vh and prevent framework drawers
+     * from collapsing to 0px.
      *
-     * Some frameworks (e.g. Vuetify) use ResizeObserver/JS to set element heights
-     * and can collapse to 0px when the viewport dimensions are misread. The
-     * `.webview-drawer-guard` rule prevents navigation drawers from collapsing
-     * to 0px — this is a safety net, not a layout override.
+     * Problem: Vuetify v-navigation-drawer uses a ResizeObserver to compute
+     * its height. In Android WebView, the initial viewport dimensions can be
+     * misreported (especially with useWideViewPort + setInitialScale), causing
+     * Vuetify to compute drawer height = 0px. Vuetify explicitly sets both
+     * `style.height = "0px"` and `style.minHeight = "0px"` via JS, overriding
+     * any CSS rules including !important.
      *
-     * Removed: document.documentElement.style.zoom — it breaks JS framework
-     * layout calculations (Vuetify ResizeObserver reads zoom-affected offsetHeight
-     * and computes drawer height = 0px). Use WebView textZoom for scaling instead.
+     * Solution: A MutationObserver watches for style changes on navigation
+     * drawers and restores height to 100vh when it collapses to 0. This runs
+     * after Vuetify's reactive cycle, so it wins the specificity war.
+     *
+     * Also removed: document.documentElement.style.zoom — it breaks JS
+     * framework layout calculations (Vuetify ResizeObserver reads zoom-
+     * affected offsetHeight and computes drawer height = 0px).
      */
     val VH_FIX_INJECTION = """(function(){
     if (window.__dcVhFix) return "already-injected";
     window.__dcVhFix = true;
+
+    // ── CSS custom property --webview-vh ────────────────────────────
     function setVh() {
         document.documentElement.style.setProperty('--webview-vh', (window.innerHeight * 0.01) + 'px');
     }
     setVh();
     window.addEventListener('resize', setVh);
-    // Safety guard: prevent framework drawers from collapsing to 0px.
-    // This only applies min-height to drawers that would be 0px tall.
-    var style = document.createElement('style');
-    style.textContent = [
-        '.v-navigation-drawer, .v-navigation-drawer__content, .navigation-container {',
-        '  min-height: 100vh !important;',
-        '}',
-        '.v-navigation-drawer.v-navigation-drawer--is-mobile:not(.v-navigation-drawer--open) {',
-        '  min-height: 0 !important;',
-        '}'
-    ].join('\\n');
-    document.head.appendChild(style);
+
+    // ── Drawer collapse guard ───────────────────────────────────────
+    // Vuetify sets style.height="0px" and style.minHeight="0px" on
+    // v-navigation-drawer when it computes the wrong height.
+    // We observe style mutations and restore height to the full viewport
+    // whenever it collapses to 0. Closed mobile drawers are excluded via
+    // the --close or --is-mobile (without --open) class check.
+    var _fixing = false;
+
+    function isDrawerOpen(el) {
+        if (el.classList.contains('v-navigation-drawer--close') &&
+            !el.classList.contains('v-navigation-drawer--open')) {
+            // Explicitly closed mobile drawer — allow height=0
+            return false;
+        }
+        return true;
+    }
+
+    function fixDrawerHeight(el) {
+        if (_fixing) return;
+        _fixing = true;
+        try {
+            if (!isDrawerOpen(el)) return;
+            var h = el.style.height;
+            if (h === '0px' || h === '') {
+                el.style.setProperty('height', '100vh', 'important');
+                el.style.setProperty('min-height', '100vh', 'important');
+            }
+            // Also fix inner content
+            var content = el.querySelector('.v-navigation-drawer__content');
+            if (content) {
+                var ch = content.style.height;
+                if (ch === '0px' || ch === '') {
+                    content.style.setProperty('height', '100vh', 'important');
+                    content.style.setProperty('min-height', '100vh', 'important');
+                }
+            }
+        } finally {
+            _fixing = false;
+        }
+    }
+
+    function observeDrawer(el) {
+        var mo = new MutationObserver(function() { fixDrawerHeight(el); });
+        mo.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+        fixDrawerHeight(el);
+    }
+
+    // Observe existing drawers
+    document.querySelectorAll('.v-navigation-drawer, .navigation-container').forEach(observeDrawer);
+
+    // Observe future drawers added to DOM
+    var bodyMo = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                    if (node.matches && node.matches('.v-navigation-drawer, .navigation-container')) {
+                        observeDrawer(node);
+                    }
+                    node.querySelectorAll && node.querySelectorAll('.v-navigation-drawer, .navigation-container').forEach(observeDrawer);
+                }
+            });
+        });
+    });
+    bodyMo.observe(document.body || document.documentElement, { childList: true, subtree: true });
 })();"""
 
     /** Fix text-size-adjust for WebView. */

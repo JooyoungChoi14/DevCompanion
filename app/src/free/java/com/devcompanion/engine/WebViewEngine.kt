@@ -77,7 +77,9 @@ class WebViewEngine(
         webView.settings.builtInZoomControls = true
         webView.settings.displayZoomControls = false
         webView.settings.textZoom = viewportScale
-        webView.setInitialScale(viewportScale)
+        // NOTE: setInitialScale is fixed at 100 (1:1) to avoid breaking JS framework
+        // layout calculations (Vuetify ResizeObserver, etc). Use textZoom for scaling.
+        webView.setInitialScale(100)
         webView.settings.userAgentString =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36"
         webView.importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
