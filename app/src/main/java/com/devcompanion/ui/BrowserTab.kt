@@ -336,10 +336,6 @@ fun BrowserTab(
                                 viewportScale = scale
                                 SessionLog.uiClick("viewport_scale", "${scale}%")
                                 engineRef?.setTextZoom(scale)
-                                engineRef?.evaluateJavascript(
-                                    "(function(){document.documentElement.style.zoom='${scale / 100.0}';})();",
-                                    null
-                                )
                             },
                             label = { Text("${scale}%", style = MaterialTheme.typography.labelMedium) },
                             modifier = Modifier.height(28.dp),

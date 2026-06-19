@@ -67,14 +67,17 @@ object InjectionConfig {
 })();"""
 
     /**
-     * Provide CSS custom property --webview-vh (1% of viewport height) for pages
-     * that need to use vh units but Android WebView computes them incorrectly.
+     * Provide CSS custom property --webview-vh (1% of viewport height) and
+     * safety guard for JS framework drawers that compute height from viewport.
      *
-     * This injection does NOT force any element heights — it only sets a CSS
-     * custom property that page authors can reference (e.g. `height: calc(var(--webview-vh) * 100)`).
-     * Forced height overrides and MutationObserver-based fixes are removed because they
-     * break dynamic layouts, cause contentHeight miscalculation, and create
-     * observer→mutation→observer infinite loops.
+     * Some frameworks (e.g. Vuetify) use ResizeObserver/JS to set element heights
+     * and can collapse to 0px when the viewport dimensions are misread. The
+     * `.webview-drawer-guard` rule prevents navigation drawers from collapsing
+     * to 0px — this is a safety net, not a layout override.
+     *
+     * Removed: document.documentElement.style.zoom — it breaks JS framework
+     * layout calculations (Vuetify ResizeObserver reads zoom-affected offsetHeight
+     * and computes drawer height = 0px). Use WebView textZoom for scaling instead.
      */
     val VH_FIX_INJECTION = """(function(){
     if (window.__dcVhFix) return "already-injected";
@@ -84,6 +87,18 @@ object InjectionConfig {
     }
     setVh();
     window.addEventListener('resize', setVh);
+    // Safety guard: prevent framework drawers from collapsing to 0px.
+    // This only applies min-height to drawers that would be 0px tall.
+    var style = document.createElement('style');
+    style.textContent = [
+        '.v-navigation-drawer, .v-navigation-drawer__content, .navigation-container {',
+        '  min-height: 100vh !important;',
+        '}',
+        '.v-navigation-drawer.v-navigation-drawer--is-mobile:not(.v-navigation-drawer--open) {',
+        '  min-height: 0 !important;',
+        '}'
+    ].join('\\n');
+    document.head.appendChild(style);
 })();"""
 
     /** Fix text-size-adjust for WebView. */

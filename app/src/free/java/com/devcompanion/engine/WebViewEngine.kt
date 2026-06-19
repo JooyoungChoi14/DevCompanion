@@ -124,12 +124,6 @@ class WebViewEngine(
                     view.scrollX, view.scrollY, view.contentHeight
                 )
 
-                // Zoom CSS
-                view.evaluateJavascript(
-                    "(function(){document.documentElement.style.zoom='${viewportScale / 100.0}';})();",
-                    null
-                )
-
                 // Flavor-conditional JS injections with sentinel guards
                 if (InjectionConfig.needsInjections) {
                     view.evaluateJavascript(InjectionConfig.AUTOFILL_INJECTION, null)
