@@ -24,7 +24,7 @@ object AppHealthMonitor {
 
     // ── Thresholds ──────────────────────────────────────────────────
     /** Main thread block threshold in ms. Blocks shorter than this are not logged. */
-    private const val MAIN_THREAD_BLOCK_THRESHOLD_MS = 150L
+    private const val MAIN_THREAD_BLOCK_THRESHOLD_MS = 50L
     /** Frame drop threshold. Only log when consecutive dropped frames exceed this. */
     private const val FRAME_DROP_THRESHOLD = 5
     /** Input latency threshold in ms. Delays shorter than this are not logged. */
