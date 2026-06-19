@@ -96,6 +96,7 @@ class GeckoEngine(
      * Called by BrowserTab after creating the engine.
      */
     override fun setup(viewportScale: Int, urlHistoryStore: com.devcompanion.data.UrlHistoryStore) {
+        // viewportScale unused in GeckoView — textZoom removed in v150, CSS zoom breaks layout
         setupDelegates()
     }
 
@@ -257,9 +258,10 @@ class GeckoEngine(
     override fun viewportHeight(): Int = geckoView.height
 
     override fun setTextZoom(percent: Int) {
-        // GeckoView 150: textZoom was removed from GeckoSessionSettings.
-        // Font scaling is handled via CSS zoom in BrowserTab (same as WebView zoom).
-        // No-op here — BrowserTab applies CSS zoom via evaluateJavascript.
+        // GeckoView 150: textZoom removed from GeckoSessionSettings.
+        // CSS zoom also removed (breaks Vuetify layout calculations).
+        // Zoom via textZoom is not available in GeckoView 150.
+        // TODO: Implement font scaling via WebExtension content script.
     }
 
     override suspend fun screenshot(): Bitmap? {

@@ -601,7 +601,7 @@ private fun AiTab(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Tab 3: Integrations (CDP + GitHub + Session Log)
+// Tab 3: Integrations (GitHub + Session Log)
 // ═══════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
