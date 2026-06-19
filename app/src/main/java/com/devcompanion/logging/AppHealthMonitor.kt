@@ -43,7 +43,7 @@ object AppHealthMonitor {
             if (lastFrameTimeNanos > 0L) {
                 val delta = frameTimeNanos - lastFrameTimeNanos
                 val expectedFrames = delta / frameIntervalNanos
-                val droppedFrames = (expectedFrames - 1).toInt.coerceAtLeast(0)
+                val droppedFrames = (expectedFrames - 1).toInt().coerceAtLeast(0)
                 if (droppedFrames >= 1) {
                     consecutiveDroppedFrames += droppedFrames
                     if (consecutiveDroppedFrames >= FRAME_DROP_THRESHOLD) {
@@ -201,7 +201,7 @@ object AppHealthMonitor {
                 )
             }
 
-            override fun onConfigurationChanged(newConfig: android.content.res.Configuration?) {}
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {}
             override fun onLowMemory() {
                 val runtime = Runtime.getRuntime()
                 SessionLog.appMemoryPressure(
