@@ -88,12 +88,16 @@ class ContextCompactor(
         val middleMessages = messages.subList(firstUserIdx + 1, recentStart)
         val summaryPrompt = buildCompactionPrompt(middleMessages)
 
-        // Generate summary via LLM
+        // Generate summary via LLM with explicit timeout
         val summary = try {
-            llmCaller(summaryPrompt)
+            kotlinx.coroutines.withTimeout(30_000L) {
+                llmCaller(summaryPrompt)
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.w(TAG, "Compaction LLM call timed out (30s)")
+            buildFallbackSummary(middleMessages)
         } catch (e: Exception) {
             Log.e(TAG, "Compaction LLM call failed", e)
-            // Fallback: simple truncation of middle messages
             buildFallbackSummary(middleMessages)
         }
 
