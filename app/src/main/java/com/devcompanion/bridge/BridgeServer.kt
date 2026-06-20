@@ -10,8 +10,10 @@ import com.devcompanion.debug.BrowserDebuggerHolder
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import fi.iki.elonen.NanoHTTPD
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayInputStream
 
 /**
@@ -138,9 +140,8 @@ class BridgeServer(
         val eng = engine
             ?: return jsonResponse(503, mapOf("error" to "No browser engine attached"))
 
-        // Evaluate JS on UI thread, wait for result
-        var result: String? = null
-        var exception: String? = null
+        // Evaluate JS on UI thread, wait for result via CompletableDeferred
+        val deferred = CompletableDeferred<String>()
 
         eng.view.post {
             try {
@@ -170,33 +171,24 @@ class BridgeServer(
                 """.trimIndent()
 
                 eng.evaluateJavascript(evalJs) { raw ->
-                    synchronized(this) {
-                        result = raw
-                        (this as Object).notifyAll()
-                    }
+                    deferred.complete(raw)
                 }
             } catch (e: Exception) {
-                synchronized(this) {
-                    exception = e.message
-                    (this as Object).notifyAll()
-                }
+                deferred.completeExceptionally(e)
             }
         }
 
-        // Wait for result (with timeout)
-        synchronized(this) {
-            var waited = 0L
-            while (result == null && exception == null && waited < 10000L) {
-                (this as Object).wait(100)
-                waited += 100
-            }
-        }
-
-        if (exception != null) {
-            return jsonResponse(500, mapOf("error" to exception!!))
+        // Wait for result (with 10s timeout)
+        val result = runBlocking {
+            withTimeoutOrNull(10_000L) { deferred.await() }
         }
 
         if (result == null) {
+            // Check if it was an exception
+            val exc = runCatching { deferred.getCompleted() }.getOrNull()
+            if (deferred.isCancelled) {
+                return jsonResponse(500, mapOf("error" to "Evaluation cancelled"))
+            }
             return jsonResponse(504, mapOf("error" to "Evaluation timed out"))
         }
 
@@ -302,8 +294,8 @@ class BridgeServer(
         val params = session.parms
         val selector = params["selector"] ?: "body"
 
-        var result: String? = null
-        var exception: String? = null
+        // DOM snapshot via CompletableDeferred — per-endpoint, no shared monitor
+        val deferred = CompletableDeferred<String>()
 
         eng.view.post {
             try {
@@ -329,32 +321,21 @@ class BridgeServer(
                 """.trimIndent()
 
                 eng.evaluateJavascript(js) { raw ->
-                    synchronized(this) {
-                        result = raw
-                        (this as Object).notifyAll()
-                    }
+                    deferred.complete(raw)
                 }
             } catch (e: Exception) {
-                synchronized(this) {
-                    exception = e.message
-                    (this as Object).notifyAll()
-                }
+                deferred.completeExceptionally(e)
             }
         }
 
-        synchronized(this) {
-            var waited = 0L
-            while (result == null && exception == null && waited < 5000L) {
-                (this as Object).wait(100)
-                waited += 100
-            }
-        }
-
-        if (exception != null) {
-            return jsonResponse(500, mapOf("error" to exception!!))
+        val result = runBlocking {
+            withTimeoutOrNull(5_000L) { deferred.await() }
         }
 
         if (result == null) {
+            if (deferred.isCancelled) {
+                return jsonResponse(500, mapOf("error" to "DOM snapshot cancelled"))
+            }
             return jsonResponse(504, mapOf("error" to "DOM snapshot timed out"))
         }
 
@@ -380,8 +361,7 @@ class BridgeServer(
         val eng = engine
             ?: return jsonResponse(503, mapOf("error" to "No browser engine attached"))
 
-        var result: String? = null
-        var exception: String? = null
+        val deferred = CompletableDeferred<String>()
 
         eng.view.post {
             try {
@@ -397,31 +377,21 @@ class BridgeServer(
 
                 bitmap.recycle()
 
-                synchronized(this) {
-                    result = """{"width":${w},"height":${h},"format":"png","base64":"${base64.replace("\\", "\\\\")}"}"""
-                    (this as Object).notifyAll()
-                }
+                val json = """{"width":${w},"height":${h},"format":"png","base64":"${base64.replace("\\", "\\\\")}"}"""
+                deferred.complete(json)
             } catch (e: Exception) {
-                synchronized(this) {
-                    exception = e.message
-                    (this as Object).notifyAll()
-                }
+                deferred.completeExceptionally(e)
             }
         }
 
-        synchronized(this) {
-            var waited = 0L
-            while (result == null && exception == null && waited < 5000L) {
-                (this as Object).wait(100)
-                waited += 100
-            }
-        }
-
-        if (exception != null) {
-            return jsonResponse(500, mapOf("error" to exception!!))
+        val result = runBlocking {
+            withTimeoutOrNull(5_000L) { deferred.await() }
         }
 
         if (result == null) {
+            if (deferred.isCancelled) {
+                return jsonResponse(500, mapOf("error" to "Screenshot cancelled"))
+            }
             return jsonResponse(504, mapOf("error" to "Screenshot timed out"))
         }
 
