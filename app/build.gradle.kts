@@ -14,6 +14,12 @@ android {
         targetSdk = 36
         versionCode = 2
         versionName = "1.2.0"
+
+        // Inject git commit hash for traceability in logs
+        val gitCommitHash = providers.exec {
+            commandLine("git", "rev-parse", "--short", "HEAD")
+        }.standardOutput.asText.get().trim()
+        buildConfigField("String", "GIT_COMMIT", "\"$gitCommitHash\"")
     }
 
     // ── Product Flavors ──────────────────────────────────────────

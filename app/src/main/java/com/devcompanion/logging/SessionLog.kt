@@ -83,11 +83,13 @@ object SessionLog {
             "startTime" to sessionStartTime.toString(),
             "appVersion" to "",
             "appVersionCode" to "",
+            "gitCommit" to "",
             "webViewPackage" to ""
         )
         appContext?.let { ctx ->
             versionInfo["appVersion"] = BuildConfig.VERSION_NAME
             versionInfo["appVersionCode"] = BuildConfig.VERSION_CODE.toString()
+            versionInfo["gitCommit"] = BuildConfig.GIT_COMMIT
             versionInfo["webViewPackage"] = getCurrentWebViewInfo(ctx)
         }
         log(EventType.SESSION_START, versionInfo)
