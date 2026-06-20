@@ -52,6 +52,7 @@ object AppHealthMonitor {
     private val frameIntervalNanos: Long
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
+            if (!isInstalled) return // Guard against stale callbacks after uninstall
             if (lastFrameTimeNanos > 0L) {
                 frameCount++
                 // Only check every FRAME_SAMPLE_INTERVAL frames
