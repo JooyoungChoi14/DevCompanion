@@ -96,6 +96,7 @@ object AppHealthMonitor {
     fun install(application: Application) {
         if (isInstalled) return
         isInstalled = true
+        applicationRef = application
 
         // 1. Coroutine exception handler
         installCoroutineExceptionHandler()
@@ -119,6 +120,12 @@ object AppHealthMonitor {
         try {
             Choreographer.getInstance().removeFrameCallback(frameCallback)
         } catch (_: Exception) { /* Choreographer not initialized on non-UI thread */ }
+        // Unregister ComponentCallbacks2 to prevent callback leak
+        componentCallback?.let { callback ->
+            applicationRef?.unregisterComponentCallbacks(callback)
+        }
+        componentCallback = null
+        applicationRef = null
         // Reset all tracking state so a subsequent install() starts clean
         lastFrameTimeNanos = 0L
         frameCount = 0
@@ -231,10 +238,13 @@ object AppHealthMonitor {
         }
     }
 
+    private var applicationRef: Application? = null
+    private var componentCallback: ComponentCallbacks2? = null
+
     // ── 4. Memory pressure monitor ─────────────────────────────────
 
     private fun installMemoryPressureMonitor(application: Application) {
-        object : ComponentCallbacks2 {
+        val callback = object : ComponentCallbacks2 {
             override fun onTrimMemory(level: Int) {
                 val label = when {
                     level >= ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> "critical"
@@ -265,9 +275,9 @@ object AppHealthMonitor {
                     screen = SessionLog.currentScreen
                 )
             }
-        }.also { callback ->
-            application.registerComponentCallbacks(callback)
         }
+        componentCallback = callback
+        application.registerComponentCallbacks(callback)
     }
 
     // ── 5. Input latency measurement ───────────────────────────────

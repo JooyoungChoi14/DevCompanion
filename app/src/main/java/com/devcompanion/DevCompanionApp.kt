@@ -97,6 +97,7 @@ class DevCompanionApp : Application() {
     }
 
     override fun onTerminate() {
+        AppHealthMonitor.uninstall()
         boreTunnel.stop()
         bridgeServer.stopServer()
         super.onTerminate()

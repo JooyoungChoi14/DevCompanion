@@ -48,7 +48,6 @@ import androidx.compose.runtime.collectAsState
 
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
-import com.devcompanion.logging.AppHealthMonitor
 
 class MainActivity : ComponentActivity() {
 
@@ -79,14 +78,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
-        // Release browser engine native resources only when Activity is finishing.
-        // On configuration changes, the engine is recreated by BrowserTab.
+        // Release browser engine native resources before super (View hierarchy still valid).
+        // Only when Activity is finishing — on config changes, BrowserTab recreates the engine.
         if (isFinishing) {
             engineRef?.destroy()
             engineRef = null
-            AppHealthMonitor.uninstall()
         }
+        super.onDestroy()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
