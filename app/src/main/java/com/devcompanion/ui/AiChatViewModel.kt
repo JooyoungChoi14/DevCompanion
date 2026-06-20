@@ -700,7 +700,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        val loop = AgentLoop(executor, gate, maxIterations = LlmSettings.maxIterations, contextCompactor = compactor)
+        val loop = AgentLoop(executor, gate, maxIterations = LlmSettings.maxIterations, undoStack = undoStack, contextCompactor = compactor)
         loop.supportsVision = currentProvider.supportsVision
         loop.providerName = currentProvider.displayName
         loop.modelName = currentProvider.model
