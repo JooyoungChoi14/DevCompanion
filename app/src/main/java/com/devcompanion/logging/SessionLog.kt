@@ -55,7 +55,13 @@ object SessionLog {
 
     private val buffer = ConcurrentLinkedDeque<LogEvent>()
     @Volatile private var healthEventCount = 0
-    @Volatile private var lastFlushCount = 0 // number of events already flushed to disk
+
+    /** Flush synchronization lock. Protects flush/export operations from concurrent
+     *  execution, ensuring no events are lost or duplicated between flush and export. */
+    private val flushLock = Any()
+
+    /** Number of events already flushed to disk. Protected by [flushLock]. */
+    private var lastFlushCount = 0
 
     private var currentSessionId: String = ""
     private var sessionStartTime: Long = 0L
@@ -68,7 +74,9 @@ object SessionLog {
         currentSessionId = sessionId ?: UUID.randomUUID().toString()
         sessionStartTime = System.currentTimeMillis()
         buffer.clear()
-        lastFlushCount = 0
+        synchronized(flushLock) {
+            lastFlushCount = 0
+        }
         healthEventCount = 0
         val versionInfo = mutableMapOf(
             "sessionId" to currentSessionId,
@@ -315,32 +323,36 @@ object SessionLog {
 
     // ── Persistence ─────────────────────────────────────────────────────
 
-    /**
-     * Flush unflushed events from the in-memory buffer to a JSONL file.
+    /** Flush unflushed events from the in-memory buffer to a JSONL file.
      * Uses count-based tracking (lastFlushCount) instead of index-based
      * since ConcurrentLinkedDeque doesn't support random access.
+     *
+     * Thread safety: synchronized on [flushLock] to prevent concurrent flush
+     * operations from racing on lastFlushCount and losing events.
      */
     suspend fun flush(context: Context) = withContext(Dispatchers.IO) {
-        val snapshot = buffer.toList()
-        val flushStart = lastFlushCount
-        if (flushStart >= snapshot.size) return@withContext
+        synchronized(flushLock) {
+            val snapshot = buffer.toList()
+            val flushStart = lastFlushCount
+            if (flushStart >= snapshot.size) return@synchronized
 
-        val unflushed = snapshot.drop(flushStart)
-        if (unflushed.isEmpty()) return@withContext
+            val unflushed = snapshot.drop(flushStart)
+            if (unflushed.isEmpty()) return@synchronized
 
-        val logDir = File(context.filesDir, LOG_DIR)
-        if (!logDir.exists()) logDir.mkdirs()
+            val logDir = File(context.filesDir, LOG_DIR)
+            if (!logDir.exists()) logDir.mkdirs()
 
-        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(sessionStartTime))
-        val versionSuffix = try { BuildConfig.VERSION_NAME } catch (_: Exception) { "unknown" }
-        val logFile = File(logDir, "$dateStr-v$versionSuffix-$currentSessionId.jsonl")
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(sessionStartTime))
+            val versionSuffix = try { BuildConfig.VERSION_NAME } catch (_: Exception) { "unknown" }
+            val logFile = File(logDir, "$dateStr-v$versionSuffix-$currentSessionId.jsonl")
 
-        try {
-            logFile.appendText(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
-            lastFlushCount = snapshot.size
-            Log.d(TAG, "Flushed ${unflushed.size} events to ${logFile.name}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to flush session log", e)
+            try {
+                logFile.appendText(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
+                lastFlushCount = snapshot.size
+                Log.d(TAG, "Flushed ${unflushed.size} events to ${logFile.name}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to flush session log", e)
+            }
         }
     }
 
@@ -358,6 +370,9 @@ object SessionLog {
      *
      * Deduplication: events already flushed to disk are excluded from
      * the in-memory buffer output by using lastFlushCount.
+     *
+     * Thread safety: synchronized on [flushLock] so that a concurrent
+     * flush cannot change lastFlushCount mid-export.
      */
     fun exportFullHistory(context: Context): String {
         val sb = StringBuilder()
@@ -371,12 +386,20 @@ object SessionLog {
             }
         }
         // Append only unflushed events from current buffer to avoid duplicates
-        val snapshot = buffer.toList()
-        val flushStart = lastFlushCount
-        val unflushed = if (flushStart < snapshot.size) {
-            snapshot.drop(flushStart)
-        } else {
-            emptyList()
+        synchronized(flushLock) {
+            val snapshot = buffer.toList()
+            val flushStart = lastFlushCount
+            val unflushed = if (flushStart < snapshot.size) {
+                snapshot.drop(flushStart)
+            } else {
+                emptyList()
+            }
+            if (unflushed.isNotEmpty()) {
+                sb.append(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
+            }
+        }
+        return sb.toString()
+    }
         }
         if (unflushed.isNotEmpty()) {
             sb.append(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
@@ -439,7 +462,9 @@ object SessionLog {
         var count = 0
         logDir.listFiles()?.forEach { if (it.delete()) count++ }
         buffer.clear()
-        lastFlushCount = 0
+        synchronized(flushLock) {
+            lastFlushCount = 0
+        }
         healthEventCount = 0
         return count
     }
