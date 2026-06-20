@@ -77,6 +77,17 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch { SessionLog.flush(this@MainActivity) }
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        // Release browser engine native resources only when Activity is finishing.
+        // On configuration changes, the engine is recreated by BrowserTab.
+        if (isFinishing) {
+            engineRef?.destroy()
+            engineRef = null
+            AppHealthMonitor.uninstall()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "onCreate: starting")
