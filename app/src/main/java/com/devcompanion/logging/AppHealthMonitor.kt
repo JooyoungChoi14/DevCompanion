@@ -119,6 +119,12 @@ object AppHealthMonitor {
         try {
             Choreographer.getInstance().removeFrameCallback(frameCallback)
         } catch (_: Exception) { /* Choreographer not initialized on non-UI thread */ }
+        // Reset all tracking state so a subsequent install() starts clean
+        lastFrameTimeNanos = 0L
+        frameCount = 0
+        consecutiveDroppedFrames = 0
+        lastBlockReportTime = 0L
+        lastBlockDetectionTime = 0L
         isInstalled = false
     }
 
