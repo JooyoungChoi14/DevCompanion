@@ -630,11 +630,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private val _pendingConfirmation = MutableStateFlow<Pair<ToolCall, ToolConfirmationDetails>?>(null)
     val pendingConfirmation: StateFlow<Pair<ToolCall, ToolConfirmationDetails>?> = _pendingConfirmation.asStateFlow()
 
-    /** Deferred result for confirmation — CompletableDeferred replaces busy-wait polling. */
+    /** Deferred result for user confirmation — CompletableDeferred replaces busy-wait polling.
+     * Used by both confirmationHandler and continueHandler since they share the same UI card.
+     * Each handler resets the deferred before awaiting, so there's no cross-contamination. */
     private var confirmationDeferred = CompletableDeferred<Boolean>()
-
-    /** Deferred result for continue-agent — CompletableDeferred replaces busy-wait polling. */
-    private var continueDeferred = CompletableDeferred<Boolean>()
 
     private var agentLoop: AgentLoop? = null
     private var agentJob: kotlinx.coroutines.Job? = null
@@ -730,10 +729,10 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 ToolCall(id = "continue", name = "continue_agent", arguments = com.google.gson.JsonObject())
             )
             // Reset deferred and await user response
-            continueDeferred = CompletableDeferred()
+            confirmationDeferred = CompletableDeferred()
             try {
                 withTimeout(120_000L) {
-                    continueDeferred.await()
+                    confirmationDeferred.await()
                 }
             } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
                 false
@@ -963,9 +962,8 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         agentJob = null
         agentLoop = null
         _agentState.value = AgentState.Idle
-        // Cancel pending confirmations so awaiting handlers don't hang
+        // Cancel pending confirmation so awaiting handlers don't hang
         confirmationDeferred.cancel()
-        continueDeferred.cancel()
         // Stop foreground service
         val app = getApplication<Application>()
         app.startService(Intent(app, AgentService::class.java).apply {
