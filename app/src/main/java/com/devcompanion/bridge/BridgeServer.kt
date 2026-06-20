@@ -171,7 +171,7 @@ class BridgeServer(
                 """.trimIndent()
 
                 eng.evaluateJavascript(evalJs) { raw ->
-                    deferred.complete(raw)
+                    deferred.complete(raw ?: "")
                 }
             } catch (e: Exception) {
                 deferred.completeExceptionally(e)
@@ -321,7 +321,7 @@ class BridgeServer(
                 """.trimIndent()
 
                 eng.evaluateJavascript(js) { raw ->
-                    deferred.complete(raw)
+                    deferred.complete(raw ?: "")
                 }
             } catch (e: Exception) {
                 deferred.completeExceptionally(e)
