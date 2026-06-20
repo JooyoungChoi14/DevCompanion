@@ -400,12 +400,6 @@ object SessionLog {
         }
         return sb.toString()
     }
-        }
-        if (unflushed.isNotEmpty()) {
-            sb.append(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
-        }
-        return sb.toString()
-    }
 
     /**
      * Save session log to Downloads folder via MediaStore.
