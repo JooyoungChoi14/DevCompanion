@@ -20,6 +20,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedDeque
+import kotlin.random.Random
 
 /**
  * Foreground session logger for DevCompanion.
@@ -30,36 +32,44 @@ import java.util.UUID
  * Design goals:
  * - Zero interference with agent loop or streaming (all writes are append-only)
  * - Structured events for later analysis
- * - Minimal overhead: in-memory buffer, async disk flush
+ * - Minimal overhead: lock-free ConcurrentLinkedDeque, async disk flush
  * - Exportable from Settings screen
+ *
+ * v2 fixes:
+ * - ConcurrentLinkedDeque replaces synchronized MutableList (no lock contention on main thread)
+ * - Health events capped at 500 to prevent buffer domination
+ * - healthSamplingAllowed uses Random instead of timestamp-based pseudo-sampling
+ * - Debug sampling reduced from 100% to 10% to prevent log flooding
+ * - currentScreen is @Volatile for thread-safe reads from health monitors
  */
 object SessionLog {
 
     private const val TAG = "SessionLog"
     private const val LOG_DIR = "session_logs"
-    private const val MAX_BUFFER_SIZE = 5000 // events
+    private const val MAX_BUFFER_SIZE = 50000 // events — increased from 5000
+    private const val MAX_HEALTH_EVENTS = 500 // cap on health events to prevent buffer domination
 
     private val gson: Gson = GsonBuilder()
         .disableHtmlEscaping()
         .create()
 
-    private val buffer = mutableListOf<LogEvent>()
+    private val buffer = ConcurrentLinkedDeque<LogEvent>()
+    @Volatile private var healthEventCount = 0
+    @Volatile private var lastFlushCount = 0 // number of events already flushed to disk
+
     private var currentSessionId: String = ""
     private var sessionStartTime: Long = 0L
-    private var lastFlushIndex: Int = 0 // index of first unflushed event
 
     private var flushJob: Job? = null
     private var appContext: Context? = null
 
     /** Start a new session. Called when the app starts or user explicitly begins. */
     fun startSession(sessionId: String? = null) {
-        flushToMemory() // keep in-memory for immediate export
         currentSessionId = sessionId ?: UUID.randomUUID().toString()
         sessionStartTime = System.currentTimeMillis()
-        synchronized(buffer) {
-            buffer.clear()
-            lastFlushIndex = 0
-        }
+        buffer.clear()
+        lastFlushCount = 0
+        healthEventCount = 0
         val versionInfo = mutableMapOf(
             "sessionId" to currentSessionId,
             "startTime" to sessionStartTime.toString(),
@@ -87,19 +97,25 @@ object SessionLog {
         }
     }
 
-    /** Log a single event. Thread-safe via synchronized buffer. */
+    /** Log a single event. Thread-safe via ConcurrentLinkedDeque.
+     * Health events (APP_*) are capped at MAX_HEALTH_EVENTS to prevent
+     * them from dominating the buffer and evicting important events.
+     */
     fun log(type: EventType, data: Map<String, String> = emptyMap()) {
-        synchronized(buffer) {
-            if (buffer.size >= MAX_BUFFER_SIZE) {
-                buffer.removeAt(0) // drop oldest
-            }
-            buffer.add(LogEvent(
-                timestamp = System.currentTimeMillis(),
-                sessionId = currentSessionId,
-                type = type,
-                data = data
-            ))
+        val isHealthEvent = type.key.startsWith("app_")
+        if (isHealthEvent) {
+            if (healthEventCount >= MAX_HEALTH_EVENTS) return
+            healthEventCount++
         }
+        while (buffer.size >= MAX_BUFFER_SIZE) {
+            buffer.pollFirst() // drop oldest — O(1) for ConcurrentLinkedDeque
+        }
+        buffer.addLast(LogEvent(
+            timestamp = System.currentTimeMillis(),
+            sessionId = currentSessionId,
+            type = type,
+            data = data
+        ))
     }
 
     /** Strip query parameters and fragment from URL for privacy.
@@ -301,16 +317,15 @@ object SessionLog {
 
     /**
      * Flush unflushed events from the in-memory buffer to a JSONL file.
-     * Call from onPause/onStop, auto-flush timer, or when exporting.
-     * Safe to call multiple times — appends new events only.
-     * Events remain in memory for bufferSize() display.
+     * Uses count-based tracking (lastFlushCount) instead of index-based
+     * since ConcurrentLinkedDeque doesn't support random access.
      */
     suspend fun flush(context: Context) = withContext(Dispatchers.IO) {
-        val unflushed: List<LogEvent>
-        synchronized(buffer) {
-            if (lastFlushIndex >= buffer.size) return@withContext
-            unflushed = buffer.subList(lastFlushIndex, buffer.size).toList()
-        }
+        val snapshot = buffer.toList()
+        val flushStart = lastFlushCount
+        if (flushStart >= snapshot.size) return@withContext
+
+        val unflushed = snapshot.drop(flushStart)
         if (unflushed.isEmpty()) return@withContext
 
         val logDir = File(context.filesDir, LOG_DIR)
@@ -322,18 +337,11 @@ object SessionLog {
 
         try {
             logFile.appendText(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
-            synchronized(buffer) {
-                lastFlushIndex = buffer.size
-            }
+            lastFlushCount = snapshot.size
             Log.d(TAG, "Flushed ${unflushed.size} events to ${logFile.name}")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to flush session log", e)
         }
-    }
-
-    /** Keep in-memory only — for immediate export without disk write. */
-    private fun flushToMemory() {
-        // No-op: buffer is already in memory
     }
 
     /**
@@ -341,19 +349,15 @@ object SessionLog {
      * Used for Settings "Export" button via share sheet.
      */
     fun exportAsString(): String {
-        val events: List<LogEvent>
-        synchronized(buffer) {
-            events = buffer.toList()
-        }
+        val events = buffer.toList()
         return events.joinToString("\n") { gson.toJson(it) }
     }
 
     /**
      * Export full session log history (all flushed files + current buffer).
      *
-     * Deduplication: events already flushed to disk (indices < lastFlushIndex)
-     * are excluded from the in-memory buffer output to prevent duplicates when
-     * the same session's disk file and buffer overlap.
+     * Deduplication: events already flushed to disk are excluded from
+     * the in-memory buffer output by using lastFlushCount.
      */
     fun exportFullHistory(context: Context): String {
         val sb = StringBuilder()
@@ -364,16 +368,15 @@ object SessionLog {
                 try {
                     sb.append(file.readText())
                 } catch (_: Exception) {}
-        }
+            }
         }
         // Append only unflushed events from current buffer to avoid duplicates
-        val unflushed: List<LogEvent>
-        synchronized(buffer) {
-            unflushed = if (lastFlushIndex < buffer.size) {
-                buffer.subList(lastFlushIndex, buffer.size).toList()
-            } else {
-                emptyList()
-            }
+        val snapshot = buffer.toList()
+        val flushStart = lastFlushCount
+        val unflushed = if (flushStart < snapshot.size) {
+            snapshot.drop(flushStart)
+        } else {
+            emptyList()
         }
         if (unflushed.isNotEmpty()) {
             sb.append(unflushed.joinToString("\n", postfix = "\n") { gson.toJson(it) })
@@ -435,10 +438,9 @@ object SessionLog {
         if (!logDir.exists()) return 0
         var count = 0
         logDir.listFiles()?.forEach { if (it.delete()) count++ }
-        synchronized(buffer) {
-            buffer.clear()
-            lastFlushIndex = 0
-        }
+        buffer.clear()
+        lastFlushCount = 0
+        healthEventCount = 0
         return count
     }
 
@@ -551,14 +553,25 @@ object SessionLog {
 
     /**
      * Whether health events should be logged for this call.
-     * Debug builds: always log.
-     * Release builds: 1% sampling rate.
+     * Debug builds: 10% sampling (not 100% — previous "always log" caused
+     * the self-referential block detector to flood 2294 events in 3.7min).
+     * Release builds: 1% sampling.
+     *
+     * Uses Random instead of System.currentTimeMillis() to avoid correlation
+     * between consecutive calls (ms-based sampling was pseudo-deterministic).
      */
-    private fun healthSamplingAllowed(): Boolean {
-        return BuildConfig.DEBUG || (System.currentTimeMillis() % 100 == 0L)
+    fun healthSamplingAllowed(): Boolean {
+        return if (BuildConfig.DEBUG) {
+            Random.nextDouble() < 0.1 // 10% in debug
+        } else {
+            Random.nextDouble() < 0.01 // 1% in release
+        }
     }
 
-    /** Current screen name for health event context. Set by composables. */
+    /** Current screen name for health event context. Set by composables.
+     * @Volatile for thread-safe reads from health monitors.
+     */
+    @Volatile
     var currentScreen: String = "unknown"
 
     /** Start periodic auto-flush (every 30 seconds). Call from Activity.onCreate(). */
@@ -579,7 +592,7 @@ object SessionLog {
     }
 
     /** Current buffer size (for display). */
-    fun bufferSize(): Int = synchronized(buffer) { buffer.size }
+    fun bufferSize(): Int = buffer.size
 
     /** Count of log files on disk. */
     fun diskLogFileCount(context: Context): Int {

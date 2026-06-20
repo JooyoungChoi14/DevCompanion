@@ -2,33 +2,44 @@ package com.devcompanion.logging
 
 import android.app.Application
 import android.content.ComponentCallbacks2
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Choreographer
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlin.random.Random
 
 /**
- * memory pressure, and input latency. Routes all events through [SessionLog].
+ * Monitors app health: main thread blocking, frame drops, memory pressure,
+ * and input latency. Routes all events through [SessionLog].
  *
  * Design principles:
  * - All events include screen/component/trigger for causal tracing
- * - Debug builds: full logging. Release builds: 1% sampling via SessionLog.healthSamplingAllowed()
- * - Minimal overhead: uses Handler post delay measurement for main thread blocking,
- *   Choreographer.FrameCallback for frame drops
+ * - Debug builds: 10% sampling. Release builds: 1% sampling via [SessionLog.healthSamplingAllowed]
+ * - Minimal overhead: Choreographer.FrameCallback for frame drops,
+ *   Handler post delay for ANR-level block detection only
+ *
+ * v2 fixes:
+ * - Removed self-referential block detector (50ms polling was causing the blocks it detected)
+ * - Added sampling to health events to prevent log flooding
+ * - Frame drop detector now samples every 10th frame instead of every frame
+ * - Block detector now only detects ANR-level blocks (>1000ms) with 2s cooldown
  */
 object AppHealthMonitor {
 
     private const val TAG = "AppHealthMonitor"
 
     // ── Thresholds ──────────────────────────────────────────────────
-    /** Main thread block threshold in ms. Blocks shorter than this are not logged. */
-    private const val MAIN_THREAD_BLOCK_THRESHOLD_MS = 50L
+    /** ANR-level block threshold in ms. Only detect blocks this severe. */
+    private const val ANR_BLOCK_THRESHOLD_MS = 1000L
+    /** Cooldown between ANR block reports in ms. Prevents log flooding. */
+    private const val ANR_BLOCK_COOLDOWN_MS = 2000L
     /** Frame drop threshold. Only log when consecutive dropped frames exceed this. */
     private const val FRAME_DROP_THRESHOLD = 5
     /** Input latency threshold in ms. Delays shorter than this are not logged. */
     private const val INPUT_LATENCY_THRESHOLD_MS = 100L
+    /** Frame sampling rate: only check every Nth frame. */
+    private const val FRAME_SAMPLE_INTERVAL = 10
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var isInstalled = false
@@ -37,28 +48,37 @@ object AppHealthMonitor {
     // ── Frame drop tracking ────────────────────────────────────────
     private var consecutiveDroppedFrames = 0
     private var lastFrameTimeNanos: Long = 0L
+    private var frameCount = 0
     private val frameIntervalNanos: Long
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (lastFrameTimeNanos > 0L) {
-                val delta = frameTimeNanos - lastFrameTimeNanos
-                val expectedFrames = delta / frameIntervalNanos
-                val droppedFrames = (expectedFrames - 1).toInt().coerceAtLeast(0)
-                if (droppedFrames >= 1) {
-                    consecutiveDroppedFrames += droppedFrames
-                    if (consecutiveDroppedFrames >= FRAME_DROP_THRESHOLD) {
-                        SessionLog.appFrameDrop(
-                            droppedFrames = consecutiveDroppedFrames,
-                            screen = SessionLog.currentScreen,
-                            component = "Choreographer"
-                        )
+                frameCount++
+                // Only check every FRAME_SAMPLE_INTERVAL frames
+                if (frameCount % FRAME_SAMPLE_INTERVAL == 0L) {
+                    val delta = frameTimeNanos - lastFrameTimeNanos
+                    val expectedFrames = delta / frameIntervalNanos
+                    val droppedFrames = (expectedFrames - FRAME_SAMPLE_INTERVAL).toInt().coerceAtLeast(0)
+                    if (droppedFrames >= 1) {
+                        consecutiveDroppedFrames += droppedFrames
+                        if (consecutiveDroppedFrames >= FRAME_DROP_THRESHOLD) {
+                            if (SessionLog.healthSamplingAllowed()) {
+                                SessionLog.appFrameDrop(
+                                    droppedFrames = consecutiveDroppedFrames,
+                                    screen = SessionLog.currentScreen,
+                                    component = "Choreographer"
+                                )
+                            }
+                            consecutiveDroppedFrames = 0
+                        }
+                    } else {
                         consecutiveDroppedFrames = 0
                     }
-                } else {
-                    consecutiveDroppedFrames = 0
+                    lastFrameTimeNanos = frameTimeNanos
                 }
+            } else {
+                lastFrameTimeNanos = frameTimeNanos
             }
-            lastFrameTimeNanos = frameTimeNanos
             if (choreographerPosted) {
                 Choreographer.getInstance().postFrameCallback(this)
             }
@@ -66,12 +86,8 @@ object AppHealthMonitor {
     }
 
     init {
-        // 60fps = 16.67ms per frame. Use 17ms (1_000_000_000 / 60) as default.
-        val refreshRate = try {
-            // Note: we can't access display refresh rate in init without context.
-            // Will be updated in install() if needed.
-            60f
-        } catch (_: Exception) { 60f }
+        // 60fps = 16.67ms per frame.
+        val refreshRate = 60f
         frameIntervalNanos = (1_000_000_000L / refreshRate).toLong()
     }
 
@@ -84,8 +100,8 @@ object AppHealthMonitor {
         // 1. Coroutine exception handler
         installCoroutineExceptionHandler()
 
-        // 2. Main thread block detector
-        installMainThreadBlockDetector()
+        // 2. ANR-level block detector (replaces 50ms polling)
+        installAnrBlockDetector()
 
         // 3. Frame drop detector (Choreographer)
         installFrameDropDetector()
@@ -98,6 +114,8 @@ object AppHealthMonitor {
 
     fun uninstall() {
         choreographerPosted = false
+        blockDetectorRunnable?.let { mainHandler.removeCallbacks(it) }
+        blockDetectorRunnable = null
         try {
             Choreographer.getInstance().removeFrameCallback(frameCallback)
         } catch (_: Exception) { /* Choreographer not initialized on non-UI thread */ }
@@ -112,7 +130,6 @@ object AppHealthMonitor {
      */
     val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
         val scope = try {
-            // Best effort: extract scope name from coroutine context
             throwable.stackTraceToString().take(100)
         } catch (_: Exception) { "unknown" }
 
@@ -131,43 +148,69 @@ object AppHealthMonitor {
         // because CrashHandler already handles that. This handler is for coroutine scopes.
     }
 
-    // ── 2. Main thread block detector ──────────────────────────────
+    // ── 2. ANR-level block detector ─────────────────────────────────
 
     /**
-     * Detects main thread blocking by posting a Runnable and measuring
-     * how long it takes to execute. If the delay exceeds the threshold,
-     * it means the main thread was blocked.
+     * Detects ANR-level main thread blocking only (>1s).
+     *
+     * Previous implementation posted a Runnable every 50ms, which caused:
+     * - 10 blocks/sec self-referential detection (the detector itself was the block)
+     * - 2294 block events in 3.7min, masking real performance issues
+     * - Frame drops caused by the polling overhead
+     *
+     * v2: Only detects ANR-level blocks (>1s) with 2s cooldown between reports.
+     * This eliminates the self-referential loop while still catching genuine freezes.
      */
+    private var blockDetectorRunnable: Runnable? = null
+    private var lastBlockReportTime: Long = 0L
+
+    private fun createBlockDetectorRunnable(): Runnable {
+        return Runnable {
+            if (!isInstalled) return@Runnable
+            val postedAt = lastBlockDetectionTime
+            if (postedAt == 0L) {
+                // Reschedule for next cycle
+                scheduleAnrBlockDetection()
+                return@Runnable
+            }
+            val elapsed = System.currentTimeMillis() - postedAt
+            lastBlockDetectionTime = 0L
+
+            if (elapsed >= ANR_BLOCK_THRESHOLD_MS) {
+                val now = System.currentTimeMillis()
+                // Cooldown: only report one ANR block per 2s window
+                if (now - lastBlockReportTime >= ANR_BLOCK_COOLDOWN_MS) {
+                    val stackTrace = Looper.getMainLooper().thread.stackTrace
+                        .take(8)
+                        .joinToString(" | ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+                    if (SessionLog.healthSamplingAllowed()) {
+                        SessionLog.appMainThreadBlock(
+                            durationMs = elapsed,
+                            screen = SessionLog.currentScreen,
+                            component = "MainThread",
+                            trigger = "handler_delay:$stackTrace"
+                        )
+                    }
+                    lastBlockReportTime = now
+                }
+            }
+            // Schedule next check
+            scheduleAnrBlockDetection()
+        }
+    }
+
     private var lastBlockDetectionTime: Long = 0L
 
-    private val blockDetectorRunnable = Runnable {
-        val postedAt = lastBlockDetectionTime
-        if (postedAt == 0L) return@Runnable
-        val elapsed = System.currentTimeMillis() - postedAt
-        if (elapsed >= MAIN_THREAD_BLOCK_THRESHOLD_MS) {
-            // Capture stack trace to identify the blocking code
-            val stackTrace = Looper.getMainLooper().thread.stackTrace
-                .take(8)
-                .joinToString(" | ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
-            SessionLog.appMainThreadBlock(
-                durationMs = elapsed,
-                screen = SessionLog.currentScreen,
-                component = "MainThread",
-                trigger = "handler_delay:$stackTrace"
-            )
-        }
-        // Schedule next check
-        scheduleBlockDetection()
-    }
-
-    private fun scheduleBlockDetection() {
+    private fun scheduleAnrBlockDetection() {
         if (!isInstalled) return
+        val runnable = blockDetectorRunnable ?: return
         lastBlockDetectionTime = System.currentTimeMillis()
-        mainHandler.postDelayed(blockDetectorRunnable, MAIN_THREAD_BLOCK_THRESHOLD_MS)
+        mainHandler.postDelayed(runnable, ANR_BLOCK_THRESHOLD_MS)
     }
 
-    private fun installMainThreadBlockDetector() {
-        scheduleBlockDetection()
+    private fun installAnrBlockDetector() {
+        blockDetectorRunnable = createBlockDetectorRunnable()
+        scheduleAnrBlockDetection()
     }
 
     // ── 3. Frame drop detector ─────────────────────────────────────
