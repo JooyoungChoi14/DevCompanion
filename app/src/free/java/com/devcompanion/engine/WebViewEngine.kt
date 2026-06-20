@@ -315,8 +315,9 @@ class WebViewEngine(
 
     override fun destroy() {
         debugger.detachWebView()
-        // C5 fix: destroy the WebView to release native resources
-        // Callers must remove the view from composition before calling this
+        // Remove from parent before destroying to prevent detached-render callbacks
+        // after destruction. Android docs explicitly recommend this order.
+        (webView.parent as? android.view.ViewGroup)?.removeView(webView)
         try {
             webView.destroy()
         } catch (e: Exception) {
