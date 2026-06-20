@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.util.Base64
 import android.util.Log
 import com.devcompanion.engine.BrowserEngine
+import com.devcompanion.engine.JsUtils
 import com.devcompanion.debug.ConsoleLevel
 import com.devcompanion.debug.BrowserDebuggerHolder
 import com.google.gson.Gson
@@ -143,17 +144,12 @@ class BridgeServer(
 
         eng.view.post {
             try {
-                val safeExpr = expression
-                    .replace("\\", "\\\\")
-                    .replace("\"", "\\\"")
-                    .replace("\n", "\\n")
-                    .replace("\r", "\\r")
-                    .replace("\u0000", "\\0")
-
+                // Use JsUtils.escapeJsString for consistent, safe JS string escaping
+                // (includes quotes, so we embed directly: eval("expression") becomes eval(escaped))
                 val evalJs = """
                     (function(){
                         try {
-                            var r = eval("$safeExpr");
+                            var r = eval(${JsUtils.escapeJsString(expression)});
                             if (r === undefined) return JSON.stringify({t:"undefined",v:null});
                             if (r === null) return JSON.stringify({t:"null",v:null});
                             var t = typeof r;
@@ -311,13 +307,14 @@ class BridgeServer(
 
         eng.view.post {
             try {
+                val escapedSelector = JsUtils.escapeJsString(selector)
                 val js = """
                     (function(){
                         try {
-                            var el = document.querySelector('$selector');
-                            if (!el) return JSON.stringify({error:'Element not found', selector:'$selector'});
+                            var el = document.querySelector($escapedSelector);
+                            if (!el) return JSON.stringify({error:'Element not found', selector: $escapedSelector});
                             return JSON.stringify({
-                                selector: '$selector',
+                                selector: $escapedSelector,
                                 outerHTML: el.outerHTML.substring(0, 50000),
                                 textContent: el.textContent ? el.textContent.substring(0, 5000) : null,
                                 tagName: el.tagName,
