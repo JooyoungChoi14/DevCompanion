@@ -48,6 +48,7 @@ import androidx.compose.runtime.collectAsState
 
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
+import com.devcompanion.logging.AppHealthMonitor
 
 class MainActivity : ComponentActivity() {
 
