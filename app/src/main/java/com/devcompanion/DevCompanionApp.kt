@@ -96,6 +96,9 @@ class DevCompanionApp : Application() {
         Log.i(TAG, "DevCompanionApp.onCreate() complete")
     }
 
+    // Note: onTerminate() is NOT called in production Android (only in test harnesses).
+    // Process death is handled by the OS — all resources (callbacks, threads, memory)
+    // are reclaimed automatically. These calls are defensive cleanup for testing.
     override fun onTerminate() {
         AppHealthMonitor.uninstall()
         boreTunnel.stop()
