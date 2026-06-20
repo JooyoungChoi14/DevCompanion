@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CompletableDeferred
 
 /**
  * ViewModel managing the AI chat screen state.
@@ -629,7 +630,11 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private val _pendingConfirmation = MutableStateFlow<Pair<ToolCall, ToolConfirmationDetails>?>(null)
     val pendingConfirmation: StateFlow<Pair<ToolCall, ToolConfirmationDetails>?> = _pendingConfirmation.asStateFlow()
 
-    private val _confirmationResult = MutableStateFlow<Boolean?>(null)
+    /** Deferred result for confirmation — CompletableDeferred replaces busy-wait polling. */
+    private var confirmationDeferred = CompletableDeferred<Boolean>()
+
+    /** Deferred result for continue-agent — CompletableDeferred replaces busy-wait polling. */
+    private var continueDeferred = CompletableDeferred<Boolean>()
 
     private var agentLoop: AgentLoop? = null
     private var agentJob: kotlinx.coroutines.Job? = null
@@ -724,15 +729,17 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             _agentState.value = AgentState.WaitingConfirmation(
                 ToolCall(id = "continue", name = "continue_agent", arguments = com.google.gson.JsonObject())
             )
-            _confirmationResult.value = null
-            val deadline = System.currentTimeMillis() + 120_000
-            while (_confirmationResult.value == null && System.currentTimeMillis() < deadline) {
-                kotlinx.coroutines.delay(500)
+            // Reset deferred and await user response
+            continueDeferred = CompletableDeferred()
+            try {
+                withTimeout(120_000L) {
+                    continueDeferred.await()
+                }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                false
+            } finally {
+                _pendingConfirmation.value = null
             }
-            val result = _confirmationResult.value ?: false
-            _confirmationResult.value = null
-            _pendingConfirmation.value = null
-            result
         }
 
         // Wire confirmation handler
@@ -740,17 +747,17 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             // Post confirmation request to UI
             _pendingConfirmation.value = call to details
             _agentState.value = AgentState.WaitingConfirmation(call)
-            // Suspend until user responds
-            _confirmationResult.value = null
-            // Wait for result with timeout
-            val deadline = System.currentTimeMillis() + 60_000 // 60s timeout
-            while (_confirmationResult.value == null && System.currentTimeMillis() < deadline) {
-                kotlinx.coroutines.delay(500)
+            // Reset deferred and await user response
+            confirmationDeferred = CompletableDeferred()
+            try {
+                withTimeout(60_000L) {
+                    confirmationDeferred.await()
+                }
+            } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+                false
+            } finally {
+                _pendingConfirmation.value = null
             }
-            val result = _confirmationResult.value ?: false
-            _confirmationResult.value = null
-            _pendingConfirmation.value = null
-            result
         }
 
         // Wire LLM caller — streams tokens to UI in real-time
@@ -945,7 +952,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
     /** User responds to a pending confirmation — approve or reject. */
     fun respondConfirmation(approved: Boolean) {
-        _confirmationResult.value = approved
+        confirmationDeferred.complete(approved)
     }
 
     /** Stop the agent loop. */
@@ -956,6 +963,9 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         agentJob = null
         agentLoop = null
         _agentState.value = AgentState.Idle
+        // Cancel pending confirmations so awaiting handlers don't hang
+        confirmationDeferred.cancel()
+        continueDeferred.cancel()
         // Stop foreground service
         val app = getApplication<Application>()
         app.startService(Intent(app, AgentService::class.java).apply {
@@ -964,7 +974,6 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         _isStreaming.value = false
         _currentResponse.value = ""
         _pendingConfirmation.value = null
-        _confirmationResult.value = null
     }
 
     // ── Undo / Rollback ────────────────────────────────────────────────
