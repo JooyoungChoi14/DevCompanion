@@ -55,7 +55,7 @@ object AppHealthMonitor {
             if (lastFrameTimeNanos > 0L) {
                 frameCount++
                 // Only check every FRAME_SAMPLE_INTERVAL frames
-                if (frameCount % FRAME_SAMPLE_INTERVAL == 0L) {
+                if (frameCount % FRAME_SAMPLE_INTERVAL == 0) {
                     val delta = frameTimeNanos - lastFrameTimeNanos
                     val expectedFrames = delta / frameIntervalNanos
                     val droppedFrames = (expectedFrames - FRAME_SAMPLE_INTERVAL).toInt().coerceAtLeast(0)
