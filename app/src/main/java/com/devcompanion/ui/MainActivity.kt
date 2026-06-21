@@ -31,6 +31,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import com.devcompanion.llm.ChatHistory
 import com.devcompanion.ui.AiChatViewModel
+import com.devcompanion.ui.SettingsViewModel
 import com.devcompanion.DevCompanionApp
 import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.ui.theme.DevCompanionTheme
@@ -172,6 +173,7 @@ fun MainApp(
     var matchedConversationId by remember { mutableStateOf<String?>(null) }
     var forceNewSession by remember { mutableStateOf(false) }
     val chatViewModel: AiChatViewModel = viewModel()
+    val settingsViewModel: SettingsViewModel = viewModel()
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
 
     // ── UI navigation tracking ──
@@ -260,6 +262,7 @@ fun MainApp(
         Box(modifier = Modifier.padding(innerPadding)) {
             // Browser is always in composition — preserves browser engine state
             BrowserTab(
+                homeUrl = settingsViewModel.homeUrl.collectAsState().value,
                 clearAddressFocus = showDevTools || showBridgeInfo || showAiChat,
                 headerExpanded = headerVisible && !showAiChat,
                 headerVisible = !showAiChat,
