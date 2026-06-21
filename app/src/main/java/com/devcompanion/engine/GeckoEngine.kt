@@ -112,7 +112,10 @@ class GeckoEngine(
                 perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
-                // Filter out eval-result scheme — prevent URL pollution from JS bridge
+                // Broad filter: reject ALL internal devcompanion:// URLs (not just eval-result)
+                // to prevent URL pollution from JS bridge or future internal schemes.
+                // This is intentionally broader than onLoadRequest (which only denies eval-result)
+                // because onLocationChange may fire before deny() takes effect depending on GeckoView version.
                 if (url != null && url.startsWith("$EVAL_SCHEME://")) return
                 _url = url
             }
