@@ -112,6 +112,8 @@ class GeckoEngine(
                 perms: List<GeckoSession.PermissionDelegate.ContentPermission>,
                 hasUserGesture: Boolean
             ) {
+                // Filter out eval-result scheme — prevent URL pollution from JS bridge
+                if (url != null && url.startsWith("$EVAL_SCHEME://")) return
                 _url = url
             }
 
