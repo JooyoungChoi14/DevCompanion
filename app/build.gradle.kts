@@ -12,8 +12,8 @@ android {
         applicationId = "com.devcompanion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.2.0"
+        versionCode = 3
+        versionName = "1.3.0"
 
         // Inject git commit hash for traceability in logs
         val gitCommitHash = providers.exec {
@@ -22,24 +22,8 @@ android {
         buildConfigField("String", "GIT_COMMIT", "\"$gitCommitHash\"")
     }
 
-    // ── Product Flavors ──────────────────────────────────────────
-    // `free`: system WebView (local build friendly, small APK)
-    // `gecko`: GeckoView engine (CI-only build, larger APK)
-    flavorDimensions += "engine"
-    productFlavors {
-        create("free") {
-            dimension = "engine"
-            // No GeckoView dependency — uses system WebView
-        }
-        create("gecko") {
-            dimension = "engine"
-            // GeckoView engine — ABI-specific AARs to reduce build memory
-        }
-    }
-
     // ── ABI configuration ────────────────────────────────────────
-    // Only split by ABI when building for GeckoView (CI-only).
-    // Free flavor has no native libs and should produce a single universal APK.
+    // GeckoView includes native libs — split by ABI to reduce APK size.
     // Controlled via -PabiSplit=true Gradle property.
     if (project.providers.gradleProperty("abiSplit").forUseAtConfigurationTime()
             .orElse("false").get().toBoolean()) {
@@ -134,8 +118,8 @@ dependencies {
     // Encrypted SharedPreferences for secure API key storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // ── GeckoView (gecko flavor only) ────────────────────────────
-    "geckoImplementation"("org.mozilla.geckoview:geckoview:150.0.20260511200624")
+    // ── GeckoView (browser engine) ────────────────────────────
+    implementation("org.mozilla.geckoview:geckoview:150.0.20260511200624")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

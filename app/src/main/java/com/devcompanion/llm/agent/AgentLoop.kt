@@ -135,7 +135,7 @@ class AgentLoop(
                     "csp" -> appendLine("⚠️ CSP (Content Security Policy) blocked JavaScript execution. Do NOT retry eval_js on this site — switch to get_dom, extract_text, or click instead.")
                     "not_found" -> appendLine("⚠️ Element not found. Try a different selector or use extract_text for the full page.")
                     "timeout" -> appendLine("⚠️ Operation timed out. The page may be slow or the selector too broad.")
-                    "download" -> appendLine("⚠️ JS returned a download/save/export trigger, but this does NOT mean a file was actually saved. WebView cannot download files via JS. Use extract_text to collect data instead.")
+                    "download" -> appendLine("⚠️ JS returned a download/save/export trigger, but this does NOT mean a file was actually saved. browser engine cannot download files via JS. Use extract_text to collect data instead.")
                     else -> appendLine("⚠️ Error type: $errorType")
                 }
             }
@@ -407,7 +407,7 @@ class AgentLoop(
             val urlBefore = withContext(Dispatchers.Main) { engine.getUrl() ?: "" }
 
             // Capture context — screenshot every iteration (Quick mode after 1st for token efficiency)
-            // WebView methods MUST run on the main thread
+            // browser engine methods MUST run on the main thread
             var context = try {
                 val mode = if (iteration == 0) CaptureMode.Standard else CaptureMode.Quick
                 val ctx = withContext(Dispatchers.Main) {

@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * BrowserEngine implementation wrapping GeckoView + GeckoSession.
  *
- * Used by the `gecko` flavor. GeckoView handles rendering natively,
+ * Used by DevCompanion. GeckoView handles rendering natively,
  * eliminating the need for JS injections (vh fix, autofill, heartbeat, etc.).
  *
  * JS evaluation uses a custom URL scheme bridge:
@@ -43,13 +43,13 @@ class GeckoEngine(
 
     /**
      * Direct access to the underlying GeckoSession for delegate setup.
-     * Internal — only for use within the gecko flavor source set.
+     * Internal — for use by EngineFactory and BrowserTab.
      */
     internal val underlyingSession: GeckoSession get() = session
 
     /**
      * Direct access to the underlying GeckoView for view-level operations.
-     * Internal — only for use within the gecko flavor source set.
+     * Internal — for use by EngineFactory and BrowserTab.
      */
     internal val underlyingGeckoView: GeckoView get() = geckoView
 

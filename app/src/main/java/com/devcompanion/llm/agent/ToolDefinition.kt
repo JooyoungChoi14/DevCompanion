@@ -3,9 +3,9 @@ package com.devcompanion.llm.agent
 import com.google.gson.JsonObject
 
 /**
- * Tool definitions for the WebView agent loop.
+ * Tool definitions for the browser agent loop.
  *
- * Each tool describes an action the LLM can take on the WebView,
+ * Each tool describes an action the LLM can take on the page,
  * including its name, description, and JSON Schema parameters.
  * These are converted to provider-specific function calling formats
  * by each adapter.
@@ -36,7 +36,7 @@ data class ToolCall(
  *
  * [semanticError] indicates a logical failure where the tool executed successfully
  * (isError=false) but the result is unusable for the agent's purpose.
- * Examples: CSP blocking eval_js, get_dom truncation, download triggers in WebView.
+ * Examples: CSP blocking eval_js, get_dom truncation, download triggers in the browser.
  * AgentLoop uses this to accumulate per-tool-category semantic failures
  * and disable the tool after repeated issues.
  */
@@ -95,7 +95,7 @@ sealed class AgentEvent {
 // ── Tool definitions ──────────────────────────────────────────────────
 
 /**
- * Predefined tool definitions for WebView interaction.
+ * Predefined tool definitions for browser interaction.
  *
  * Each tool has a name, description, and JSON Schema parameters.
  * These are provided to the LLM via the `tools` parameter in chat requests.
@@ -179,13 +179,13 @@ object WebViewTools {
 
     val EVAL_JS = ToolDefinition(
         name = "eval_js",
-        description = "Execute a JavaScript expression in the page context. WARNING: (1) Many sites (chatgpt.com, google.com, etc.) block eval via Content Security Policy (CSP). If you receive a CSP error, do NOT retry eval_js — switch to get_dom, extract_text, or click instead. (2) This runs inside a WebView — you CANNOT trigger file downloads, access the filesystem, or save files via JS. A return value like 'download triggered' only means JS executed, NOT that a file was saved. (3) Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
+        description = "Execute a JavaScript expression in the page context. WARNING: (1) Many sites (chatgpt.com, google.com, etc.) block eval via Content Security Policy (CSP). If you receive a CSP error, do NOT retry eval_js — switch to get_dom, extract_text, or click instead. (2) This runs inside the browser engine — you CANNOT trigger file downloads, access the filesystem, or save files via JS. A return value like 'download triggered' only means JS executed, NOT that a file was saved. (3) Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
                 add("expression", JsonObject().apply {
                     addProperty("type", "string")
-                    addProperty("description", "JavaScript expression to evaluate. Cannot trigger downloads or access the filesystem in WebView.")
+                    addProperty("description", "JavaScript expression to evaluate. Cannot trigger downloads or access the filesystem in the browser engine.")
                 })
             })
             add("required", com.google.gson.JsonArray().apply { add("expression") })
@@ -208,7 +208,7 @@ object WebViewTools {
 
     val EXTRACT_TEXT = ToolDefinition(
         name = "extract_text",
-        description = "Extract visible text content from the page or a specific element. Unlike get_dom which returns HTML markup (which can be very large and truncated), this tool returns only the human-readable text. Use this when you need the actual content of a page — articles, conversations, lists — rather than its HTML structure. Returns up to ~8,000 characters. IMPORTANT: If the user asks to 'download' or 'save' data, use this tool to collect the data, then include it in your response text so the user can copy it. Do NOT try to trigger file downloads via eval_js — they do not work in WebView.",
+        description = "Extract visible text content from the page or a specific element. Unlike get_dom which returns HTML markup (which can be very large and truncated), this tool returns only the human-readable text. Use this when you need the actual content of a page — articles, conversations, lists — rather than its HTML structure. Returns up to ~8,000 characters. IMPORTANT: If the user asks to 'download' or 'save' data, use this tool to collect the data, then include it in your response text so the user can copy it. Do NOT try to trigger file downloads via eval_js — they do not work in the browser engine.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
@@ -255,7 +255,7 @@ object WebViewTools {
 
     val GET_CONSOLE_LOGS = ToolDefinition(
         name = "get_console_logs",
-        description = "Retrieve recent console log messages from the WebView. Returns an array of log entries with level, message, and timestamp. Useful for debugging JavaScript errors or inspecting runtime behavior.",
+        description = "Retrieve recent console log messages from the browser. Returns an array of log entries with level, message, and timestamp. Useful for debugging JavaScript errors or inspecting runtime behavior.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
@@ -317,7 +317,7 @@ object WebViewTools {
             add("properties", JsonObject().apply {
                 add("mode", JsonObject().apply {
                     addProperty("type", "string")
-                    addProperty("description", "Target mode: 'chat' for general Q\u0026A, 'agent' for WebView interaction")
+                    addProperty("description", "Target mode: 'chat' for general Q\u0026A, 'agent' for browser interaction")
                     add("enum", com.google.gson.JsonArray().apply { add("chat"); add("agent") })
                 })
             })
@@ -356,7 +356,7 @@ object WebViewTools {
         }
     )
 
-    /** All available WebView tools. */
+    /** All available browser tools. */
     val ALL = listOf(
         NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, EXTRACT_TEXT, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
         RECALL,

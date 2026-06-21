@@ -61,7 +61,7 @@ class PermissionGate {
     /**
      * Classify a tool call's risk level.
      *
-     * For [type] actions, this performs runtime DOM inspection via WebView
+     * For [type] actions, this performs runtime DOM inspection via the browser engine
      * to check the target element's type, name, and autocomplete attributes.
      */
     suspend fun classify(call: ToolCall, engine: BrowserEngine): ActionRisk = when (call.name) {
@@ -87,7 +87,7 @@ class PermissionGate {
         )
         "eval_js" -> ToolConfirmationDetails(
             action = "Execute JavaScript",
-            target = "WebView",
+            target = "browser",
             preview = (call.arguments.getAsJsonPrimitive("expression")?.asString ?: "").take(200),
             riskLevel = ActionRisk.SENSITIVE
         )
@@ -128,7 +128,7 @@ class PermissionGate {
     /**
      * Check type risk: inspect the target element's DOM properties.
      *
-     * Queries the WebView for the element's type, name, autocomplete
+     * Queries the browser engine for the element's type, name, autocomplete
      * attributes to detect sensitive fields like passwords and credit cards.
      */
     private suspend fun checkTypeRisk(call: ToolCall, engine: BrowserEngine): ActionRisk {
@@ -157,7 +157,7 @@ class PermissionGate {
         """.trimIndent()
 
         return try {
-            // W9 fix: use 500ms timeout for DOM inspection to avoid UI freeze on unresponsive WebView
+            // W9 fix: use 500ms timeout for DOM inspection to avoid UI freeze on unresponsive browser engine
             val result = engine.evalJs(js, timeoutMs = 500L)
             val props = parseJsResult(result)
 

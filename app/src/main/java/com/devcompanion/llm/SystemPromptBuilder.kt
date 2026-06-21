@@ -1,7 +1,7 @@
 package com.devcompanion.llm
 
 /**
- * Builds dynamic system prompts based on the current app mode, WebView context,
+ * Builds dynamic system prompts based on the current app mode, browser context,
  * and available tools. This ensures the LLM understands:
  * - What app it's running in
  * - What mode (agent vs chat) it's in
@@ -14,8 +14,8 @@ object SystemPromptBuilder {
     /**
      * Build a system prompt for the given context.
      *
-     * @param mode "agent" for WebView interaction, "chat" for general conversation
-     * @param currentUrl the URL currently loaded in the WebView (null if unavailable)
+     * @param mode "agent" for browser interaction, "chat" for general conversation
+     * @param currentUrl the URL currently loaded in the browser engine (null if unavailable)
      * @param customInstructions optional user-defined instructions appended to the prompt
      */
     fun build(
@@ -27,14 +27,14 @@ object SystemPromptBuilder {
         val sb = StringBuilder()
 
         // ── Identity ──────────────────────────────────────────────────
-        sb.appendLine("You are DevCompanion, an AI assistant embedded in an Android app that contains a WebView browser.")
+        sb.appendLine("You are DevCompanion, an AI assistant embedded in an Android app that contains a browser.")
         sb.appendLine()
 
         // ── Mode context ──────────────────────────────────────────────
         when (mode) {
             "agent" -> {
                 sb.appendLine("## Current Mode: Agent")
-                sb.appendLine("You are in **agent mode** — the user wants you to interact with the WebView page directly.")
+                sb.appendLine("You are in **agent mode** — the user wants you to interact with the page directly.")
                 sb.appendLine("Use the provided tools (navigate, click, type, get_dom, get_computed_style, set_style, eval_js, screenshot, scroll, submit_form, get_console_logs) to inspect and manipulate the page.")
                 sb.appendLine("Always verify your actions by checking the result (e.g., get_dom or screenshot after navigation/clicks).")
                 sb.appendLine("When the task is complete, provide a summary in clear markdown.")
@@ -42,7 +42,7 @@ object SystemPromptBuilder {
             }
             "chat" -> {
                 sb.appendLine("## Current Mode: Chat")
-                sb.appendLine("You are in **chat mode** — the user is asking questions, and the WebView context (screenshot + DOM) is provided automatically.")
+                sb.appendLine("You are in **chat mode** — the user is asking questions, and the browser context (screenshot + DOM) is provided automatically.")
                 sb.appendLine("Answer questions about the current page or general topics. You do NOT have tool access in this mode.")
                 sb.appendLine("Respond in clear, well-formatted markdown.")
                 sb.appendLine()
@@ -131,12 +131,12 @@ object SystemPromptBuilder {
             sb.appendLine("- **screenshot**: Captures the visible viewport only. Cannot capture the entire scrollable page at once.")
             sb.appendLine("- **recall**: Retrieves previously stored tool results from session memory. When a tool result is truncated (marked with \"RESULT TRUNCATED\"), use recall(index=N) to get the full content. This is more efficient than re-running the same tool.")
             sb.appendLine()
-            sb.appendLine("### 5. WebView Environment Constraints (CRITICAL)")
-            sb.appendLine("You are running inside an Android WebView, NOT a full desktop browser. This means:")
-            sb.appendLine("- **No file downloads**: JavaScript `Blob` + `URL.createObjectURL` + `a.click()` does NOT trigger actual file downloads in WebView. Never claim a download succeeded based on eval_js returning 'download triggered' — that string only means JS executed, NOT that a file was saved.")
+            sb.appendLine("### 5. Browser Environment Constraints (CRITICAL)")
+            sb.appendLine("You are running inside an Android browser engine (GeckoView), NOT a full desktop browser. This means:")
+            sb.appendLine("- **No file downloads**: JavaScript `Blob` + `URL.createObjectURL` + `a.click()` does NOT trigger actual file downloads in the browser engine. Never claim a download succeeded based on eval_js returning 'download triggered' — that string only means JS executed, NOT that a file was saved.")
             sb.appendLine("- **No filesystem access**: You cannot save files to the device via eval_js.")
-            sb.appendLine("- **No native dialogs**: `alert()`, `confirm()`, `prompt()` are suppressed in WebView.")
-            sb.appendLine("- **CSP blocks eval on many sites**: chatgpt.com, google.com, and other security-hardened sites block `eval()`. The `eval_js` tool uses `WebView.evaluateJavascript()` which CAN execute on sites that allow script injection, but CSP-protected sites will block it.")
+            sb.appendLine("- **No native dialogs**: `alert()`, `confirm()`, `prompt()` are suppressed in the browser engine.")
+            sb.appendLine("- **CSP blocks eval on many sites**: chatgpt.com, google.com, and other security-hardened sites block `eval()`. The `eval_js` tool CAN execute on sites that allow script injection, but CSP-protected sites will block it.")
             sb.appendLine("- **If the user asks to download/export data**: Use extract_text or get_dom to collect the data, then respond with the data in your message text so the user can copy it. Do NOT try to trigger browser downloads.")
             sb.appendLine()
             sb.appendLine("### 6. Verify Results Before Claiming Success")
@@ -175,7 +175,7 @@ object SystemPromptBuilder {
             sb.appendLine("| switch_mode | Switch between Chat and Act mode | Safe |")
             sb.appendLine("| get_current_mode | Check which mode you're currently in | Safe |")
             sb.appendLine()
-            sb.appendLine("You are in Chat mode and cannot interact with the WebView directly.")
+            sb.appendLine("You are in Chat mode and cannot interact with the page directly.")
             sb.appendLine("If the user asks you to perform actions on the page (click, navigate, type, etc.), use switch_mode to switch to Agent mode first.")
             sb.appendLine()
         }

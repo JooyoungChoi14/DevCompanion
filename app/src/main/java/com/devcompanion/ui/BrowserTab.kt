@@ -3,11 +3,8 @@ package com.devcompanion.ui
 import android.util.Log
 import com.devcompanion.engine.BrowserEngine
 import com.devcompanion.engine.EngineFactory
-import com.devcompanion.engine.InjectionConfig
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -99,7 +96,7 @@ fun BrowserTab(
     val bookmarksStore = remember { BookmarksStore(context) }
     val urlHistoryStore = remember { UrlHistoryStore(context) }
 
-    // Debugger: flavor-specific (WebViewDebugger for free, NoOpDebugger for gecko)
+    // Debugger: GeckoView uses NoOpDebugger (DevTools not yet supported)
     val debugger: BrowserDebugger = remember { EngineFactory.createDebugger() }
     // URL history comes from UrlHistoryStore (persistent) — not coupled to debugger
     val urlHistory by urlHistoryStore.urlsFlow.collectAsState(initial = emptyList())
@@ -409,7 +406,7 @@ fun BrowserTab(
 
         HorizontalDivider()
 
-        // ── WebView + Crash overlay ──────────────────────────────────
+        // ── Engine view + Crash overlay ──────────────────────────────────
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -585,109 +582,6 @@ fun BrowserTab(
         app?.bridgeServer?.attachEngine(engineRef)
         onDispose {
             app?.bridgeServer?.attachEngine(null)
-        }
-    }
-
-    // Freeze detection: only needed for WebView (heartbeat-based).
-    // GeckoView doesn't suffer from MutationObserver infinite loops.
-    var webViewFrozen by remember { mutableStateOf(false) }
-    if (InjectionConfig.needsHeartbeat) {
-        LaunchedEffect(engineRef) {
-            var lastHeartbeat = 0L
-            var staleCount = 0
-            while (true) {
-                delay(3_000L)
-                val engine = engineRef ?: continue
-                // Heartbeat freeze detection only runs in free flavor (needsHeartbeat=true)
-                // GeckoView doesn't suffer from MutationObserver infinite loops
-                var currentHeartbeat = 0L
-                withContext(Dispatchers.Main) {
-                    try {
-                        val latch = CountDownLatch(1)
-                        var result: String? = null
-                        engine.evaluateJavascript(
-                            "window.__devCompanionHeartbeat || 0"
-                        ) { v ->
-                            result = v
-                            latch.countDown()
-                        }
-                        latch.await(2, TimeUnit.SECONDS)
-                        currentHeartbeat = result?.toLongOrNull() ?: 0L
-                    } catch (_: Exception) {
-                        // Engine not ready
-                    }
-                }
-                if (currentHeartbeat == 0L) continue // not yet injected
-                val now = System.currentTimeMillis()
-                if (now - currentHeartbeat > 5_000L) {
-                    staleCount++
-                    if (staleCount >= 2) {
-                        if (!webViewFrozen) {
-                            webViewFrozen = true
-                            SessionLog.log(
-                                EventType.WEBVIEW_CRASH,
-                                mapOf("reason" to "js_frozen", "staleMs" to (now - currentHeartbeat).toString())
-                            )
-                        }
-                    }
-                } else {
-                    if (webViewFrozen) {
-                        webViewFrozen = false
-                        SessionLog.log(
-                            EventType.WEBVIEW_RECOVER,
-                            mapOf("reason" to "heartbeat_resumed")
-                        )
-                    }
-                    staleCount = 0
-                }
-            }
-        }
-    }
-
-    // Freeze overlay — offer reload when engine JS is frozen (WebView only)
-    if (InjectionConfig.needsHeartbeat && webViewFrozen) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(Spacing.lg)
-            ) {
-                Icon(
-                    Icons.Filled.Warning,
-                    contentDescription = "Browser frozen",
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.error
-                )
-                Spacer(modifier = Modifier.height(Spacing.md))
-                Text(
-                    "Browser is unresponsive",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                Text(
-                    "The page JavaScript engine appears frozen.\nScroll, navigation, and agent tools may not work.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(Spacing.md))
-                Button(
-                    onClick = {
-                        webViewFrozen = false
-                        pendingAction = BrowserAction.Reload
-                    }
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(Spacing.xs))
-                    Text("Reload page")
-                }
-            }
         }
     }
 }

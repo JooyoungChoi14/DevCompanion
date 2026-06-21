@@ -5,8 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Abstraction over browser debugger implementations.
  *
- * Free flavor: WebViewDebugger wrapping android.webkit.WebView
- * Gecko flavor: NoOpDebugger (no DevTools support in GeckoView yet)
+ * GeckoView: NoOpDebugger (DevTools not yet supported in GeckoView)
  *
  * BridgeServer, ConsoleTab, NetworkTab, PerformanceTab all depend on this interface.
  */

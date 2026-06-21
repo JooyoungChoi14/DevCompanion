@@ -9,7 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Executes tool calls on the browser engine (WebView or GeckoView).
+ * Executes tool calls on the browser engine (GeckoView).
  *
  * All engine operations are dispatched to the Main thread via
  * [withContext(Dispatchers.Main)][withContext] to avoid
@@ -172,21 +172,21 @@ class ToolExecutor(
 
         val result = engine.evalJs(js)
 
-        // Append WebView environment warning for specific result patterns
+        // Append browser environment warning for specific result patterns
         // Also detect semantic errors: tool executed (isError=false) but result is unusable
         val (enhancedResult, semanticError) = if (result.contains(""""t":"error"""")) {
             // Check for CSP error specifically
             if (result.contains("Content Security Policy", ignoreCase = true) ||
                 result.contains("unsafe-eval", ignoreCase = true)) {
-                "$result\n\n[WebView: CSP blocks eval on this site. Do NOT retry eval_js. Use get_dom, extract_text, click, or navigate to backend APIs instead.]" to "csp"
+                "$result\n\n[browser: CSP blocks eval on this site. Do NOT retry eval_js. Use get_dom, extract_text, click, or navigate to backend APIs instead.]" to "csp"
             } else {
-                "$result\n\n[WebView: eval_js returned an error. Consider alternative tools.]" to "eval_error"
+                "$result\n\n[browser: eval_js returned an error. Consider alternative tools.]" to "eval_error"
             }
         } else if (result.contains("download", ignoreCase = true) ||
                    result.contains("saved", ignoreCase = true) ||
                    result.contains("exported", ignoreCase = true)) {
             // Flag potential false positives — JS return values don't mean actual file I/O
-            "$result\n\n[WebView WARNING: eval_js cannot trigger real file downloads or save files. This string only means JS code executed, NOT that a file was saved to the device. To provide data to the user, include it in your response text.]" to "download_false_positive"
+            "$result\n\n[browser WARNING: eval_js cannot trigger real file downloads or save files. This string only means JS code executed, NOT that a file was saved to the device. To provide data to the user, include it in your response text.]" to "download_false_positive"
         } else {
             result to null
         }

@@ -9,15 +9,15 @@ import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.GeckoView
 
 /**
- * Factory to create the browser engine for the gecko flavor (GeckoView).
+ * Factory to create the browser engine (GeckoView).
  *
- * The [debugger] parameter is accepted for API parity with the free flavor
- * but is not used — GeckoView has its own debugging tools.
+ * GeckoView handles rendering natively, eliminating the need for JS injections.
+ * DevTools are not yet supported — NoOpDebugger is returned.
  */
 object EngineFactory {
     private var runtime: GeckoRuntime? = null
 
-    /** Create the flavor-appropriate debugger instance (no-op for GeckoView). */
+    /** Create the debugger instance (no-op for GeckoView). */
     fun createDebugger(): BrowserDebugger = NoOpDebugger()
 
     fun create(context: Context, debugger: BrowserDebugger? = null): BrowserEngine {

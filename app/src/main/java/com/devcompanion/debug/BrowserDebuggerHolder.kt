@@ -18,12 +18,3 @@ object BrowserDebuggerHolder {
 
     fun clear() { _current.value = null }
 }
-
-/** @deprecated Use [BrowserDebuggerHolder] instead. */
-@Deprecated("Use BrowserDebuggerHolder", ReplaceWith("BrowserDebuggerHolder"))
-object WebViewDebuggerHolder {
-    @Deprecated("Use BrowserDebuggerHolder.current", ReplaceWith("BrowserDebuggerHolder.current"))
-    var current: BrowserDebugger?
-        get() = BrowserDebuggerHolder.current
-        set(value) { BrowserDebuggerHolder.current = value }
-}

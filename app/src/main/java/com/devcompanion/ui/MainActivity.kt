@@ -39,7 +39,6 @@ import com.devcompanion.ui.theme.ColorPreset
 import com.devcompanion.ui.theme.LocalThemePreferences
 import com.devcompanion.ui.theme.Spacing
 import com.devcompanion.engine.BrowserEngine
-import com.devcompanion.engine.InjectionConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -99,12 +98,6 @@ class MainActivity : ComponentActivity() {
                 Log.i(TAG, "onCreate: enableEdgeToEdge ok")
             } catch (e: Exception) {
                 Log.w(TAG, "onCreate: enableEdgeToEdge failed, continuing without it", e)
-            }
-
-            // WebView debugging — only relevant for free flavor (WebView engine)
-            if (InjectionConfig.needsInjections) {
-                try { android.webkit.WebView.setWebContentsDebuggingEnabled(true) } catch (_: Exception) {}
-                Log.i(TAG, "onCreate: WebView debugging enabled (free flavor)")
             }
 
             // Handle back button: browser engine history first, then finish

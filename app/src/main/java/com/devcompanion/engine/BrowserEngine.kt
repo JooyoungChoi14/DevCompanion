@@ -6,20 +6,19 @@ import android.view.View
 /**
  * Abstraction over browser engine implementations.
  *
- * Free flavor: WebViewEngine wrapping android.webkit.WebView
- * Gecko flavor: GeckoEngine wrapping org.mozilla.geckoview.GeckoView + GeckoSession
+ * GeckoView-based: GeckoEngine wrapping org.mozilla.geckoview.GeckoView + GeckoSession
  *
  * GeckoView eliminates JS injection needs:
- * - vh/dvh computed correctly → VH_FIX unnecessary
- * - Keyboard handling built-in → KEYBOARD_FIX unnecessary
- * - Overflow/scroll handled correctly → OVERFLOW_FIX unnecessary
- * - text-size-adjust controllable via GeckoSettings → TEXT_SIZE_FIX unnecessary
- * - Autofill supported natively → AUTOFILL_INJECTION unnecessary
+ * - vh/dvh computed correctly
+ * - Keyboard handling built-in
+ * - Overflow/scroll handled correctly
+ * - text-size-adjust controllable via GeckoSettings
+ * - Autofill supported natively
  * - No MutationObserver → no infinite loop freeze risk
  */
 interface BrowserEngine {
 
-    /** The Android View to embed in Compose (WebView or GeckoView). */
+    /** The Android View to embed in Compose (GeckoView). */
     val view: View
 
     /** Current page URL, or null if no page loaded. */
@@ -51,7 +50,7 @@ interface BrowserEngine {
      * Callback receives the JSON string result (or null on error/no result).
      *
      * Note: prefer [evalJs] for coroutine-based calls. This callback-based
-     * method exists for compatibility with WebView.evaluateJavascript.
+     * method exists for compatibility with callback-based evaluation.
      */
     fun evaluateJavascript(script: String, callback: ((String?) -> Unit)? = null)
 

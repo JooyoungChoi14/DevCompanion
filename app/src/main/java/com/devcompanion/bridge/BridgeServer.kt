@@ -45,7 +45,7 @@ class BridgeServer(
 
     /**
      * Attach a BrowserEngine for JS evaluation, screenshots, and navigation.
-     * Works with both WebViewEngine and GeckoEngine.
+     * Works with GeckoEngine.
      */
     fun attachEngine(eng: BrowserEngine?) {
         engine = eng

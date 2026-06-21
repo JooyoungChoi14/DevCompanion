@@ -30,65 +30,39 @@ jobs:
         with:
           gradle-home-cache-cleanup: true
 
-      - name: Build Free Debug APK
+      - name: Build Debug APK
         run: |
           chmod +x gradlew-real
-          ./gradlew-real assembleFreeDebug
+          ./gradlew-real assembleDebug
 
-      - name: Build Free Release APK
-        run: ./gradlew-real assembleFreeRelease
+      - name: Build Release APK (with ABI splits)
+        run: ./gradlew-real assembleRelease -PabiSplit=true
 
-      - name: Build Gecko Debug APK (with ABI splits)
-        run: ./gradlew-real assembleGeckoDebug -PabiSplit=true
-
-      - name: Build Gecko Release APK (with ABI splits)
-        run: ./gradlew-real assembleGeckoRelease -PabiSplit=true
-
-      - name: Upload Free Debug APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-free-debug
-          path: app/build/outputs/apk/free/debug/*.apk
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
 
-      - name: Upload Free Release APK
+      - name: Upload Release APKs
         uses: actions/upload-artifact@v4
         with:
-          name: app-free-release
-          path: app/build/outputs/apk/free/release/*.apk
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
 
-      - name: Upload Gecko Debug APKs
+      - name: Upload R8 Mapping
         uses: actions/upload-artifact@v4
         with:
-          name: app-gecko-debug
-          path: app/build/outputs/apk/gecko/debug/*.apk
-
-      - name: Upload Gecko Release APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-gecko-release
-          path: app/build/outputs/apk/gecko/release/*.apk
-
-      - name: Upload R8 Mapping (free)
-        uses: actions/upload-artifact@v4
-        with:
-          name: r8-mapping-free
-          path: app/build/outputs/mapping/freeRelease/mapping.txt
-
-      - name: Upload R8 Mapping (gecko)
-        uses: actions/upload-artifact@v4
-        with:
-          name: r8-mapping-gecko
-          path: app/build/outputs/mapping/geckoRelease/mapping.txt
+          name: r8-mapping
+          path: app/build/outputs/mapping/release/mapping.txt
 
       - name: Create Release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            app/build/outputs/apk/free/debug/*.apk
-            app/build/outputs/apk/free/release/*.apk
-            app/build/outputs/apk/gecko/debug/*.apk
-            app/build/outputs/apk/gecko/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

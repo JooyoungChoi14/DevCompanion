@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * No-op debugger for GeckoView flavor.
+ * No-op debugger for GeckoView.
  * DevTools are not yet supported in GeckoView — all operations are silently ignored.
  */
 class NoOpDebugger : BrowserDebugger {
