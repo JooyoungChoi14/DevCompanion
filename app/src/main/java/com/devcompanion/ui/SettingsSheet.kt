@@ -96,7 +96,7 @@ fun SettingsSheet(
             Tab(
                 selected = selectedTab == SETTINGS_TAB_APPEARANCE,
                 onClick = { selectedTab = SETTINGS_TAB_APPEARANCE; SessionLog.uiTab("settings", "appearance") },
-                text = { Text("Appearance") },
+                text = { Text("Appearance", style = MaterialTheme.typography.labelSmall, maxLines = 1) },
                 icon = { Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 selectedContentColor = MaterialTheme.colorScheme.primary,
                 unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -104,7 +104,7 @@ fun SettingsSheet(
             Tab(
                 selected = selectedTab == SETTINGS_TAB_AI,
                 onClick = { selectedTab = SETTINGS_TAB_AI; SessionLog.uiTab("settings", "ai") },
-                text = { Text("AI") },
+                text = { Text("AI", style = MaterialTheme.typography.labelSmall, maxLines = 1) },
                 icon = { Icon(Icons.Default.SmartToy, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 selectedContentColor = MaterialTheme.colorScheme.primary,
                 unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -112,7 +112,7 @@ fun SettingsSheet(
             Tab(
                 selected = selectedTab == SETTINGS_TAB_INTEGRATIONS,
                 onClick = { selectedTab = SETTINGS_TAB_INTEGRATIONS; SessionLog.uiTab("settings", "integrations") },
-                text = { Text("Integrations") },
+                text = { Text("More", style = MaterialTheme.typography.labelSmall, maxLines = 1) },
                 icon = { Icon(Icons.Default.Extension, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 selectedContentColor = MaterialTheme.colorScheme.primary,
                 unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
