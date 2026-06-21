@@ -52,6 +52,7 @@ object LlmSettings {
     private const val KEY_CUSTOM_PROMPT = "custom_system_prompt"
     private const val KEY_MAX_ITERATIONS = "max_iterations"
     private const val KEY_AGENT_MODE_DEFAULT = "agent_mode_default"
+    private const val KEY_HOME_URL = "home_url"
 
     // Encryption constants
     private const val ANDROID_KEYSTORE = "AndroidKeyStore"
@@ -435,6 +436,11 @@ object LlmSettings {
             KEY_MAX_ITERATIONS,
             value.coerceIn(MIN_MAX_ITERATIONS, MAX_MAX_ITERATIONS)
         ).commit() }
+
+    /** Home URL for the Home button (default: about:blank). */
+    var homeUrl: String
+        get() = requirePrefs().getString(KEY_HOME_URL, "about:blank") ?: "about:blank"
+        set(value) { requirePrefs().edit().putString(KEY_HOME_URL, value.trim()).commit() }
 
     // ── Migration from old EncryptedSharedPreferences ──────────────
 

@@ -58,6 +58,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _maxIterations = MutableStateFlow(LlmSettings.maxIterations)
     val maxIterations: StateFlow<Int> = _maxIterations.asStateFlow()
 
+    // ── Home URL ──────────────────────────────────────────────────────
+
+    private val _homeUrl = MutableStateFlow(LlmSettings.homeUrl)
+    val homeUrl: StateFlow<String> = _homeUrl.asStateFlow()
+
     init {
         loadFromStorage()
     }
@@ -210,6 +215,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val coerced = value.coerceIn(LlmSettings.MIN_MAX_ITERATIONS, LlmSettings.MAX_MAX_ITERATIONS)
         _maxIterations.value = coerced
         LlmSettings.maxIterations = coerced
+    }
+
+    fun updateHomeUrl(url: String) {
+        val trimmed = url.trim()
+        _homeUrl.value = trimmed
+        LlmSettings.homeUrl = trimmed
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

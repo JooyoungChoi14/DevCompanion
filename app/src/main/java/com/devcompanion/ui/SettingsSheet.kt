@@ -128,7 +128,7 @@ fun SettingsSheet(
                 settingsViewModel = settingsViewModel,
                 chatViewModel = viewModel,
             )
-            SETTINGS_TAB_INTEGRATIONS -> IntegrationsTab()
+            SETTINGS_TAB_INTEGRATIONS -> IntegrationsTab(settingsViewModel = settingsViewModel)
         }
     }
     } // ModalBottomSheet
@@ -605,7 +605,7 @@ private fun AiTab(
 // ═══════════════════════════════════════════════════════════════
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IntegrationsTab() {
+private fun IntegrationsTab(settingsViewModel: SettingsViewModel) {
     val scope = rememberCoroutineScope()
     val logContext = LocalContext.current
 
@@ -616,6 +616,39 @@ private fun IntegrationsTab() {
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
+        // ── Home URL ────────────────────────────────────────────
+        val homeUrl by settingsViewModel.homeUrl.collectAsState()
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(Spacing.md)) {
+                Text("Home URL", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                Text(
+                    "URL opened when you tap the Home button.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                OutlinedTextField(
+                    value = homeUrl,
+                    onValueChange = { settingsViewModel.updateHomeUrl(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Home URL") },
+                    placeholder = { Text("about:blank") },
+                    singleLine = true,
+                    shape = MaterialTheme.shapes.small,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.md))
+
         // ── GitHub PAT ────────────────────────────────────────────
         GitHubPatSection()
 
