@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.os.Build
+import android.util.Log
 import com.devcompanion.ui.MainActivity
 
 /**
@@ -18,11 +19,14 @@ import com.devcompanion.ui.MainActivity
 class AgentService : Service() {
 
     companion object {
+        private const val TAG = "AgentService"
         const val CHANNEL_ID = "agent_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_START = "com.devcompanion.ACTION_START_AGENT"
         const val ACTION_STOP = "com.devcompanion.ACTION_STOP_AGENT"
     }
+
+    private var isStopping = false
 
     override fun onCreate() {
         super.onCreate()
@@ -32,10 +36,25 @@ class AgentService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                if (!isStopping) {
+                    isStopping = true
+                    Log.d(TAG, "Stop requested — removing foreground, scheduling stopSelf")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    // Give the agent loop coroutine a brief window to finish
+                    // before we kill the service, so the system doesn't fire
+                    // ForegroundServiceDidNotStopInTimeException.
+                    android.os.Handler(mainLooper).postDelayed({
+                        stopSelf(startId)
+                    }, 500L)
+                }
                 return START_NOT_STICKY
             }
+        }
+
+        if (isStopping) {
+            // A stop is already in flight; don't re-start foreground.
+            stopSelf(startId)
+            return START_NOT_STICKY
         }
 
         val notification = buildNotification("Agent is running…")
@@ -48,7 +67,20 @@ class AgentService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        isStopping = false
+        Log.d(TAG, "Service destroyed")
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        // App was swiped away from recents — stop the service immediately.
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
