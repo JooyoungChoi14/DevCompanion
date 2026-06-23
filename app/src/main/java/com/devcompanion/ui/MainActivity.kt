@@ -184,6 +184,7 @@ fun MainApp(
     LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
     LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; else -> "unknown" }) }
     val debugger = BrowserDebuggerHolder.current
+    val context = LocalContext.current
     val isActive = debugger != null
 
     Scaffold(
@@ -276,28 +277,30 @@ fun MainApp(
                     pendingAiQuestion = question
                     val url = engineRef?.getUrl()
                     currentUrlForChat = url
-                    // If there's an active conversation, reopen directly
-                    val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
-                    if (hasActiveChat) {
-                        showAiChat = true
-                    } else if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
+                    val currentConvId = chatViewModel.conversationId.value
+                    val matched = url?.let { ChatHistory.findConversationByUrl(context, it) }
+                    if (matched != null && matched.id != currentConvId) {
+                        // URL has a matching conversation that isn't currently active → ask user
+                        matchedConversationId = matched.id
                         showSessionChoice = true
                     } else {
-                        forceNewSession = true
+                        // No match, or already in the matching conversation → open directly
+                        forceNewSession = (matched == null)
                         showAiChat = true
                     }
                 }
             )
 
-            // Session choice dialog — shown when a matching URL conversation exists
+            // Session choice dialog — shown only when URL-matched conversation exists
+            // and isn't the currently active one (pre-check in onAskAi)
             if (showSessionChoice) {
-                val context = LocalContext.current
-                val matched = currentUrlForChat?.let { ChatHistory.findConversationByUrl(context, it) }
+                val matched = matchedConversationId?.let { id ->
+                    ChatHistory.listConversationMetas(context).find { it.id == id }
+                }
 
                 if (matched != null) {
-                    // Found existing conversation for this URL
                     AlertDialog(
-                        onDismissRequest = { showSessionChoice = false; SessionLog.uiNav("session_choice", "close") },
+                        onDismissRequest = { showSessionChoice = false; matchedConversationId = null; SessionLog.uiNav("session_choice", "close") },
                         title = { Text("Existing session found") },
                         text = {
                             Column {
@@ -321,21 +324,20 @@ fun MainApp(
                         confirmButton = {
                             TextButton(onClick = {
                                 showSessionChoice = false
-                                matchedConversationId = matched.id
                                 showAiChat = true
                             }) { Text("Resume") }
                         },
                         dismissButton = {
                             TextButton(onClick = {
                                 showSessionChoice = false
-                                matchedConversationId = null  // new session
+                                matchedConversationId = null
                                 forceNewSession = true
                                 showAiChat = true
                             }) { Text("New session") }
                         }
                     )
                 } else {
-                    // No existing conversation — open chat directly with new session
+                    // Conversation was deleted between onAskAi and dialog display — open new session
                     LaunchedEffect(Unit) {
                         showSessionChoice = false
                         matchedConversationId = null

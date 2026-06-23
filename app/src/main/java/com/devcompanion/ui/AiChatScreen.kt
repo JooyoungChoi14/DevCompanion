@@ -150,6 +150,21 @@ fun AiChatScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Scroll to bottom on conversation change (initial load, resume, switch)
+    // Uses instant scroll to avoid distracting animation on entry.
+    LaunchedEffect(conversationId) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem((messages.size - 1).coerceAtLeast(0))
+        }
+    }
+
+    // Scroll after IME settles — corrects viewport shift when keyboard appears
+    LaunchedEffect(imeBottom) {
+        if (imeBottom > 0 && messages.isNotEmpty()) {
+            listState.scrollToItem((messages.size - 1).coerceAtLeast(0))
+        }
+    }
+
     // Auto-scroll to bottom when new messages arrive or streaming updates
     LaunchedEffect(messages.size, currentResponse) {
         if (messages.isNotEmpty() || currentResponse.isNotBlank()) {
