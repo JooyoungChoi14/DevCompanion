@@ -295,7 +295,7 @@ fun MainApp(
             // and isn't the currently active one (pre-check in onAskAi)
             if (showSessionChoice) {
                 val matched = matchedConversationId?.let { id ->
-                    ChatHistory.listConversationMetas(context).find { it.id == id }
+                    ChatHistory.listConversations(context).find { it.id == id }
                 }
 
                 if (matched != null) {
