@@ -26,7 +26,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 // Removed: detectTapGestures, pointerInput — select mode is now explicit toggle, not gesture
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -110,8 +109,6 @@ fun AiChatScreen(
     var settingsInitialTab by remember { mutableIntStateOf(SETTINGS_TAB_APPEARANCE) }
     var showCaptureDialog by remember { mutableStateOf(false) }
     val inputFocusRequester = remember { FocusRequester() }
-    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-
     // Auto-focus input field when chat screen enters
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(300) // small delay for composition to settle
@@ -154,13 +151,6 @@ fun AiChatScreen(
     // Uses instant scroll to avoid distracting animation on entry.
     LaunchedEffect(conversationId) {
         if (messages.isNotEmpty()) {
-            listState.scrollToItem((messages.size - 1).coerceAtLeast(0))
-        }
-    }
-
-    // Scroll after IME settles — corrects viewport shift when keyboard appears
-    LaunchedEffect(imeBottom) {
-        if (imeBottom > 0 && messages.isNotEmpty()) {
             listState.scrollToItem((messages.size - 1).coerceAtLeast(0))
         }
     }
@@ -263,6 +253,7 @@ fun AiChatScreen(
         }
     ) {
     Scaffold(
+        contentWindowInsets = WindowInsets(0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -328,7 +319,7 @@ fun AiChatScreen(
             )
         },
         bottomBar = {
-            Column(modifier = Modifier.fillMaxWidth().padding(bottom = with(LocalDensity.current) { imeBottom.toDp() })) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 // Status bar: provider + connection + token usage + context
                 Surface(
                     tonalElevation = 1.dp,
