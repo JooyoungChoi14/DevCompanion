@@ -337,12 +337,13 @@ fun MainApp(
                         }
                     )
                 } else {
-                    // Conversation was deleted between onAskAi and dialog display — open new session directly
-                    // No LaunchedEffect: set state immediately to avoid chat sheet flicker (open→close→reopen)
-                    forceNewSession = true
-                    matchedConversationId = null
-                    showSessionChoice = false
-                    showAiChat = true
+                    // Conversation was deleted between onAskAi and dialog display — open new session
+                    LaunchedEffect(Unit) {
+                        showSessionChoice = false
+                        matchedConversationId = null
+                        forceNewSession = true
+                        showAiChat = true
+                    }
                 }
             }
 
