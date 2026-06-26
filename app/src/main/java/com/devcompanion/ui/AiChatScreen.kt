@@ -155,7 +155,7 @@ fun AiChatScreen(
             conversations = viewModel.listConversationMetas().size,
             isStreaming = isStreaming,
             providerType = prov?.displayName ?: "none",
-            model = prov?.currentModel ?: "none"
+            model = prov?.model ?: "none"
         )
     }
 
