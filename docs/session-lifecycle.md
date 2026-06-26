@@ -168,7 +168,7 @@ This affects URL-based session matching reliability.
 | 4 | sourceUrl becomes stale during navigation | Low | sourceUrl not updated on URL change | Saved metadata says URL A, content relates to URL B | Consider: update sourceUrl on URL change, or make it immutable |
 | 5 | ~~Two different dismiss paths with different state cleanup~~ | ~~**High**~~ | ~~onDismissRequest vs onDismiss inconsistency~~ | ~~Swipe dismiss leaves dangling state~~ | Both paths now consistent | **FIXED (959d157)** |
 | 6 | ~~onAskAi and button click use different decision trees~~ | ~~Medium~~ | ~~Code duplication without shared logic~~ | ~~Different URL matching and state management~~ | Now use ChatSessionResolver | **FIXED (ef6f10a)** |
-| 7 | `currentUrlForChat` not reset on dismiss | Low | Only re-set on button click, not on onAskAi | Stale URL if sheet reopened via onAskAi | Reset in both dismiss paths or move to ViewModel |
+| 7 | ~~`currentUrlForChat` not reset on dismiss~~ | ~~Low~~ | ~~Only re-set on button click, not on onAskAi~~ | ~~Stale URL if sheet reopened via onAskAi~~ | Reset in both dismiss paths | **FIXED (6adc770)** |
 | 8 | HalfExpanded sheet state trap | Medium | `skipPartiallyExpanded=false` allows half-open state | User stuck in liminal sheet state, no re-expand affordance | Consider `skipPartiallyExpanded=true` or add expand gesture |
 | 9 | Button click doesn't check `pendingAiQuestion` | Low | No mutual exclusion between button click and onAskAi | onAskAi-set prompt could be discarded by button tap | Guard: skip button logic if pendingAiQuestion is set |
 
@@ -178,12 +178,12 @@ When the bottom sheet is dismissed and reopened, these states persist (ViewModel
 - `conversationId`, `messages`, `_sourceUrl`, `initialPromptSent`
 
 These states reset on dismiss (composition):
-- `showAiChat`, `showSessionChoice`, `matchedConversationId`, `pendingAiQuestion`, `forceNewSession`
+- `showAiChat`, `showSessionChoice`, `matchedConversationId`, `pendingAiQuestion`, `forceNewSession`, `currentUrlForChat`
 
 **Note**: `currentUrlForChat` does NOT reset on dismiss — it's re-set on every button click or onAskAi call. Stale values persist between dismiss/reopen cycles.
 
-**Both dismiss paths now reset all composition state consistently** (fixed in 959d157).
-`currentUrlForChat` is NOT reset by either path — it's re-set on every button click.
+**Both dismiss paths now reset all composition state consistently** (fixed in 959d157, updated in 6adc770).
+`currentUrlForChat` IS now reset by both paths — set to null on dismiss.
 
 ### State at Reopen
 

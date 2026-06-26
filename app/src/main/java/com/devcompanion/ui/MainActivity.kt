@@ -365,7 +365,8 @@ fun MainApp(
                         showAiChat = false
                         pendingAiQuestion = null
                         matchedConversationId = null
-                        forceNewSession = false  // BUG FIX: was missing — swipe dismiss left forceNewSession dangling
+                        forceNewSession = false
+                        currentUrlForChat = null  // Reset stale URL on dismiss
                         SessionLog.uiNav("ai_chat", "close")
                     },
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -379,7 +380,7 @@ fun MainApp(
                         startNewConversation = forceNewSession || (matchedConversationId == null && pendingAiQuestion != null),
                         resumeConversationId = matchedConversationId,
                         sourceUrl = if (matchedConversationId == null) currentUrlForChat else null,
-                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; forceNewSession = false },
+                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; forceNewSession = false; currentUrlForChat = null },
                         modifier = Modifier.imePadding()
                     )
                 }
