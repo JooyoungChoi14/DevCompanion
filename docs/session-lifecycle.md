@@ -35,11 +35,15 @@ pendingAiQuestion: String?  — pre-filled question from onAskAi
 
 | Path | showAiChat | pendingAiQuestion | matchedConversationId | forceNewSession |
 |---|---|---|---|---|
-| **onDismissRequest** (swipe/back) | false | null | null | ⚠️ **NOT RESET** |
+| **onDismissRequest** (swipe/back) | false | null | null | **false** (reset) |
 | **onDismiss** (X button inside AiChatScreen) | false | null | null | **false** (reset) |
 
-**Bug**: Swipe dismiss leaves `forceNewSession=true` dangling. Next open skips URL matching incorrectly.
-**Fix needed**: Both paths must reset forceNewSession to false.
+**Both paths now reset all composition state consistently.** Previously, swipe dismiss did not reset
+`forceNewSession`, causing URL matching to be skipped on next open. Fixed in commit 959d157.
+
+**Note**: `currentUrlForChat` is NOT reset by either dismiss path. This is acceptable because it's
+re-set on every chat button click. However, stale URL state persists if the sheet is reopened
+via `onAskAi` without a button click.
 
 ### AiChatViewModel (ViewModel state — persists across sheet show/hide)
 
@@ -186,11 +190,12 @@ This affects URL-based session matching reliability.
 | # | Issue | Severity | Root Cause | Current Behavior | Desired Behavior |
 |---|---|---|---|---|---|
 | 1 | Wrong conversation after URL change | Medium | `hasActiveChat` priority over URL matching | Reopens last conversation regardless of current URL | Consider: check URL match even with active chat, or show conversation title |
-| 2 | `forceNewSession` not reset on swipe dismiss | **High** | onDismissRequest doesn't reset forceNewSession | Next open skips URL matching | Both dismiss paths must reset forceNewSession |
+| 2 | ~~`forceNewSession` not reset on swipe dismiss~~ | ~~**High**~~ | ~~onDismissRequest didn't reset forceNewSession~~ | ~~Next open skips URL matching~~ | Both dismiss paths now reset forceNewSession | **FIXED (959d157)** |
 | 3 | about:blank conversation blocks URL matching | Medium | `hasActiveChat=true` from auto-restore with sourceUrl=null | Button always reopens about:blank conversation | Consider: skip auto-restore when sourceUrl=null and current URL is real |
 | 4 | sourceUrl becomes stale during navigation | Low | sourceUrl not updated on URL change | Saved metadata says URL A, content relates to URL B | Consider: update sourceUrl on URL change, or make it immutable |
-| 5 | Two different dismiss paths with different state cleanup | **High** | onDismissRequest vs onDismiss inconsistency | Swipe dismiss leaves dangling state | Unify: both paths must reset all composition state |
-| 6 | onAskAi and button click use different decision trees | Medium | Code duplication without shared logic | Different URL matching and state management | Consider: extract shared logic into a single entry point |
+| 5 | ~~Two different dismiss paths with different state cleanup~~ | ~~**High**~~ | ~~onDismissRequest vs onDismiss inconsistency~~ | ~~Swipe dismiss leaves dangling state~~ | Both paths now consistent | **FIXED (959d157)** |
+| 6 | onAskAi and button click use different decision trees | Medium | Code duplication without shared logic | Different URL matching and state management | Consider: extract shared logic into ChatSessionResolver |
+| 7 | `currentUrlForChat` not reset on dismiss | Low | Only re-set on button click, not on onAskAi | Stale URL if sheet reopened via onAskAi | Reset in both dismiss paths or move to ViewModel |
 
 ## 8. State Transitions (Dismiss → Reopen)
 
@@ -198,25 +203,20 @@ When the bottom sheet is dismissed and reopened, these states persist (ViewModel
 - `conversationId`, `messages`, `_sourceUrl`, `initialPromptSent`
 
 These states reset (composition):
-- `showAiChat`, `showSessionChoice`, `matchedConversationId`, `currentUrlForChat`, `pendingAiQuestion`
+- `showAiChat`, `showSessionChoice`, `matchedConversationId`, `currentUrlForChat`, `pendingAiQuestion`, `forceNewSession`
 
-**Bug**: `forceNewSession` is ONLY reset by `onDismiss` (X button), NOT by `onDismissRequest` (swipe/back).
+**Both dismiss paths now reset all composition state consistently** (fixed in 959d157).
+`currentUrlForChat` is NOT reset by either path — it's re-set on every button click.
 
 ### State at Reopen
 
 ```
-After swipe dismiss:
+After any dismiss (swipe, back, or X button):
   showAiChat = false ✅
-  forceNewSession = (whatever it was before) ⚠️ BUG — should be false
+  forceNewSession = false ✅ (reset by both paths since 959d157)
   matchedConversationId = null ✅
   pendingAiQuestion = null ✅
-  ViewModel state: unchanged
-
-After X button dismiss:
-  showAiChat = false ✅
-  forceNewSession = false ✅
-  matchedConversationId = null ✅
-  pendingAiQuestion = null ✅
+  currentUrlForChat = (stale — re-set on next button click) ⚠️
   ViewModel state: unchanged
 ```
 
