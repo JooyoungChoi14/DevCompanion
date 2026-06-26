@@ -12,8 +12,9 @@ import com.devcompanion.logging.SessionLog
  * Eliminates the duplicated decision logic between the AI chat button click handler
  * and the onAskAi callback. All session resolution now flows through [resolve].
  *
- * Lifecycle: created per-invocation (not persisted). State is returned to the caller
- * which then sets composition state accordingly.
+ * Note: resolve() performs I/O (filesystem reads via ChatHistory) and logging.
+ * It is NOT a pure function. For testability, consider extracting the decision logic
+ * into a pure function that takes pre-resolved match results.
  *
  * See: docs/session-lifecycle.md Section 3 for the decision tree.
  */
@@ -21,9 +22,10 @@ object ChatSessionResolver {
 
     private const val TAG = "ChatSessionResolver"
 
-    /**
-     * Result of a session resolution. All fields are deterministic outputs
-     * based on the inputs — no side effects, no state mutation.
+        /**
+     * Result of a session resolution. All fields are simple data outputs
+     * based on the resolution logic. The Resolution itself has no side effects,
+     * but the resolve() function that produces it performs I/O and logging.
      */
     data class Resolution(
         /** Whether to show the AI chat sheet. */
@@ -45,8 +47,11 @@ object ChatSessionResolver {
     /**
      * Resolve which conversation/session to open for the AI chat.
      *
+     * Performs I/O: calls ChatHistory.findConversationByUrl() which reads the filesystem.
+     * Performs logging: emits UI_CLICK events via SessionLog.
+     *
      * @param url          Current browser URL (may be null if engine not ready)
-     * @param context       Android context (for ChatHistory access)
+     * @param context       Android context (for ChatHistory filesystem access)
      * @param currentConvId Currently active conversation ID in ViewModel
      * @param hasActiveChat Whether ViewModel has messages (non-empty)
      * @param hasQuestion   Whether this invocation comes with a pre-filled question (onAskAi)
@@ -59,8 +64,10 @@ object ChatSessionResolver {
         hasActiveChat: Boolean,
         hasQuestion: Boolean = false,
     ): Resolution {
-        val normalizedUrl = url?.let { ChatHistory.normalizeUrlForMatch(it) }
-        val matchedConv = url?.let { ChatHistory.findConversationByUrl(context, it) }
+        // Guard: empty string URL is not a real page
+        val effectiveUrl = if (url.isNullOrBlank()) null else url
+        val normalizedUrl = effectiveUrl?.let { ChatHistory.normalizeUrlForMatch(it) }
+        val matchedConv = effectiveUrl?.let { ChatHistory.findConversationByUrl(context, it) }
 
         // Log the resolution context
         SessionLog.log(EventType.UI_CLICK, mapOf(
