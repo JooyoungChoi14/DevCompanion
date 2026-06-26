@@ -209,44 +209,21 @@ fun MainApp(
                         )
                         IconButton(onClick = {
                             val url = engineRef?.getUrl()
-                            currentUrlForChat = url
-                            val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
-                            val normalizedUrl = url?.let { ChatHistory.normalizeUrlForMatch(it) }
-                            val matchedConv = url?.let { ChatHistory.findConversationByUrl(context, it) }
                             val currentConvId = chatViewModel.conversationId.value
-                            SessionLog.log(EventType.UI_CLICK, mapOf(
-                                "target" to "ai_chat_btn",
-                                "detail" to if (url != null) "has_url" else "no_url",
-                                "url" to (url?.take(100) ?: "null"),
-                                "normalizedUrl" to (normalizedUrl ?: "null"),
-                                "hasActiveChat" to hasActiveChat.toString(),
-                                "messagesCount" to chatViewModel.messages.value.size.toString(),
-                                "currentConvId" to (currentConvId.take(8)),
-                                "matchedConvId" to (matchedConv?.id?.take(8) ?: "null"),
-                                "matchedConvSourceUrl" to (matchedConv?.sourceUrl?.take(100) ?: "null"),
-                                "decision" to when {
-                                    hasActiveChat -> "open_existing"
-                                    url != null && normalizedUrl != null && matchedConv != null -> "resume_matched"
-                                    url != null && normalizedUrl != null -> "show_session_choice"
-                                    else -> "new_session"
-                                }
-                            ))
-                            // If there's an active conversation, reopen it directly (no dialog)
-                            if (hasActiveChat) {
-                                showAiChat = true
-                            } else if (url != null && normalizedUrl != null && matchedConv != null) {
-                                // URL matches an existing conversation — resume directly
-                                matchedConversationId = matchedConv.id
-                                showAiChat = true
-                            } else if (url != null && normalizedUrl != null) {
-                                // Real URL but no matching conversation — show session choice dialog
-                                // (user might want to create a new conversation for this URL)
-                                showSessionChoice = true
-                            } else {
-                                // about:blank, chrome://, etc. — always new session
-                                forceNewSession = true
-                                showAiChat = true
-                            }
+                            val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                            val resolution = ChatSessionResolver.resolve(
+                                url = url,
+                                context = context,
+                                currentConvId = currentConvId,
+                                hasActiveChat = hasActiveChat,
+                                hasQuestion = false,
+                            )
+                            // Apply resolution to composition state
+                            showAiChat = resolution.showAiChat
+                            showSessionChoice = resolution.showSessionChoice
+                            matchedConversationId = resolution.matchedConversationId
+                            forceNewSession = resolution.forceNewSession
+                            currentUrlForChat = resolution.url
                         }) {
                             Icon(
                                 Icons.Default.SmartToy,
@@ -298,28 +275,23 @@ fun MainApp(
                     onEngineCreated?.invoke(engine)
                 },
                 onAskAi = { question ->
-                    pendingAiQuestion = question
                     val url = engineRef?.getUrl()
-                    currentUrlForChat = url
                     val currentConvId = chatViewModel.conversationId.value
-                    val matched = url?.let { ChatHistory.findConversationByUrl(context, it) }
-                    SessionLog.log(EventType.UI_CLICK, mapOf(
-                        "target" to "on_ask_ai",
-                        "detail" to if (question.length > 50) question.take(50) + "..." else question,
-                        "url" to (url?.take(100) ?: "null"),
-                        "currentConvId" to currentConvId.take(8),
-                        "matchedConvId" to (matched?.id?.take(8) ?: "null"),
-                        "decision" to if (matched != null && matched.id != currentConvId) "show_session_choice" else if (matched != null) "open_current" else "new_session"
-                    ))
-                    if (matched != null && matched.id != currentConvId) {
-                        // URL has a matching conversation that isn't currently active → ask user
-                        matchedConversationId = matched.id
-                        showSessionChoice = true
-                    } else {
-                        // No match, or already in the matching conversation → open directly
-                        forceNewSession = (matched == null)
-                        showAiChat = true
-                    }
+                    val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                    val resolution = ChatSessionResolver.resolve(
+                        url = url,
+                        context = context,
+                        currentConvId = currentConvId,
+                        hasActiveChat = hasActiveChat,
+                        hasQuestion = true,
+                    )
+                    // Apply resolution to composition state
+                    showAiChat = resolution.showAiChat
+                    showSessionChoice = resolution.showSessionChoice
+                    matchedConversationId = resolution.matchedConversationId
+                    forceNewSession = resolution.forceNewSession
+                    currentUrlForChat = resolution.url
+                    pendingAiQuestion = question
                 }
             )
 
