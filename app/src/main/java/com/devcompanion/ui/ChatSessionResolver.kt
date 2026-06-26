@@ -22,7 +22,7 @@ object ChatSessionResolver {
 
     private const val TAG = "ChatSessionResolver"
 
-        /**
+    /**
      * Result of a session resolution. All fields are simple data outputs
      * based on the resolution logic. The Resolution itself has no side effects,
      * but the resolve() function that produces it performs I/O and logging.
@@ -50,11 +50,12 @@ object ChatSessionResolver {
      * Performs I/O: calls ChatHistory.findConversationByUrl() which reads the filesystem.
      * Performs logging: emits UI_CLICK events via SessionLog.
      *
-     * @param url          Current browser URL (may be null if engine not ready)
-     * @param context       Android context (for ChatHistory filesystem access)
-     * @param currentConvId Currently active conversation ID in ViewModel
-     * @param hasActiveChat Whether ViewModel has messages (non-empty)
-     * @param hasQuestion   Whether this invocation comes with a pre-filled question (onAskAi)
+     * @param url               Current browser URL (may be null if engine not ready)
+     * @param context            Android context (for ChatHistory filesystem access)
+     * @param currentConvId      Currently active conversation ID in ViewModel
+     * @param hasActiveChat      Whether ViewModel has messages (non-empty)
+     * @param hasQuestion        Whether this invocation comes with a pre-filled question (onAskAi)
+     * @param currentSourceUrl   The sourceUrl of the current conversation (null if about:blank/no conv)
      * @return Resolution determining what to show and which session to use
      */
     fun resolve(
@@ -63,22 +64,35 @@ object ChatSessionResolver {
         currentConvId: String,
         hasActiveChat: Boolean,
         hasQuestion: Boolean = false,
+        currentSourceUrl: String? = null,
     ): Resolution {
         // Guard: empty string URL is not a real page
         val effectiveUrl = if (url.isNullOrBlank()) null else url
         val normalizedUrl = effectiveUrl?.let { ChatHistory.normalizeUrlForMatch(it) }
         val matchedConv = effectiveUrl?.let { ChatHistory.findConversationByUrl(context, it) }
 
+        // Determine if the current conversation's URL matches the browser URL.
+        // If hasActiveChat but sourceUrl doesn't match, we should check URL matching
+        // instead of blindly reopening the current conversation.
+        val currentSourceMatchesBrowser = if (hasActiveChat && currentSourceUrl != null) {
+            ChatHistory.normalizeUrlForMatch(currentSourceUrl) == normalizedUrl
+        } else {
+            // No active chat, or sourceUrl is null (about:blank conversation)
+            false
+        }
+
         // Log the resolution context
         SessionLog.log(EventType.UI_CLICK, mapOf(
             "target" to if (hasQuestion) "on_ask_ai" else "ai_chat_btn",
-            "detail" to if (url != null) "has_url" else "no_url",
-            "url" to (url?.take(100) ?: "null"),
+            "detail" to if (effectiveUrl != null) "has_url" else "no_url",
+            "url" to (effectiveUrl?.take(100) ?: "null"),
             "normalizedUrl" to (normalizedUrl ?: "null"),
             "hasActiveChat" to hasActiveChat.toString(),
             "currentConvId" to currentConvId.take(8),
             "matchedConvId" to (matchedConv?.id?.take(8) ?: "null"),
             "matchedConvSourceUrl" to (matchedConv?.sourceUrl?.take(100) ?: "null"),
+            "currentSourceUrl" to (currentSourceUrl?.take(100) ?: "null"),
+            "currentSourceMatchesBrowser" to currentSourceMatchesBrowser.toString(),
             "decision" to ""  // filled below
         ))
 
@@ -86,10 +100,11 @@ object ChatSessionResolver {
         val result: Resolution
 
         when {
-            // Path 1: Active conversation exists — reopen it directly
-            // This takes priority over URL matching for quick resume.
-            // Note: this means URL mismatch is invisible to the user.
-            hasActiveChat && !hasQuestion -> {
+            // Path 1: Active conversation with matching URL — reopen directly
+            // This is the quick-resume path when the user is on the same page.
+            // If hasActiveChat but sourceUrl doesn't match, we fall through to URL matching.
+            // If sourceUrl is null (about:blank conversation), we also fall through.
+            hasActiveChat && !hasQuestion && currentSourceMatchesBrowser -> {
                 decision = "open_existing"
                 result = Resolution(
                     showAiChat = true,
@@ -190,15 +205,16 @@ object ChatSessionResolver {
         SessionLog.log(EventType.UI_CLICK, mapOf(
             "target" to if (hasQuestion) "on_ask_ai_resolve" else "ai_chat_btn_resolve",
             "decision" to result.decision,
-            "url" to (url?.take(100) ?: "null"),
+            "url" to (effectiveUrl?.take(100) ?: "null"),
             "normalizedUrl" to (normalizedUrl ?: "null"),
             "hasActiveChat" to hasActiveChat.toString(),
             "currentConvId" to currentConvId.take(8),
             "matchedConvId" to (matchedConv?.id?.take(8) ?: "null"),
         ))
 
-        Log.d(TAG, "resolve: decision=${result.decision}, url=${url?.take(50)}, " +
+        Log.d(TAG, "resolve: decision=${result.decision}, url=${effectiveUrl?.take(50)}, " +
                 "hasActiveChat=$hasActiveChat, hasQuestion=$hasQuestion, " +
+                "currentSourceMatchesBrowser=$currentSourceMatchesBrowser, " +
                 "matchedConvId=${result.matchedConversationId?.take(8)}")
 
         return result

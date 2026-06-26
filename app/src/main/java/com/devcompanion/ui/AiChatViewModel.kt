@@ -85,6 +85,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private val _conversationId = MutableStateFlow(ChatHistory.newConversationId())
     val conversationId: StateFlow<String> = _conversationId.asStateFlow()
     private var _sourceUrl: String? = null
+    val sourceUrl: String? get() = _sourceUrl
 
     fun loadConversation(conversationId: String) {
         // If loading a different conversation while agent loop is running, stop it first

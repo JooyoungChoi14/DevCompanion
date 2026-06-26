@@ -211,12 +211,14 @@ fun MainApp(
                             val url = engineRef?.getUrl()
                             val currentConvId = chatViewModel.conversationId.value
                             val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                            val currentSourceUrl = chatViewModel.sourceUrl
                             val resolution = ChatSessionResolver.resolve(
                                 url = url,
                                 context = context,
                                 currentConvId = currentConvId,
                                 hasActiveChat = hasActiveChat,
                                 hasQuestion = false,
+                                currentSourceUrl = currentSourceUrl,
                             )
                             // Apply resolution to composition state
                             showAiChat = resolution.showAiChat
@@ -278,12 +280,14 @@ fun MainApp(
                     val url = engineRef?.getUrl()
                     val currentConvId = chatViewModel.conversationId.value
                     val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                    val currentSourceUrl = chatViewModel.sourceUrl
                     val resolution = ChatSessionResolver.resolve(
                         url = url,
                         context = context,
                         currentConvId = currentConvId,
                         hasActiveChat = hasActiveChat,
                         hasQuestion = true,
+                        currentSourceUrl = currentSourceUrl,
                     )
                     // Apply resolution to composition state
                     showAiChat = resolution.showAiChat

@@ -67,10 +67,12 @@ Both the AI chat button click and `onAskAi` callback use the same
 differentiates the two entry points.
 
 ```
-ChatSessionResolver.resolve(url, context, currentConvId, hasActiveChat, hasQuestion)
+ChatSessionResolver.resolve(url, context, currentConvId, hasActiveChat, hasQuestion, currentSourceUrl)
 │
-├─ Path 1: hasActiveChat && !hasQuestion
-│   → open_existing: showAiChat=true (reopen current conversation, skip URL matching)
+├─ Path 1: hasActiveChat && !hasQuestion && currentSourceMatchesBrowser
+│   → open_existing: showAiChat=true (reopen current conversation)
+│   currentSourceMatchesBrowser = normalizeUrlForMatch(currentSourceUrl) == normalizeUrlForMatch(url)
+│   If sourceUrl is null (about:blank conversation), falls through to Path 2+
 │
 ├─ Path 2: matchedConv != null && matchedConv.id != currentConvId
 │   → hasQuestion? show_session_choice : resume_matched
@@ -83,15 +85,20 @@ ChatSessionResolver.resolve(url, context, currentConvId, hasActiveChat, hasQuest
 │   → hasQuestion? new_session : show_session_choice
 │     (onAskAi opens directly, button click shows dialog)
 │
-└─ Path 5: else (about:blank, chrome://, null URL)
+└─ Path 5: else (about:blank, chrome://, null URL, empty string)
     → new_session: forceNewSession=true, showAiChat=true
 ```
 
-**Key difference between hasQuestion=true and hasQuestion=false:**
-- `hasQuestion=false` (button click): Path 1 short-circuits (hasActiveChat wins)
-- `hasQuestion=true` (onAskAi): Path 1 is skipped (always goes through URL matching)
-- Path 2 and 4: `hasQuestion=true` avoids dialogs when possible (direct open)
-- Path 4: `hasQuestion=true` opens new session directly without dialog
+**Key design decisions:**
+- **Path 1 now requires currentSourceMatchesBrowser**: If hasActiveChat is true but the
+  current conversation's sourceUrl doesn't match the browser URL, we fall through to URL
+  matching. This fixes issue #1 (wrong conversation after URL change) and #3 (about:blank
+  conversation blocking URL matching).
+- **about:blank conversations have null sourceUrl**: currentSourceMatchesBrowser is false
+  when sourceUrl is null, so about:blank conversations always fall through to Path 2+.
+- **hasQuestion=true skips Path 1**: onAskAi always goes through URL matching, regardless of
+  hasActiveChat. This is intentional — onAskAi is a contextual action tied to the current page.
+- **Path 2 and 4**: hasQuestion=true avoids dialogs when possible (direct open).
 
 ## 4. URL Normalization Rules (`normalizeUrlForMatch`)
 
@@ -155,9 +162,9 @@ This affects URL-based session matching reliability.
 
 | # | Issue | Severity | Root Cause | Current Behavior | Desired Behavior |
 |---|---|---|---|---|---|
-| 1 | Wrong conversation after URL change | Medium | `hasActiveChat` priority over URL matching | Reopens last conversation regardless of current URL | Consider: check URL match even with active chat, or show conversation title |
+| 1 | ~~Wrong conversation after URL change~~ | ~~Medium~~ | ~~`hasActiveChat` priority over URL matching~~ | ~~Reopens last conversation regardless of current URL~~ | Path 1 now requires currentSourceMatchesBrowser | **FIXED (f281039)** |
 | 2 | ~~`forceNewSession` not reset on swipe dismiss~~ | ~~**High**~~ | ~~onDismissRequest didn't reset forceNewSession~~ | ~~Next open skips URL matching~~ | Both dismiss paths now reset forceNewSession | **FIXED (959d157)** |
-| 3 | about:blank conversation blocks URL matching | Medium | `hasActiveChat=true` from auto-restore with sourceUrl=null | Button always reopens about:blank conversation | Consider: skip auto-restore when sourceUrl=null and current URL is real |
+| 3 | ~~about:blank conversation blocks URL matching~~ | ~~Medium~~ | ~~`hasActiveChat=true` from auto-restore with sourceUrl=null~~ | ~~Button always reopens about:blank conversation~~ | sourceUrl=null always falls through to Path 2+ | **FIXED (f281039)** |
 | 4 | sourceUrl becomes stale during navigation | Low | sourceUrl not updated on URL change | Saved metadata says URL A, content relates to URL B | Consider: update sourceUrl on URL change, or make it immutable |
 | 5 | ~~Two different dismiss paths with different state cleanup~~ | ~~**High**~~ | ~~onDismissRequest vs onDismiss inconsistency~~ | ~~Swipe dismiss leaves dangling state~~ | Both paths now consistent | **FIXED (959d157)** |
 | 6 | ~~onAskAi and button click use different decision trees~~ | ~~Medium~~ | ~~Code duplication without shared logic~~ | ~~Different URL matching and state management~~ | Now use ChatSessionResolver | **FIXED (ef6f10a)** |
