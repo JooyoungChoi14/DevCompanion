@@ -147,6 +147,18 @@ fun AiChatScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Log UI data snapshot on chat entry and conversation change
+    LaunchedEffect(conversationId) {
+        val prov = provider
+        SessionLog.uiDataSnapshot(
+            messages = messages.size,
+            conversations = viewModel.listConversationMetas().size,
+            isStreaming = isStreaming,
+            providerType = prov?.displayName ?: "none",
+            model = prov?.currentModel ?: "none"
+        )
+    }
+
     // Scroll to bottom on conversation change (initial load, resume, switch)
     // Uses instant scroll to avoid distracting animation on entry.
     LaunchedEffect(conversationId) {

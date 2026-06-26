@@ -210,13 +210,37 @@ fun MainApp(
                         IconButton(onClick = {
                             val url = engineRef?.getUrl()
                             currentUrlForChat = url
-                            SessionLog.uiClick("ai_chat_btn", if (url != null) "has_url" else "no_url")
-                            // If there's an active conversation, reopen it directly (no dialog)
                             val hasActiveChat = chatViewModel.messages.value.isNotEmpty()
+                            val normalizedUrl = url?.let { ChatHistory.normalizeUrlForMatch(it) }
+                            val matchedConv = url?.let { ChatHistory.findConversationByUrl(context, it) }
+                            val currentConvId = chatViewModel.conversationId.value
+                            SessionLog.log(EventType.UI_CLICK, mapOf(
+                                "target" to "ai_chat_btn",
+                                "detail" to if (url != null) "has_url" else "no_url",
+                                "url" to (url?.take(100) ?: "null"),
+                                "normalizedUrl" to (normalizedUrl ?: "null"),
+                                "hasActiveChat" to hasActiveChat.toString(),
+                                "messagesCount" to chatViewModel.messages.value.size.toString(),
+                                "currentConvId" to (currentConvId.take(8)),
+                                "matchedConvId" to (matchedConv?.id?.take(8) ?: "null"),
+                                "matchedConvSourceUrl" to (matchedConv?.sourceUrl?.take(100) ?: "null"),
+                                "decision" to when {
+                                    hasActiveChat -> "open_existing"
+                                    url != null && normalizedUrl != null && matchedConv != null -> "resume_matched"
+                                    url != null && normalizedUrl != null -> "show_session_choice"
+                                    else -> "new_session"
+                                }
+                            ))
+                            // If there's an active conversation, reopen it directly (no dialog)
                             if (hasActiveChat) {
                                 showAiChat = true
-                            } else if (url != null && ChatHistory.normalizeUrlForMatch(url) != null) {
-                                // Real URL but no active chat — show session choice dialog
+                            } else if (url != null && normalizedUrl != null && matchedConv != null) {
+                                // URL matches an existing conversation — resume directly
+                                matchedConversationId = matchedConv.id
+                                showAiChat = true
+                            } else if (url != null && normalizedUrl != null) {
+                                // Real URL but no matching conversation — show session choice dialog
+                                // (user might want to create a new conversation for this URL)
                                 showSessionChoice = true
                             } else {
                                 // about:blank, chrome://, etc. — always new session
@@ -337,13 +361,16 @@ fun MainApp(
                         }
                     )
                 } else {
-                    // Conversation was deleted between onAskAi and dialog display — open new session
-                    LaunchedEffect(Unit) {
-                        showSessionChoice = false
-                        matchedConversationId = null
-                        forceNewSession = true
-                        showAiChat = true
-                    }
+                    // No matched conversation found (URL doesn't match any saved session)
+                    // Set state immediately — no LaunchedEffect delay that causes open→close flicker
+                    forceNewSession = true
+                    matchedConversationId = null
+                    showSessionChoice = false
+                    showAiChat = true
+                    SessionLog.log(EventType.UI_CLICK, mapOf(
+                        "target" to "session_choice_fallback",
+                        "detail" to "no_match_open_new"
+                    ))
                 }
             }
 

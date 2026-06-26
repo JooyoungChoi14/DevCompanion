@@ -212,11 +212,11 @@ object ChatHistory {
 
     /**
      * Normalize URL for matching: extract scheme+host+path (no query/fragment).
-     * Returns "about:blank" for about:blank URLs.
-     * Returns null for chrome://, data:, and other non-http schemes.
+     * Returns null for about:blank, chrome://, data:, and other non-http schemes.
+     * about:blank is not a meaningful URL for session matching.
      */
     fun normalizeUrlForMatch(url: String): String? {
-        if (url == "about:blank") return "about:blank"
+        if (url == "about:blank") return null
         return try {
             val uri = java.net.URI(url)
             val scheme = uri.scheme ?: return null
