@@ -303,6 +303,14 @@ fun MainApp(
                     currentUrlForChat = url
                     val currentConvId = chatViewModel.conversationId.value
                     val matched = url?.let { ChatHistory.findConversationByUrl(context, it) }
+                    SessionLog.log(EventType.UI_CLICK, mapOf(
+                        "target" to "on_ask_ai",
+                        "detail" to if (question.length > 50) question.take(50) + "..." else question,
+                        "url" to (url?.take(100) ?: "null"),
+                        "currentConvId" to currentConvId.take(8),
+                        "matchedConvId" to (matched?.id?.take(8) ?: "null"),
+                        "decision" to if (matched != null && matched.id != currentConvId) "show_session_choice" else if (matched != null) "open_current" else "new_session"
+                    ))
                     if (matched != null && matched.id != currentConvId) {
                         // URL has a matching conversation that isn't currently active → ask user
                         matchedConversationId = matched.id
@@ -377,7 +385,13 @@ fun MainApp(
             // AI Chat as bottom sheet — browser engine stays visible behind
             if (showAiChat) {
                 ModalBottomSheet(
-                    onDismissRequest = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; SessionLog.uiNav("ai_chat", "close") },
+                    onDismissRequest = {
+                        showAiChat = false
+                        pendingAiQuestion = null
+                        matchedConversationId = null
+                        forceNewSession = false  // BUG FIX: was missing — swipe dismiss left forceNewSession dangling
+                        SessionLog.uiNav("ai_chat", "close")
+                    },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
                         skipPartiallyExpanded = false
