@@ -60,72 +60,38 @@ This means UI cannot reactively respond to sourceUrl changes.
 
 ## 3. Chat Entry Decision Trees
 
-### 3A. AI Chat Button Click (direct user tap)
+### 3A. Single Entry Point: ChatSessionResolver.resolve()
+
+Both the AI chat button click and `onAskAi` callback use the same
+`ChatSessionResolver.resolve()` function. The `hasQuestion` parameter
+differentiates the two entry points.
 
 ```
-AI Chat Button Click
+ChatSessionResolver.resolve(url, context, currentConvId, hasActiveChat, hasQuestion)
 │
-├─ url = engine.getUrl()
-├─ normalizedUrl = normalizeUrlForMatch(url)
-├─ matchedConv = findConversationByUrl(url)
-├─ hasActiveChat = messages.isNotEmpty()
+├─ Path 1: hasActiveChat && !hasQuestion
+│   → open_existing: showAiChat=true (reopen current conversation, skip URL matching)
 │
-├─ hasActiveChat? ─── YES ──→ showAiChat = true
-│                              (reopen current conversation, IGNORE current URL)
-│                              ⚠️ This means URL mismatch is invisible to user
+├─ Path 2: matchedConv != null && matchedConv.id != currentConvId
+│   → hasQuestion? show_session_choice : resume_matched
+│     (onAskAi shows dialog, button click resumes directly)
 │
-├─ matchedConv != null? ─── YES ──→ matchedConversationId = matchedConv.id
-│                                     showAiChat = true
-│                                     (resume URL-matched conversation)
+├─ Path 3: matchedConv != null && matchedConv.id == currentConvId
+│   → open_current: showAiChat=true (already in the right conversation)
 │
-├─ normalizedUrl != null? ─── YES ──→ showSessionChoice = true
-│                                       (real URL, no match — ask user)
+├─ Path 4: normalizedUrl != null && matchedConv == null
+│   → hasQuestion? new_session : show_session_choice
+│     (onAskAi opens directly, button click shows dialog)
 │
-└─ else ──→ forceNewSession = true
-             showAiChat = true
-             (about:blank, chrome://, etc. — new session)
+└─ Path 5: else (about:blank, chrome://, null URL)
+    → new_session: forceNewSession=true, showAiChat=true
 ```
 
-**Design note**: `hasActiveChat` takes priority over URL matching. This is intentional for quick resume,
-but means navigating to a new URL while an old conversation is active will reopen the old conversation.
-See Section 7 for known issues.
-
-### 3B. onAskAi (browser-to-chat bridge, e.g. BridgeServer)
-
-```
-onAskAi(question)
-│
-├─ url = engineRef?.getUrl()
-├─ currentConvId = chatViewModel.conversationId.value
-├─ matched = findConversationByUrl(url)
-│
-├─ matched != null && matched.id != currentConvId? ── YES ──→ matchedConversationId = matched.id
-│                                                            showSessionChoice = true
-│                                                            pendingAiQuestion = question
-│
-└─ else ──→ forceNewSession = (matched == null)
-             showAiChat = true
-             pendingAiQuestion = question
-```
-
-**Key difference from button click**: onAskAi checks `matched.id != currentConvId` (avoids re-opening
-same conversation), and does NOT check `hasActiveChat`. It also sets `pendingAiQuestion` which the
-button click does not.
-
-### 3C. Session Choice Dialog (triggered by 3A or 3B)
-
-```
-showSessionChoice == true
-│
-├─ matched != null? ─── YES ──→ AlertDialog with:
-│   "Resume"  → showSessionChoice = false, showAiChat = true
-│   "New"     → showSessionChoice = false, matchedConversationId = null,
-│               forceNewSession = true, showAiChat = true
-│
-└─ matched == null ──→ forceNewSession = true, matchedConversationId = null,
-                        showSessionChoice = false, showAiChat = true
-                        (immediate — no LaunchedEffect delay)
-```
+**Key difference between hasQuestion=true and hasQuestion=false:**
+- `hasQuestion=false` (button click): Path 1 short-circuits (hasActiveChat wins)
+- `hasQuestion=true` (onAskAi): Path 1 is skipped (always goes through URL matching)
+- Path 2 and 4: `hasQuestion=true` avoids dialogs when possible (direct open)
+- Path 4: `hasQuestion=true` opens new session directly without dialog
 
 ## 4. URL Normalization Rules (`normalizeUrlForMatch`)
 
@@ -194,7 +160,7 @@ This affects URL-based session matching reliability.
 | 3 | about:blank conversation blocks URL matching | Medium | `hasActiveChat=true` from auto-restore with sourceUrl=null | Button always reopens about:blank conversation | Consider: skip auto-restore when sourceUrl=null and current URL is real |
 | 4 | sourceUrl becomes stale during navigation | Low | sourceUrl not updated on URL change | Saved metadata says URL A, content relates to URL B | Consider: update sourceUrl on URL change, or make it immutable |
 | 5 | ~~Two different dismiss paths with different state cleanup~~ | ~~**High**~~ | ~~onDismissRequest vs onDismiss inconsistency~~ | ~~Swipe dismiss leaves dangling state~~ | Both paths now consistent | **FIXED (959d157)** |
-| 6 | onAskAi and button click use different decision trees | Medium | Code duplication without shared logic | Different URL matching and state management | Consider: extract shared logic into ChatSessionResolver |
+| 6 | ~~onAskAi and button click use different decision trees~~ | ~~Medium~~ | ~~Code duplication without shared logic~~ | ~~Different URL matching and state management~~ | Now use ChatSessionResolver | **FIXED (ef6f10a)** |
 | 7 | `currentUrlForChat` not reset on dismiss | Low | Only re-set on button click, not on onAskAi | Stale URL if sheet reopened via onAskAi | Reset in both dismiss paths or move to ViewModel |
 | 8 | HalfExpanded sheet state trap | Medium | `skipPartiallyExpanded=false` allows half-open state | User stuck in liminal sheet state, no re-expand affordance | Consider `skipPartiallyExpanded=true` or add expand gesture |
 | 9 | Button click doesn't check `pendingAiQuestion` | Low | No mutual exclusion between button click and onAskAi | onAskAi-set prompt could be discarded by button tap | Guard: skip button logic if pendingAiQuestion is set |
@@ -241,7 +207,19 @@ matchedConvSourceUrl: URL of matched conversation (or "null")
 decision: "open_existing" | "resume_matched" | "show_session_choice" | "new_session"
 ```
 
-### onAskAi Call → (currently not logged — TODO)
+### onAskAi Call → `UI_CLICK` event
+
+```
+target: "on_ask_ai_resolve"
+decision: "show_session_choice" | "open_current" | "new_session"
+url: current browser URL (truncated to 100 chars, or "null")
+normalizedUrl: result of normalizeUrlForMatch (or "null")
+hasActiveChat: messages.isNotEmpty()
+currentConvId: first 8 chars of conversationId
+matchedConvId: first 8 chars of matched conversation ID (or "null")
+```
+
+(Logged inside ChatSessionResolver.resolve() along with the button click resolution)
 
 ### Chat Screen Entry → `UI_DATA_SNAPSHOT` event
 
