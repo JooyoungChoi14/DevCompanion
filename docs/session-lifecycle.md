@@ -169,7 +169,7 @@ This affects URL-based session matching reliability.
 | 5 | ~~Two different dismiss paths with different state cleanup~~ | ~~**High**~~ | ~~onDismissRequest vs onDismiss inconsistency~~ | ~~Swipe dismiss leaves dangling state~~ | Both paths now consistent | **FIXED (959d157)** |
 | 6 | ~~onAskAi and button click use different decision trees~~ | ~~Medium~~ | ~~Code duplication without shared logic~~ | ~~Different URL matching and state management~~ | Now use ChatSessionResolver | **FIXED (ef6f10a)** |
 | 7 | ~~`currentUrlForChat` not reset on dismiss~~ | ~~Low~~ | ~~Only re-set on button click, not on onAskAi~~ | ~~Stale URL if sheet reopened via onAskAi~~ | Reset in both dismiss paths | **FIXED (6adc770)** |
-| 8 | HalfExpanded sheet state trap | Medium | `skipPartiallyExpanded=false` allows half-open state | User stuck in liminal sheet state, no re-expand affordance | Consider `skipPartiallyExpanded=true` or add expand gesture |
+| 8 | ~~HalfExpanded sheet state trap~~ | ~~Medium~~ | ~~`skipPartiallyExpanded=false` allows half-open state~~ | ~~User stuck in liminal sheet state, no re-expand affordance~~ | `skipPartiallyExpanded=true` forces full expand | **FIXED** |
 | 9 | Button click doesn't check `pendingAiQuestion` | Low | No mutual exclusion between button click and onAskAi | onAskAi-set prompt could be discarded by button tap | Guard: skip button logic if pendingAiQuestion is set |
 
 ## 8. State Transitions (Dismiss → Reopen)

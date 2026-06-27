@@ -371,7 +371,7 @@ fun MainApp(
                     },
                     containerColor = MaterialTheme.colorScheme.surface,
                     sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = false
+                        skipPartiallyExpanded = true
                     ),
                 ) {
                     AiChatScreen(
