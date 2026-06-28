@@ -45,6 +45,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
@@ -358,21 +361,24 @@ fun MainApp(
                 }
             }
 
-            // AI Chat as bottom sheet — browser engine stays visible behind
+            // AI Chat as draggable overlay — browser stays visible behind, user can resize
             if (showAiChat) {
-                ModalBottomSheet(
-                    onDismissRequest = {
+                var chatFraction by remember { mutableFloatStateOf(UiPreferences.chatSheetFraction) }
+
+                DraggableChatOverlay(
+                    fraction = chatFraction,
+                    onFractionChange = { newFraction ->
+                        chatFraction = newFraction
+                        UiPreferences.chatSheetFraction = newFraction
+                    },
+                    onDismiss = {
                         showAiChat = false
                         pendingAiQuestion = null
                         matchedConversationId = null
                         forceNewSession = false
-                        currentUrlForChat = null  // Reset stale URL on dismiss
+                        currentUrlForChat = null
                         SessionLog.uiNav("ai_chat", "close")
-                    },
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = true
-                    ),
+                    }
                 ) {
                     AiChatScreen(
                         engine = engineRef,
