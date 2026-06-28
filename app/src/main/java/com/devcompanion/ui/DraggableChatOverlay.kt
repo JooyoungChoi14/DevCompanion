@@ -1,11 +1,11 @@
 package com.devcompanion.ui
 
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,8 +14,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-
-private const val TAG = "DraggableChatOverlay"
+import androidx.compose.ui.unit.sp
 
 private val DragHandleHeight = 28.dp
 private val HandleIndicatorWidth = 40.dp
@@ -24,6 +23,9 @@ private val HandleTopPadding = 8.dp
 private const val MinFraction = 0.3f
 private const val MaxFraction = 0.95f
 private const val DismissFraction = 0.15f
+
+/** Debug overlay flag — remove after fixing IME gap */
+private const val DEBUG_OVERLAY = true
 
 /**
  * Draggable chat overlay that sits on top of the browser content.
@@ -51,26 +53,21 @@ fun DraggableChatOverlay(
     val density = LocalDensity.current
 
     // WindowInsets.ime.getBottom(density) returns pixels (Int).
-    // Convert: px → Dp (divide by density) → then use in calculations.
+    // When keyboard is closed, this returns 0 (or navigation bar height on some devices).
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val imeHeightDp = with(density) { imeBottomPx.toDp() }
+
+    // Also read navigation bar insets for comparison
+    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalHeightDp = maxHeight
         val totalHeightPx = with(density) { totalHeightDp.toPx() }
         val imeHeightPxCalc = with(density) { imeHeightDp.toPx() }
 
-        // Available height = screen minus keyboard. 0 when keyboard closed.
+        // Available height = screen minus keyboard only (not navigation bar).
+        // When keyboard is closed, imeHeightPxCalc should be 0 and overlay uses full height.
         val availableHeightPx = (totalHeightPx - imeHeightPxCalc).coerceAtLeast(0f)
-
-        // Log values for debugging
-        LaunchedEffect(totalHeightPx, imeHeightPxCalc) {
-            Log.d(TAG, "totalHeight=${totalHeightPx}px(${totalHeightDp}), " +
-                    "imeHeight=${imeHeightPxCalc}px(${imeHeightDp}), " +
-                    "available=${availableHeightPx}px, " +
-                    "fraction=$fraction, " +
-                    "overlayH=${availableHeightPx * fraction}px")
-        }
 
         var dragOffsetPx by remember { mutableFloatStateOf(0f) }
 
@@ -138,6 +135,23 @@ fun DraggableChatOverlay(
                     .padding(top = DragHandleHeight)
             ) {
                 content()
+            }
+        }
+
+        // Debug overlay — shows inset values directly on screen
+        if (DEBUG_OVERLAY) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .padding(top = 50.dp)
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
+            ) {
+                Text(
+                    text = "DEBUG: total=${totalHeightPx.toInt()}px ime=${imeBottomPx}px nav=${navBarBottomPx}px avail=${availableHeightPx.toInt()}px frac=$fraction overlay=${effectiveOverlayHeightPx.toInt()}px y=${yOffsetPx.toInt()}px",
+                    color = MaterialTheme.colorScheme.onError,
+                    fontSize = 11.sp
+                )
             }
         }
     }
