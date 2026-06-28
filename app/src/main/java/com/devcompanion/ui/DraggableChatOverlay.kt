@@ -1,5 +1,6 @@
 package com.devcompanion.ui
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+
+private const val TAG = "DraggableChatOverlay"
 
 private val DragHandleHeight = 28.dp
 private val HandleIndicatorWidth = 40.dp
@@ -31,23 +34,11 @@ private const val DismissFraction = 0.15f
  * - Input bar (inside AiChatScreen) is always pinned at bottom
  * - Last position is remembered across sessions via [UiPreferences]
  * - Swipe down fast / below threshold → dismiss
- * - IME-aware: when keyboard opens, overlay stays above keyboard with no gap
+ * - IME-aware: overlay shrinks to fit above keyboard, no gap
  *
- * Layout:
- * ```
- * ┌─────────────────────────────┐  ← Rounded top corners
- * │     ═══ (drag handle)       │  ← 28dp drag zone
- * ├─────────────────────────────┤
- * │     AiChatScreen content    │
- * │   (TopAppBar + messages +   │
- * │    input bar)                │
- * └─────────────────────────────┘  ← Bottom aligns to keyboard top
- * ```
- *
- * IME strategy: The outer Box fills the entire screen (including behind keyboard).
- * We manually read IME height and position the overlay at the bottom of the
- * available area (screen - IME). This avoids the gap that imePadding() causes
- * when combined with fillMaxHeight inside BoxWithConstraints.
+ * IME strategy: Read WindowInsets.ime directly. Compute overlay height as
+ * fraction of (screen - keyboard). Position with height+offset so bottom
+ * aligns exactly to keyboard top.
  */
 @Composable
 fun DraggableChatOverlay(
@@ -59,27 +50,34 @@ fun DraggableChatOverlay(
 ) {
     val density = LocalDensity.current
 
-    // Read IME inset to know where the keyboard starts.
-    // When keyboard is closed, this is 0.
-    val imeBottomPx = with(density) {
-        WindowInsets.ime.getBottom(density).toFloat()
-    }
+    // WindowInsets.ime.getBottom(density) returns pixels (Int).
+    // Convert: px → Dp (divide by density) → then use in calculations.
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val imeHeightDp = with(density) { imeBottomPx.toDp() }
 
-    // BoxWithConstraints WITHOUT imePadding — we handle IME manually.
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val totalHeightPx = with(density) { maxHeight.toPx() }
-        // Available height = total screen height minus keyboard height
-        val availableHeightPx = (totalHeightPx - imeBottomPx).coerceAtLeast(0f)
+        val totalHeightDp = maxHeight
+        val totalHeightPx = with(density) { totalHeightDp.toPx() }
+        val imeHeightPxCalc = with(density) { imeHeightDp.toPx() }
 
-        // Drag offset: positive = finger moving down = decrease overlay height
+        // Available height = screen minus keyboard. 0 when keyboard closed.
+        val availableHeightPx = (totalHeightPx - imeHeightPxCalc).coerceAtLeast(0f)
+
+        // Log values for debugging
+        LaunchedEffect(totalHeightPx, imeHeightPxCalc) {
+            Log.d(TAG, "totalHeight=${totalHeightPx}px(${totalHeightDp}), " +
+                    "imeHeight=${imeHeightPxCalc}px(${imeHeightDp}), " +
+                    "available=${availableHeightPx}px, " +
+                    "fraction=$fraction, " +
+                    "overlayH=${availableHeightPx * fraction}px")
+        }
+
         var dragOffsetPx by remember { mutableFloatStateOf(0f) }
 
-        // Overlay height = fraction of AVAILABLE space (above keyboard)
         val baseOverlayHeightPx = availableHeightPx * fraction
         val effectiveOverlayHeightPx = (baseOverlayHeightPx - dragOffsetPx)
             .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
 
-        // Y offset from top of screen: places overlay at bottom of available area
         val yOffsetPx = availableHeightPx - effectiveOverlayHeightPx
 
         val overlayHeightDp = with(density) { effectiveOverlayHeightPx.toDp() }
@@ -94,7 +92,6 @@ fun DraggableChatOverlay(
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .background(MaterialTheme.colorScheme.surface)
         ) {
-            // Drag handle zone at the top
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -116,9 +113,7 @@ fun DraggableChatOverlay(
                                 }
                                 dragOffsetPx = 0f
                             },
-                            onDragCancel = {
-                                dragOffsetPx = 0f
-                            },
+                            onDragCancel = { dragOffsetPx = 0f },
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 dragOffsetPx += dragAmount
@@ -127,7 +122,6 @@ fun DraggableChatOverlay(
                     },
                 contentAlignment = Alignment.TopCenter
             ) {
-                // Visual drag indicator pill
                 Box(
                     modifier = Modifier
                         .padding(top = HandleTopPadding)
@@ -138,7 +132,6 @@ fun DraggableChatOverlay(
                 )
             }
 
-            // Chat content below the drag handle
             Box(
                 modifier = Modifier
                     .fillMaxSize()
