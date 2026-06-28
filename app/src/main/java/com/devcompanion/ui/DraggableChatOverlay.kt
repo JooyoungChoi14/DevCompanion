@@ -31,7 +31,7 @@ private val DismissFraction = 0.15f
  * - Input bar (inside AiChatScreen) is always pinned at bottom
  * - Last position is remembered across sessions via [UiPreferences]
  * - Swipe down fast / below threshold → dismiss
- * - IME-aware: overlay resizes when soft keyboard opens so input stays visible
+ * - IME-aware: overlay shrinks when keyboard opens so input stays visible
  *
  * Layout:
  * ```
@@ -41,7 +41,7 @@ private val DismissFraction = 0.15f
  * │     AiChatScreen content    │
  * │   (TopAppBar + messages +   │
  * │    input bar)                │
- * └─────────────────────────────┘  ← Bottom of screen
+ * └─────────────────────────────┘  ← Bottom of screen / above keyboard
  * ```
  */
 @Composable
@@ -54,8 +54,9 @@ fun DraggableChatOverlay(
 ) {
     val density = LocalDensity.current
 
-    // Use imePadding so BoxWithConstraints respects keyboard height
-    BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
+    // BoxWithConstraints uses full screen height (no imePadding here).
+    // The inner overlay Box gets imePadding so it sits above the keyboard.
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalHeightPx = with(density) { maxHeight.toPx() }
 
         // Drag offset: positive = finger moving down = decrease overlay height
@@ -72,6 +73,7 @@ fun DraggableChatOverlay(
                 .fillMaxWidth()
                 .fillMaxHeight(fraction = effectiveFraction)
                 .align(Alignment.BottomCenter)
+                .imePadding()  // Overlay shrinks to sit above keyboard
                 .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .background(MaterialTheme.colorScheme.surface)
