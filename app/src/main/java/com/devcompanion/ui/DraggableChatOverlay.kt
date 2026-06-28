@@ -31,7 +31,7 @@ private const val DismissFraction = 0.15f
  * - Input bar (inside AiChatScreen) is always pinned at bottom
  * - Last position is remembered across sessions via [UiPreferences]
  * - Swipe down fast / below threshold → dismiss
- * - IME-aware: overlay bottom aligns to top of soft keyboard
+ * - IME-aware: overlay shrinks when keyboard opens
  *
  * Layout:
  * ```
@@ -41,8 +41,15 @@ private const val DismissFraction = 0.15f
  * │     AiChatScreen content    │
  * │   (TopAppBar + messages +   │
  * │    input bar)                │
- * └─────────────────────────────┘  ← Bottom aligns to keyboard top
+ * └─────────────────────────────┘  ← Bottom of available space (above keyboard)
+ * │         (keyboard)          │  ← Not part of overlay
  * ```
+ *
+ * IME handling: When the keyboard is open, the overlay height is calculated
+ * relative to the available space (screen - keyboard), and the overlay is
+ * positioned at the bottom of the available space using offset(y).
+ * This avoids the double-subtraction bug that caused the overlay to shrink
+ * to a thin strip.
  */
 @Composable
 fun DraggableChatOverlay(
@@ -54,43 +61,37 @@ fun DraggableChatOverlay(
 ) {
     val density = LocalDensity.current
 
-    // Read IME height so we can account for it in overlay sizing.
-    // When the keyboard is open, the overlay should fill from the top of the screen
-    // down to the top of the keyboard, not extend behind it.
-    val imeHeightDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-    val imeHeightPx = with(density) { imeHeightDp.toPx() }
+    // Read IME height to position overlay above keyboard
+    val imeHeightPx = with(density) {
+        WindowInsets.ime.getBottom(density).toFloat().toDp().toPx()
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val screenHeightPx = with(density) { maxHeight.toPx() }
-        // Available height = screen height - keyboard height (0 if keyboard closed)
-        val availableHeightPx = screenHeightPx - imeHeightPx
+
+        // When keyboard is open, available space is screen minus keyboard.
+        // When closed, available space equals full screen.
+        val availableHeightPx = (screenHeightPx - imeHeightPx).coerceAtLeast(0f)
 
         // Drag offset: positive = finger moving down = decrease overlay height
         var dragOffsetPx by remember { mutableFloatStateOf(0f) }
 
-        // Compute overlay height as fraction of AVAILABLE space (not full screen).
-        // This way the overlay bottom edge sits exactly at the keyboard top.
+        // Compute overlay height as fraction of available space
         val baseOverlayHeightPx = availableHeightPx * fraction
         val effectiveOverlayHeightPx = (baseOverlayHeightPx - dragOffsetPx)
             .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
 
-        // Convert back to a fraction of FULL screen height for fillMaxHeight.
-        // This is needed because fillMaxHeight works relative to the parent (full screen).
-        val effectiveFraction = if (screenHeightPx > 0f) {
-            (effectiveOverlayHeightPx / screenHeightPx).coerceIn(0.1f, 1.0f)
-        } else {
-            fraction
-        }
-
-        // Bottom padding = IME height, so the overlay sits above the keyboard
-        val imeBottomPadding = imeHeightDp
+        // Position overlay at the bottom of available space (above keyboard)
+        // by using offset from top of parent.
+        val yOffsetPx = availableHeightPx - effectiveOverlayHeightPx
+        val overlayHeightDp = with(density) { effectiveOverlayHeightPx.toDp() }
+        val yOffsetDp = with(density) { yOffsetPx.toDp() }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(fraction = effectiveFraction)
-                .align(Alignment.BottomCenter)
-                .padding(bottom = imeBottomPadding)
+                .height(overlayHeightDp)
+                .offset(y = yOffsetDp)
                 .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .background(MaterialTheme.colorScheme.surface)
