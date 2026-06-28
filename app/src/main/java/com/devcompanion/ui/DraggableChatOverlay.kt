@@ -31,6 +31,7 @@ private val DismissFraction = 0.15f
  * - Input bar (inside AiChatScreen) is always pinned at bottom
  * - Last position is remembered across sessions via [UiPreferences]
  * - Swipe down fast / below threshold → dismiss
+ * - IME-aware: overlay resizes when soft keyboard opens so input stays visible
  *
  * Layout:
  * ```
@@ -53,7 +54,8 @@ fun DraggableChatOverlay(
 ) {
     val density = LocalDensity.current
 
-    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    // Use imePadding so BoxWithConstraints respects keyboard height
+    BoxWithConstraints(modifier = modifier.fillMaxSize().imePadding()) {
         val totalHeightPx = with(density) { maxHeight.toPx() }
 
         // Drag offset: positive = finger moving down = decrease overlay height
