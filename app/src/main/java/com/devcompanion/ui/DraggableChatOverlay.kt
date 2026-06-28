@@ -13,15 +13,14 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.Dp
 
 private val DragHandleHeight = 28.dp
 private val HandleIndicatorWidth = 40.dp
 private val HandleIndicatorHeight = 4.dp
 private val HandleTopPadding = 8.dp
-private val MinFraction = 0.3f
-private val MaxFraction = 0.95f
-private val DismissFraction = 0.15f
+private const val MinFraction = 0.3f
+private const val MaxFraction = 0.95f
+private const val DismissFraction = 0.15f
 
 /**
  * Draggable chat overlay that sits on top of the browser content.
@@ -58,8 +57,8 @@ fun DraggableChatOverlay(
     // Read IME height so we can account for it in overlay sizing.
     // When the keyboard is open, the overlay should fill from the top of the screen
     // down to the top of the keyboard, not extend behind it.
-    val imeInsets = WindowInsets.ime
-    val imeHeightPx = with(density) { imeInsets.getBottom(density).toPx() }
+    val imeHeightDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+    val imeHeightPx = with(density) { imeHeightDp.toPx() }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val screenHeightPx = with(density) { maxHeight.toPx() }
@@ -84,14 +83,14 @@ fun DraggableChatOverlay(
         }
 
         // Bottom padding = IME height, so the overlay sits above the keyboard
-        val imeBottomPaddingPx = imeHeightPx
+        val imeBottomPadding = imeHeightDp
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(fraction = effectiveFraction)
                 .align(Alignment.BottomCenter)
-                .padding(bottom = with(density) { imeBottomPaddingPx.toDp() })
+                .padding(bottom = imeBottomPadding)
                 .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .background(MaterialTheme.colorScheme.surface)
