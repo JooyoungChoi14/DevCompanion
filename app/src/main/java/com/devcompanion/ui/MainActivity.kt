@@ -386,7 +386,8 @@ fun MainApp(
                         startNewConversation = forceNewSession || (matchedConversationId == null && pendingAiQuestion != null),
                         resumeConversationId = matchedConversationId,
                         sourceUrl = if (matchedConversationId == null) currentUrlForChat else null,
-                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; forceNewSession = false; currentUrlForChat = null }
+                        onDismiss = { showAiChat = false; pendingAiQuestion = null; matchedConversationId = null; forceNewSession = false; currentUrlForChat = null },
+                        modifier = Modifier.imePadding()
                     )
                 }
             }

@@ -18,9 +18,9 @@ private val DragHandleHeight = 28.dp
 private val HandleIndicatorWidth = 40.dp
 private val HandleIndicatorHeight = 4.dp
 private val HandleTopPadding = 8.dp
-private const val MinFraction = 0.3f
-private const val MaxFraction = 0.95f
-private const val DismissFraction = 0.15f
+private val MinFraction = 0.3f
+private val MaxFraction = 0.95f
+private val DismissFraction = 0.15f
 
 /**
  * Draggable chat overlay that sits on top of the browser content.
@@ -31,7 +31,6 @@ private const val DismissFraction = 0.15f
  * - Input bar (inside AiChatScreen) is always pinned at bottom
  * - Last position is remembered across sessions via [UiPreferences]
  * - Swipe down fast / below threshold → dismiss
- * - IME-aware: overlay shrinks when keyboard opens
  *
  * Layout:
  * ```
@@ -41,15 +40,8 @@ private const val DismissFraction = 0.15f
  * │     AiChatScreen content    │
  * │   (TopAppBar + messages +   │
  * │    input bar)                │
- * └─────────────────────────────┘  ← Bottom of available space (above keyboard)
- * │         (keyboard)          │  ← Not part of overlay
+ * └─────────────────────────────┘  ← Bottom of screen
  * ```
- *
- * IME handling: When the keyboard is open, the overlay height is calculated
- * relative to the available space (screen - keyboard), and the overlay is
- * positioned at the bottom of the available space using offset(y).
- * This avoids the double-subtraction bug that caused the overlay to shrink
- * to a thin strip.
  */
 @Composable
 fun DraggableChatOverlay(
@@ -61,37 +53,23 @@ fun DraggableChatOverlay(
 ) {
     val density = LocalDensity.current
 
-    // Read IME height to position overlay above keyboard
-    val imeHeightPx = with(density) {
-        WindowInsets.ime.getBottom(density).toFloat().toDp().toPx()
-    }
-
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val screenHeightPx = with(density) { maxHeight.toPx() }
-
-        // When keyboard is open, available space is screen minus keyboard.
-        // When closed, available space equals full screen.
-        val availableHeightPx = (screenHeightPx - imeHeightPx).coerceAtLeast(0f)
+        val totalHeightPx = with(density) { maxHeight.toPx() }
 
         // Drag offset: positive = finger moving down = decrease overlay height
         var dragOffsetPx by remember { mutableFloatStateOf(0f) }
 
-        // Compute overlay height as fraction of available space
-        val baseOverlayHeightPx = availableHeightPx * fraction
-        val effectiveOverlayHeightPx = (baseOverlayHeightPx - dragOffsetPx)
-            .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
-
-        // Position overlay at the bottom of available space (above keyboard)
-        // by using offset from top of parent.
-        val yOffsetPx = availableHeightPx - effectiveOverlayHeightPx
-        val overlayHeightDp = with(density) { effectiveOverlayHeightPx.toDp() }
-        val yOffsetDp = with(density) { yOffsetPx.toDp() }
+        // Compute effective fraction from base + drag offset
+        val baseHeightPx = totalHeightPx * fraction
+        val effectiveHeightPx = (baseHeightPx - dragOffsetPx)
+            .coerceIn(totalHeightPx * MinFraction, totalHeightPx * MaxFraction)
+        val effectiveFraction = effectiveHeightPx / totalHeightPx
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(overlayHeightDp)
-                .offset(y = yOffsetDp)
+                .fillMaxHeight(fraction = effectiveFraction)
+                .align(Alignment.BottomCenter)
                 .shadow(elevation = 16.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .background(MaterialTheme.colorScheme.surface)
@@ -106,12 +84,7 @@ fun DraggableChatOverlay(
                         detectVerticalDragGestures(
                             onDragStart = { dragOffsetPx = 0f },
                             onDragEnd = {
-                                // Recompute fraction relative to available height
-                                val newFraction = if (availableHeightPx > 0f) {
-                                    (effectiveOverlayHeightPx / availableHeightPx).coerceIn(MinFraction, MaxFraction)
-                                } else {
-                                    fraction
-                                }
+                                val newFraction = effectiveFraction
                                 if (newFraction < DismissFraction) {
                                     onDismiss()
                                 } else {
