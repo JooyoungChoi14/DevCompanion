@@ -66,11 +66,15 @@ fun DraggableChatOverlay(
     // hasn't yet propagated the new fraction value.
     // After onDragEnd we set pendingFraction; once the incoming fraction
     // catches up we clear the offset.
+    // NOTE: We intentionally mutate state in the composable body (not SideEffect)
+    // because clearing must happen *before* this frame renders — SideEffect runs
+    // after, which would cause a one-frame flicker.
     var pendingFraction by remember { mutableFloatStateOf(Float.NaN) }
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
 
     // When the parent fraction updates to match our pending value, clear the offset.
-    if (pendingFraction.isNaN().not() && fraction == pendingFraction) {
+    // Use approximate comparison to guard against float rounding in parent pipelines.
+    if (pendingFraction.isNaN().not() && kotlin.math.abs(fraction - pendingFraction) < 0.001f) {
         dragOffsetPx = 0f
         pendingFraction = Float.NaN
     }
