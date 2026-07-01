@@ -295,6 +295,16 @@ object SessionLog {
         ))
     }
 
+    /** Log drag gesture (overlay resize, sheet drag). */
+    fun uiDrag(target: String, fromFraction: Float, toFraction: Float, action: String) {
+        log(EventType.UI_DRAG, mapOf(
+            "target" to target,
+            "from" to String.format("%.2f", fromFraction),
+            "to" to String.format("%.2f", toFraction),
+            "action" to action
+        ))
+    }
+
     /** Log WebView outer state (viewport, scroll, URL). */
     fun uiWebviewState(url: String, viewportW: Int, viewportH: Int, scrollX: Int, scrollY: Int, contentH: Int) {
         log(EventType.UI_WEBVIEW_STATE, mapOf(
@@ -655,6 +665,7 @@ enum class EventType(val key: String) {
     UI_CLICK("ui_click"),           // button/toggle click
     UI_INPUT("ui_input"),           // text field change (value masked)
     UI_SCROLL("ui_scroll"),         // significant scroll position
+    UI_DRAG("ui_drag"),             // drag gesture (overlay resize, sheet drag)
     UI_WEBVIEW_STATE("ui_webview_state"), // viewport size, scroll, URL
     UI_DATA_SNAPSHOT("ui_data_snapshot"), // message count, cache state
 

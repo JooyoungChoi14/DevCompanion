@@ -16,6 +16,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import com.devcompanion.logging.SessionLog
+
 private val DragHandleHeight = 28.dp
 private val HandleIndicatorWidth = 40.dp
 private val HandleIndicatorHeight = 4.dp
@@ -60,6 +62,24 @@ fun DraggableChatOverlay(
     // Also read navigation bar insets for comparison
     val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
 
+    // Track the committed fraction to avoid "snap-back" when the parent
+    // hasn't yet propagated the new fraction value.
+    // After onDragEnd we set pendingFraction; once the incoming fraction
+    // catches up we clear the offset.
+    var pendingFraction by remember { mutableFloatStateOf(Float.NaN) }
+    var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+
+    // When the parent fraction updates to match our pending value, clear the offset.
+    if (pendingFraction.isNaN().not() && fraction == pendingFraction) {
+        dragOffsetPx = 0f
+        pendingFraction = Float.NaN
+    }
+
+    // If a new fraction arrives from outside (e.g. IME change), snap offset to 0.
+    if (pendingFraction.isNaN() && dragOffsetPx != 0f) {
+        dragOffsetPx = 0f
+    }
+
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalHeightDp = maxHeight
         val totalHeightPx = with(density) { totalHeightDp.toPx() }
@@ -69,9 +89,11 @@ fun DraggableChatOverlay(
         // When keyboard is closed, imeHeightPxCalc should be 0 and overlay uses full height.
         val availableHeightPx = (totalHeightPx - imeHeightPxCalc).coerceAtLeast(0f)
 
-        var dragOffsetPx by remember { mutableFloatStateOf(0f) }
-
-        val baseOverlayHeightPx = availableHeightPx * fraction
+        // During drag: position = fraction*avail - dragOffset
+        // After drag ends but before parent updates: position = pendingFraction*avail
+        // Once parent catches up: position = fraction*avail (dragOffset = 0)
+        val displayFraction = if (pendingFraction.isNaN().not()) pendingFraction else fraction
+        val baseOverlayHeightPx = availableHeightPx * displayFraction
         val effectiveOverlayHeightPx = (baseOverlayHeightPx - dragOffsetPx)
             .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
 
@@ -96,7 +118,10 @@ fun DraggableChatOverlay(
                     .height(DragHandleHeight)
                     .pointerInput(Unit) {
                         detectVerticalDragGestures(
-                            onDragStart = { dragOffsetPx = 0f },
+                            onDragStart = {
+                                dragOffsetPx = 0f
+                                SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_start")
+                            },
                             onDragEnd = {
                                 val newFraction = if (availableHeightPx > 0f) {
                                     (effectiveOverlayHeightPx / availableHeightPx).coerceIn(MinFraction, MaxFraction)
@@ -104,13 +129,21 @@ fun DraggableChatOverlay(
                                     fraction
                                 }
                                 if (newFraction < DismissFraction) {
+                                    SessionLog.uiDrag("chat_overlay", fraction, newFraction, "dismiss")
                                     onDismiss()
+                                    dragOffsetPx = 0f
+                                    pendingFraction = Float.NaN
                                 } else {
+                                    SessionLog.uiDrag("chat_overlay", fraction, newFraction, "drag_end")
+                                    pendingFraction = newFraction
                                     onFractionChange(newFraction)
                                 }
-                                dragOffsetPx = 0f
                             },
-                            onDragCancel = { dragOffsetPx = 0f },
+                            onDragCancel = {
+                                SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_cancel")
+                                dragOffsetPx = 0f
+                                pendingFraction = Float.NaN
+                            },
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 dragOffsetPx += dragAmount
