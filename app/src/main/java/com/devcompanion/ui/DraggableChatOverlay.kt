@@ -157,6 +157,7 @@ fun DraggableChatOverlay(
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 dragOffsetPx += dragAmount
+                                SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_delta:${dragAmount.toInt()}px offset:${dragOffsetPx.toInt()}px")
                             }
                         )
                     },
