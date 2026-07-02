@@ -79,8 +79,11 @@ fun DraggableChatOverlay(
         pendingFraction = Float.NaN
     }
 
-    // If a new fraction arrives from outside (e.g. IME change), snap offset to 0.
-    if (pendingFraction.isNaN() && dragOffsetPx != 0f) {
+    // If a new fraction arrives from outside (e.g. IME change) AND we're not actively
+    // dragging (pendingFraction is NaN but there's a stale offset), snap offset to 0.
+    // We track whether we're dragging so recomposition doesn't reset the offset mid-gesture.
+    var isDragging by remember { mutableStateOf(false) }
+    if (pendingFraction.isNaN() && dragOffsetPx != 0f && !isDragging) {
         dragOffsetPx = 0f
     }
 
@@ -123,10 +126,12 @@ fun DraggableChatOverlay(
                     .pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onDragStart = {
+                                isDragging = true
                                 dragOffsetPx = 0f
                                 SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_start")
                             },
                             onDragEnd = {
+                                isDragging = false
                                 val newFraction = if (availableHeightPx > 0f) {
                                     (effectiveOverlayHeightPx / availableHeightPx).coerceIn(MinFraction, MaxFraction)
                                 } else {
@@ -144,6 +149,7 @@ fun DraggableChatOverlay(
                                 }
                             },
                             onDragCancel = {
+                                isDragging = false
                                 SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_cancel")
                                 dragOffsetPx = 0f
                                 pendingFraction = Float.NaN
