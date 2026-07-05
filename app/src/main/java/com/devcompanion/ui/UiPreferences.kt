@@ -15,7 +15,7 @@ object UiPreferences {
 
     /** Chat overlay height as fraction of screen (0.3–0.95). Saved across sessions. */
     private const val KEY_CHAT_SHEET_FRACTION = "chat_sheet_fraction"
-    private const val DEFAULT_CHAT_SHEET_FRACTION = 0.55f
+    private const val DEFAULT_CHAT_SHEET_FRACTION = 0.75f
 
     @Volatile
     private var prefs: SharedPreferences? = null

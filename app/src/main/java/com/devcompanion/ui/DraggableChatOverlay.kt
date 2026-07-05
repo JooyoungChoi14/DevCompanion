@@ -5,7 +5,6 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -14,7 +13,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 import com.devcompanion.logging.SessionLog
 
@@ -25,9 +23,9 @@ private val HandleTopPadding = 8.dp
 private const val MinFraction = 0.3f
 private const val MaxFraction = 0.95f
 private const val DismissFraction = 0.15f
+private const val SnapThresholdPx = 8f
 
-/** Debug overlay flag — remove after fixing IME gap */
-private const val DEBUG_OVERLAY = true
+
 
 /**
  * Draggable chat overlay that sits on top of the browser content.
@@ -59,32 +57,19 @@ fun DraggableChatOverlay(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val imeHeightDp = with(density) { imeBottomPx.toDp() }
 
-    // Also read navigation bar insets for comparison
-    val navBarBottomPx = WindowInsets.navigationBars.getBottom(density)
 
     // Track the committed fraction to avoid "snap-back" when the parent
     // hasn't yet propagated the new fraction value.
     // After onDragEnd we set pendingFraction; once the incoming fraction
     // catches up we clear the offset.
-    // NOTE: We intentionally mutate state in the composable body (not SideEffect)
-    // because clearing must happen *before* this frame renders — SideEffect runs
-    // after, which would cause a one-frame flicker.
     var pendingFraction by remember { mutableFloatStateOf(Float.NaN) }
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
 
     // When the parent fraction updates to match our pending value, clear the offset.
-    // Use approximate comparison to guard against float rounding in parent pipelines.
-    if (pendingFraction.isNaN().not() && kotlin.math.abs(fraction - pendingFraction) < 0.001f) {
+    if (!pendingFraction.isNaN() && kotlin.math.abs(fraction - pendingFraction) < 0.001f) {
         dragOffsetPx = 0f
         pendingFraction = Float.NaN
-    }
-
-    // If a new fraction arrives from outside (e.g. IME change) AND we're not actively
-    // dragging (pendingFraction is NaN but there's a stale offset), snap offset to 0.
-    // We track whether we're dragging so recomposition doesn't reset the offset mid-gesture.
-    var isDragging by remember { mutableStateOf(false) }
-    if (pendingFraction.isNaN() && dragOffsetPx != 0f && !isDragging) {
-        dragOffsetPx = 0f
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -99,7 +84,7 @@ fun DraggableChatOverlay(
         // During drag: position = fraction*avail - dragOffset
         // After drag ends but before parent updates: position = pendingFraction*avail
         // Once parent catches up: position = fraction*avail (dragOffset = 0)
-        val displayFraction = if (pendingFraction.isNaN().not()) pendingFraction else fraction
+        val displayFraction = if (!pendingFraction.isNaN()) pendingFraction else fraction
         val baseOverlayHeightPx = availableHeightPx * displayFraction
         val effectiveOverlayHeightPx = (baseOverlayHeightPx - dragOffsetPx)
             .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
@@ -132,8 +117,12 @@ fun DraggableChatOverlay(
                             },
                             onDragEnd = {
                                 isDragging = false
+                                // Calculate new fraction from current drag offset
+                                val currentOffset = dragOffsetPx
+                                val currentHeight = (availableHeightPx * fraction - currentOffset)
+                                    .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
                                 val newFraction = if (availableHeightPx > 0f) {
-                                    (effectiveOverlayHeightPx / availableHeightPx).coerceIn(MinFraction, MaxFraction)
+                                    (currentHeight / availableHeightPx).coerceIn(MinFraction, MaxFraction)
                                 } else {
                                     fraction
                                 }
@@ -143,8 +132,10 @@ fun DraggableChatOverlay(
                                     dragOffsetPx = 0f
                                     pendingFraction = Float.NaN
                                 } else {
-                                    SessionLog.uiDrag("chat_overlay", fraction, newFraction, "drag_end")
+                                    SessionLog.uiDrag("chat_overlay", fraction, newFraction, "drag_end_offset=${currentOffset.toInt()}px")
                                     pendingFraction = newFraction
+                                    // Reset offset immediately — parent will provide the new fraction
+                                    dragOffsetPx = 0f
                                     onFractionChange(newFraction)
                                 }
                             },
@@ -157,7 +148,6 @@ fun DraggableChatOverlay(
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()
                                 dragOffsetPx += dragAmount
-                                SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_delta:${dragAmount.toInt()}px offset:${dragOffsetPx.toInt()}px")
                             }
                         )
                     },
@@ -182,21 +172,6 @@ fun DraggableChatOverlay(
             }
         }
 
-        // Debug overlay — shows inset values directly on screen
-        if (DEBUG_OVERLAY) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.TopCenter)
-                    .padding(top = 50.dp)
-                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.8f))
-            ) {
-                Text(
-                    text = "DEBUG: total=${totalHeightPx.toInt()}px ime=${imeBottomPx}px nav=${navBarBottomPx}px avail=${availableHeightPx.toInt()}px frac=$fraction overlay=${effectiveOverlayHeightPx.toInt()}px y=${yOffsetPx.toInt()}px",
-                    color = MaterialTheme.colorScheme.onError,
-                    fontSize = 11.sp
-                )
-            }
-        }
+
     }
 }
