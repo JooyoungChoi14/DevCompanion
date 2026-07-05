@@ -170,6 +170,7 @@ fun MainApp(
     var showBridgeInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAiChat by remember { mutableStateOf(false) }
+    var chatFraction by remember { mutableFloatStateOf(UiPreferences.chatSheetFraction) }
     var pendingAiQuestion by remember { mutableStateOf<String?>(null) }
     var engineRef by remember { mutableStateOf<BrowserEngine?>(null) }
     var showSessionChoice by remember { mutableStateOf(false) }
@@ -363,8 +364,6 @@ fun MainApp(
 
             // AI Chat as draggable overlay — browser stays visible behind, user can resize
             if (showAiChat) {
-                var chatFraction by remember { mutableFloatStateOf(UiPreferences.chatSheetFraction) }
-
                 DraggableChatOverlay(
                     fraction = chatFraction,
                     onFractionChange = { newFraction ->

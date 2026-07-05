@@ -578,104 +578,68 @@ fun AiChatScreen(
                     }
                 }
             }
-            // Auto-capture indicator — also serves as manual capture trigger (camera button removed from TopAppBar)
-            AnimatedVisibility(visible = lastContext == null && autoCapture && engine != null) {
+            // Compact status bar: auto-capture state + agent state in one line
+            val showStatusBar = (lastContext == null && engine != null) || agentMode
+            AnimatedVisibility(visible = showStatusBar) {
                 Surface(
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
                         modifier = Modifier
-                            .padding(horizontal = Spacing.md, vertical = Spacing.xs)
-                            .clickable { viewModel.setAutoCaptureEnabled(false) },
+                            .padding(horizontal = Spacing.sm, vertical = 2.dp)
+                            .heightIn(min = 20.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("\u2699\uFE0F", style = MaterialTheme.typography.labelMedium)
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text(
-                            "Auto-capture ON",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(onClick = {
-                            if (engine != null) showCaptureDialog = true
-                        }) {
-                            Text("Capture", style = MaterialTheme.typography.labelSmall)
+                        // Auto-capture indicator
+                        if (lastContext == null && engine != null) {
+                            if (autoCapture) {
+                                Text(
+                                    "\u2699 Auto",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.clickable { viewModel.setAutoCaptureEnabled(false) }
+                                )
+                            } else if (!isInSelectMode) {
+                                Text(
+                                    "\uD83D\uDCF7",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.clickable { if (engine != null) showCaptureDialog = true }
+                                )
+                            }
                         }
-                        Text(
-                            "\u00B7",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.5f)
-                        )
-                        Text(
-                            "Disable",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
-                            modifier = Modifier.clickable { viewModel.setAutoCaptureEnabled(false) }
-                        )
-                    }
-                }
-            }
-
-            // Manual capture trigger — shown when auto-capture is off and no context captured
-            // (camera button removed from TopAppBar; this is the alternative entry point)
-            AnimatedVisibility(visible = lastContext == null && !autoCapture && engine != null && !isInSelectMode) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(horizontal = Spacing.md, vertical = Spacing.xs)
-                            .clickable { if (engine != null) showCaptureDialog = true },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("\uD83D\uDCF7", style = MaterialTheme.typography.labelMedium)
-                        Spacer(modifier = Modifier.width(Spacing.xs))
-                        Text(
-                            "Capture page context",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Agent mode state indicator
-            AnimatedVisibility(visible = agentMode) {
-                Surface(
-                    color = when (agentState) {
-                        is AgentState.Idle -> MaterialTheme.colorScheme.tertiaryContainer
-                        is AgentState.Thinking -> MaterialTheme.colorScheme.primaryContainer
-                        is AgentState.CheckingPermission -> MaterialTheme.colorScheme.secondaryContainer
-                        is AgentState.WaitingConfirmation -> MaterialTheme.colorScheme.errorContainer
-                        is AgentState.ExecutingTool -> MaterialTheme.colorScheme.primaryContainer
-                        is AgentState.Error -> MaterialTheme.colorScheme.errorContainer
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            when (agentState) {
-                                is AgentState.Idle -> "🤖 Agent ready"
-                                is AgentState.Thinking -> "🤔 Thinking… (iteration ${(agentState as AgentState.Thinking).iteration})"
-                                is AgentState.CheckingPermission -> "🔒 Checking permission…"
-                                is AgentState.WaitingConfirmation -> "⚠️ Awaiting confirmation"
-                                is AgentState.ExecutingTool -> "🔧 Executing ${(agentState as AgentState.ExecutingTool).tool}"
-                                is AgentState.Error -> "❌ ${(agentState as AgentState.Error).message}"
-                            },
-                            style = MaterialTheme.typography.labelMedium
-                        )
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(onClick = { viewModel.stopAgentLoop() }) {
-                            Text("Stop", style = MaterialTheme.typography.labelSmall)
+                        if (lastContext == null && engine != null && agentMode) {
+                            Text(" \u00B7 ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
+                        }
+                        // Agent state indicator
+                        if (agentMode) {
+                            Text(
+                                when (agentState) {
+                                    is AgentState.Idle -> "\uD83E\uDD16"
+                                    is AgentState.Thinking -> "\uD83E\uDD14 ${(agentState as AgentState.Thinking).iteration}"
+                                    is AgentState.CheckingPermission -> "\uD83D\uDD12"
+                                    is AgentState.WaitingConfirmation -> "\u26A0\uFE0F"
+                                    is AgentState.ExecutingTool -> "\uD83D\uDD27 ${(agentState as AgentState.ExecutingTool).tool}"
+                                    is AgentState.Error -> "\u274C"
+                                },
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            if (agentState !is AgentState.Idle) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                TextButton(
+                                    onClick = { viewModel.stopAgentLoop() },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                ) {
+                                    Text("Stop", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                        if (lastContext != null) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
+            }
             }
 
             // Confirmation card for sensitive actions
