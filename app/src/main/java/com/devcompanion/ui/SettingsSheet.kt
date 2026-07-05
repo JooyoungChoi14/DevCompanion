@@ -140,7 +140,7 @@ fun SettingsSheet(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AppearanceTab(
-    chatViewModel: AiChatViewModel
+    chatViewModel: AiChatViewModel?
 ) {
     val themePrefs = LocalThemePreferences.current
     val scope = rememberCoroutineScope()
@@ -266,13 +266,13 @@ private fun AppearanceTab(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val autoCapture by chatViewModel.autoCaptureEnabled.collectAsState()
+                    val autoCapture = chatViewModel?.autoCaptureEnabled?.collectAsState()?.value ?: UiPreferences.autoCaptureEnabled
                     Text(if (autoCapture) "Enabled" else "Disabled",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface)
                     Switch(
                         checked = autoCapture,
-                        onCheckedChange = { chatViewModel.setAutoCaptureEnabled(it) }
+                        onCheckedChange = { chatViewModel?.setAutoCaptureEnabled(it) }
                     )
                 }
             }
