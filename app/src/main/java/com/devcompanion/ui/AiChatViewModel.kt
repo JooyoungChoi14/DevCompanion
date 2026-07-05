@@ -346,11 +346,12 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
      */
     private var streamingJob: kotlinx.coroutines.Job? = null
 
-    private var _autoCaptureEnabled = MutableStateFlow(true)
+    private var _autoCaptureEnabled = MutableStateFlow(UiPreferences.autoCaptureEnabled)
     val autoCaptureEnabled: StateFlow<Boolean> = _autoCaptureEnabled.asStateFlow()
 
     fun setAutoCaptureEnabled(enabled: Boolean) {
         _autoCaptureEnabled.value = enabled
+        UiPreferences.autoCaptureEnabled = enabled
     }
 
     fun sendMessage(text: String, engine: BrowserEngine? = null) {

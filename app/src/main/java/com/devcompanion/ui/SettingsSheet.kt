@@ -123,7 +123,7 @@ fun SettingsSheet(
 
         // ── Tab content ──────────────────────────────────────────
         when (selectedTab) {
-            SETTINGS_TAB_APPEARANCE -> AppearanceTab()
+            SETTINGS_TAB_APPEARANCE -> AppearanceTab(chatViewModel = viewModel)
             SETTINGS_TAB_AI -> AiTab(
                 settingsViewModel = settingsViewModel,
                 chatViewModel = viewModel,
@@ -139,7 +139,9 @@ fun SettingsSheet(
 // ═══════════════════════════════════════════════════════════════
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AppearanceTab() {
+private fun AppearanceTab(
+    chatViewModel: AiChatViewModel
+) {
     val themePrefs = LocalThemePreferences.current
     val scope = rememberCoroutineScope()
 
@@ -239,6 +241,39 @@ private fun AppearanceTab() {
                     Text("⚠ Solarized Light forces Light appearance",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(Spacing.md))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(Spacing.md)) {
+                Text("Auto-capture", style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Spacer(modifier = Modifier.height(Spacing.xs))
+                Text("Automatically capture page context (URL, title, screenshot) when opening a new chat.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(Spacing.sm))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val autoCapture by chatViewModel.autoCaptureEnabled.collectAsState()
+                    Text(if (autoCapture) "Enabled" else "Disabled",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface)
+                    Switch(
+                        checked = autoCapture,
+                        onCheckedChange = { chatViewModel.setAutoCaptureEnabled(it) }
+                    )
                 }
             }
         }

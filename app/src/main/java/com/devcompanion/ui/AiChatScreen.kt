@@ -75,7 +75,6 @@ fun AiChatScreen(
     val currentResponse by viewModel.currentResponse.collectAsState()
     val provider by viewModel.provider.collectAsState()
     val lastContext by viewModel.lastContext.collectAsState()
-    val autoCapture by viewModel.autoCaptureEnabled.collectAsState()
     val error by viewModel.error.collectAsState()
     val totalInputTokens by viewModel.totalInputTokens.collectAsState()
     val totalOutputTokens by viewModel.totalOutputTokens.collectAsState()
@@ -108,6 +107,7 @@ fun AiChatScreen(
     var showSettings by remember { mutableStateOf(false) }
     var settingsInitialTab by remember { mutableIntStateOf(SETTINGS_TAB_APPEARANCE) }
     var showCaptureDialog by remember { mutableStateOf(false) }
+    var showPrivacyDisclaimer by remember { mutableStateOf(!UiPreferences.privacyAccepted) }
     val inputFocusRequester = remember { FocusRequester() }
     // Auto-focus input field when chat screen enters
     LaunchedEffect(Unit) {
@@ -315,6 +315,12 @@ fun AiChatScreen(
                             if (isInSelectMode) Icons.Default.Close else Icons.Default.SelectAll,
                             contentDescription = if (isInSelectMode) "Exit select mode" else "Select messages"
                         )
+                    }
+                    // Manual capture — capture current page context
+                    if (engine != null && !isInSelectMode) {
+                        IconButton(onClick = { showCaptureDialog = true }) {
+                            Icon(Icons.Default.PhotoCamera, contentDescription = "Capture page")
+                        }
                     }
                     // Settings
                     IconButton(onClick = { showSettings = true }) {
@@ -578,69 +584,6 @@ fun AiChatScreen(
                     }
                 }
             }
-            // Compact status bar: auto-capture state + agent state in one line
-            val showStatusBar = (lastContext == null && engine != null) || agentMode
-            AnimatedVisibility(visible = showStatusBar) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .padding(horizontal = Spacing.sm, vertical = 2.dp)
-                            .heightIn(min = 20.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Auto-capture indicator
-                        if (lastContext == null && engine != null) {
-                            if (autoCapture) {
-                                Text(
-                                    "\u2699 Auto",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.clickable { viewModel.setAutoCaptureEnabled(false) }
-                                )
-                            } else if (!isInSelectMode) {
-                                Text(
-                                    "\uD83D\uDCF7",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.clickable { if (engine != null) showCaptureDialog = true }
-                                )
-                            }
-                        }
-                        if (lastContext == null && engine != null && agentMode) {
-                            Text(" \u00B7 ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f))
-                        }
-                        // Agent state indicator
-                        if (agentMode) {
-                            Text(
-                                when (agentState) {
-                                    is AgentState.Idle -> "\uD83E\uDD16"
-                                    is AgentState.Thinking -> "\uD83E\uDD14 ${(agentState as AgentState.Thinking).iteration}"
-                                    is AgentState.CheckingPermission -> "\uD83D\uDD12"
-                                    is AgentState.WaitingConfirmation -> "\u26A0\uFE0F"
-                                    is AgentState.ExecutingTool -> "\uD83D\uDD27 ${(agentState as AgentState.ExecutingTool).tool}"
-                                    is AgentState.Error -> "\u274C"
-                                },
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                            if (agentState !is AgentState.Idle) {
-                                Spacer(modifier = Modifier.weight(1f))
-                                TextButton(
-                                    onClick = { viewModel.stopAgentLoop() },
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                                ) {
-                                    Text("Stop", style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                        if (lastContext != null) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
-                    }
-                }
-            }
-
             // Confirmation card for sensitive actions
             pendingConfirmation?.let { (_, details) ->
                 Card(
@@ -785,6 +728,27 @@ fun AiChatScreen(
                 }
             }
         }
+    }
+
+    // ── Privacy disclaimer (first launch only) ────────────────────────
+    if (showPrivacyDisclaimer) {
+        AlertDialog(
+            onDismissRequest = { /* Don't dismiss — must accept */ },
+            title = { Text("Privacy & Data Notice") },
+            text = {
+                Text("Depending on the AI provider you configure, your browser activity, page content, and messages may be sent to that provider's API.\n\n" +
+                    "DevCompanion does not collect or transmit your data to any third party. All data stays on your device unless you explicitly send it to an AI provider.\n\n" +
+                    "Session logs are stored locally on your device for debugging and session history — you can clear them anytime in Settings.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    UiPreferences.privacyAccepted = true
+                    showPrivacyDisclaimer = false
+                }) {
+                    Text("I Understand")
+                }
+            }
+        )
     }
 
     // ── Capture confirmation dialog ───────────────────────────────────
