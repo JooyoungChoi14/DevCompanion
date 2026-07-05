@@ -640,7 +640,6 @@ fun AiChatScreen(
                     }
                 }
             }
-            }
 
             // Confirmation card for sensitive actions
             pendingConfirmation?.let { (_, details) ->
