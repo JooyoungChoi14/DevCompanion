@@ -39,8 +39,11 @@ private const val SnapThresholdPx = 8f
  * - IME-aware: overlay shrinks to fit above keyboard, no gap
  *
  * IME strategy: Read WindowInsets.ime directly. Compute overlay height as
- * fraction of (screen - keyboard). Position with height+offset so bottom
- * aligns exactly to keyboard top.
+ * fraction of (screen - keyboard). When IME toggles, we adjust the fraction
+ * so that the visual pixel height stays constant — no snap-back.
+ *
+ * Stale closure fix: fraction is tracked via rememberUpdatedState so the
+ * gesture handler always reads the latest value without restarting.
  */
 @Composable
 fun DraggableChatOverlay(
@@ -57,20 +60,26 @@ fun DraggableChatOverlay(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val imeHeightDp = with(density) { imeBottomPx.toDp() }
 
+    // Use rememberUpdatedState so the gesture handler (pointerInput) always
+    // reads the latest fraction without needing to restart the coroutine.
+    val currentFraction by rememberUpdatedState(fraction)
 
-    // Track the committed fraction to avoid "snap-back" when the parent
-    // hasn't yet propagated the new fraction value.
-    // After onDragEnd we set pendingFraction; once the incoming fraction
-    // catches up we clear the offset.
-    var pendingFraction by remember { mutableFloatStateOf(Float.NaN) }
+    // Track the previous available height to detect IME toggles.
+    // When IME opens/closes, we adjust fraction so the overlay's pixel height
+    // stays the same — preventing snap-back.
+    var prevAvailableHeightPx by remember { mutableFloatStateOf(Float.NaN) }
+    var adjustedFraction by remember { mutableFloatStateOf(fraction) }
+
+    // Sync adjustedFraction when the parent fraction changes (e.g. after drag commit).
+    // But NOT during IME transitions — those are handled by the height-preservation logic.
+    var lastSyncedFraction by remember { mutableFloatStateOf(fraction) }
+    if (kotlin.math.abs(fraction - lastSyncedFraction) > 0.001f) {
+        adjustedFraction = fraction
+        lastSyncedFraction = fraction
+    }
+
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
-
-    // When the parent fraction updates to match our pending value, clear the offset.
-    if (!pendingFraction.isNaN() && kotlin.math.abs(fraction - pendingFraction) < 0.001f) {
-        dragOffsetPx = 0f
-        pendingFraction = Float.NaN
-    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val totalHeightDp = maxHeight
@@ -81,10 +90,26 @@ fun DraggableChatOverlay(
         // When keyboard is closed, imeHeightPxCalc should be 0 and overlay uses full height.
         val availableHeightPx = (totalHeightPx - imeHeightPxCalc).coerceAtLeast(0f)
 
+        // Detect IME toggle: preserve pixel height across available height changes.
+        // When IME opens, available height shrinks — we increase fraction so
+        // the overlay stays the same visual height. When IME closes, reverse.
+        if (!isDragging && !prevAvailableHeightPx.isNaN() && prevAvailableHeightPx > 0f &&
+            kotlin.math.abs(availableHeightPx - prevAvailableHeightPx) > 1f) {
+            val prevPixelHeight = prevAvailableHeightPx * adjustedFraction
+            val newFraction = if (availableHeightPx > 0f) {
+                (prevPixelHeight / availableHeightPx).coerceIn(MinFraction, MaxFraction)
+            } else {
+                adjustedFraction
+            }
+            adjustedFraction = newFraction
+            lastSyncedFraction = newFraction
+            onFractionChange(newFraction)
+        }
+        prevAvailableHeightPx = availableHeightPx
+
         // During drag: position = fraction*avail - dragOffset
-        // After drag ends but before parent updates: position = pendingFraction*avail
-        // Once parent catches up: position = fraction*avail (dragOffset = 0)
-        val displayFraction = if (!pendingFraction.isNaN()) pendingFraction else fraction
+        // Use adjustedFraction to account for IME transitions.
+        val displayFraction = adjustedFraction
         val baseOverlayHeightPx = availableHeightPx * displayFraction
         val effectiveOverlayHeightPx = (baseOverlayHeightPx - dragOffsetPx)
             .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
@@ -113,37 +138,41 @@ fun DraggableChatOverlay(
                             onDragStart = {
                                 isDragging = true
                                 dragOffsetPx = 0f
-                                SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_start")
+                                // Use currentFraction (rememberUpdatedState) to get latest value
+                                val f = currentFraction
+                                SessionLog.uiDrag("chat_overlay", f, f, "drag_start")
                             },
                             onDragEnd = {
                                 isDragging = false
+                                // Use currentFraction (rememberUpdatedState) to get latest value
+                                val fractionNow = currentFraction
                                 // Calculate new fraction from current drag offset
                                 val currentOffset = dragOffsetPx
-                                val currentHeight = (availableHeightPx * fraction - currentOffset)
+                                val currentHeight = (availableHeightPx * fractionNow - currentOffset)
                                     .coerceIn(availableHeightPx * MinFraction, availableHeightPx * MaxFraction)
                                 val newFraction = if (availableHeightPx > 0f) {
                                     (currentHeight / availableHeightPx).coerceIn(MinFraction, MaxFraction)
                                 } else {
-                                    fraction
+                                    fractionNow
                                 }
                                 if (newFraction < DismissFraction) {
-                                    SessionLog.uiDrag("chat_overlay", fraction, newFraction, "dismiss")
+                                    SessionLog.uiDrag("chat_overlay", fractionNow, newFraction, "dismiss")
                                     onDismiss()
                                     dragOffsetPx = 0f
-                                    pendingFraction = Float.NaN
                                 } else {
-                                    SessionLog.uiDrag("chat_overlay", fraction, newFraction, "drag_end_offset=${currentOffset.toInt()}px")
-                                    pendingFraction = newFraction
-                                    // Reset offset immediately — parent will provide the new fraction
+                                    SessionLog.uiDrag("chat_overlay", fractionNow, newFraction, "drag_end_offset=${currentOffset.toInt()}px")
+                                    // Update adjustedFraction immediately
+                                    adjustedFraction = newFraction
+                                    lastSyncedFraction = newFraction
                                     dragOffsetPx = 0f
                                     onFractionChange(newFraction)
                                 }
                             },
                             onDragCancel = {
                                 isDragging = false
-                                SessionLog.uiDrag("chat_overlay", fraction, fraction, "drag_cancel")
+                                val f = currentFraction
+                                SessionLog.uiDrag("chat_overlay", f, f, "drag_cancel")
                                 dragOffsetPx = 0f
-                                pendingFraction = Float.NaN
                             },
                             onVerticalDrag = { change, dragAmount ->
                                 change.consume()

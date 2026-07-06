@@ -198,7 +198,7 @@ fun AiChatScreen(
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen,
+        gesturesEnabled = true,
         modifier = Modifier.fillMaxSize(),
         drawerContent = {
             ConversationDrawer(
