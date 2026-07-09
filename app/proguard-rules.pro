@@ -49,3 +49,45 @@
 -keep class * extends com.google.gson.reflect.TypeToken
 -keep class com.google.gson.** { *; }
 -dontwarn com.google.gson.**
+
+# ── AndroidX ViewModel (reflection-based creation) ──
+-keep class * extends androidx.lifecycle.ViewModel {
+    <init>(...);
+}
+-keep class * extends androidx.lifecycle.AndroidViewModel {
+    <init>(android.app.Application);
+}
+
+# ── Compose (state/composable preservation) ──
+-dontwarn androidx.compose.**
+-keep class androidx.compose.** { *; }
+
+# ── Kotlin Metadata & Reflection ──
+-keepattributes RuntimeVisibleAnnotations
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class **$WhenMappings {
+    <fields>;
+}
+-if @kotlin.Metadata class *
+-keepclassmembers class * {
+    ** Companion;
+    *** INSTANCE;
+    @kotlin.PropertyGetter *** get*();
+    @kotlin.PropertySetter *** set*();
+}
+
+# ── Kotlinx Coroutines ──
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler
+-keepclassmembernames class kotlinx.coroutines.** {
+    volatile <fields>;
+}
+
+# ── GeckoView ──
+-keep class org.mozilla.gecko.** { *; }
+-keep class org.mozilla.geckoview.** { *; }
+-dontwarn org.mozilla.gecko.**
+
+# ── DevCompanion ViewModels (all public members accessed from Compose) ──
+-keep class com.devcompanion.ui.AiChatViewModel { *; }
+-keep class com.devcompanion.ui.SettingsViewModel { *; }
+-keep class com.devcompanion.DevCompanionApp { *; }
