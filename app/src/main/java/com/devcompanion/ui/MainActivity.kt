@@ -15,8 +15,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.SettingsEthernet
-import androidx.compose.material.icons.filled.ContentCopy
+
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
@@ -26,22 +25,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 // Removed: pointerInput — unused import
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalContext
 import com.devcompanion.llm.ChatHistory
 import com.devcompanion.ui.AiChatViewModel
 import com.devcompanion.ui.SettingsViewModel
 import com.devcompanion.DevCompanionApp
-import com.devcompanion.debug.BrowserDebuggerHolder
 import com.devcompanion.ui.theme.DevCompanionTheme
 import com.devcompanion.ui.theme.ThemePreferences
 import com.devcompanion.ui.theme.ColorPreset
 import com.devcompanion.ui.theme.LocalThemePreferences
 import com.devcompanion.ui.theme.Spacing
 import com.devcompanion.engine.BrowserEngine
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -115,15 +109,9 @@ class MainActivity : ComponentActivity() {
             })
 
             val app = applicationContext as DevCompanionApp
-            val bridgeAuthToken = app.bridgeAuthToken
-            val bridgePort = app.bridgeServer.port
-            val tunnelUrlFlow = app.tunnelUrl
-            val tunnelErrorFlow = app.tunnelError
             val themePrefs = ThemePreferences(this)
 
             setContent {
-                val tunnelUrl by tunnelUrlFlow.collectAsState()
-                val tunnelError by tunnelErrorFlow.collectAsState()
                 val currentPreset by themePrefs.preset.collectAsState(initial = ColorPreset.DRACULA)
                 val currentDarkMode by themePrefs.darkMode.collectAsState(initial = "system")
 
@@ -136,10 +124,6 @@ class MainActivity : ComponentActivity() {
                         onEngineCreated = { engine ->
                             engineRef = engine
                         },
-                        bridgeAuthToken = bridgeAuthToken,
-                        bridgePort = bridgePort,
-                        tunnelUrl = tunnelUrl,
-                        tunnelError = tunnelError,
                         app = app,
                     )
                     }
@@ -158,16 +142,11 @@ class MainActivity : ComponentActivity() {
 fun MainApp(
     onEngineReady: ((() -> Boolean) -> Unit)? = null,
     onEngineCreated: ((BrowserEngine) -> Unit)? = null,
-    bridgeAuthToken: String = "",
-    bridgePort: Int = 8765,
-    tunnelUrl: String? = null,
-    tunnelError: String? = null,
     app: DevCompanionApp? = null,
 ) {
     var showDevTools by remember { mutableStateOf(false) }
     var devToolsTab by remember { mutableStateOf(0) }
     var headerVisible by remember { mutableStateOf(true) }
-    var showBridgeInfo by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
     var showAiChat by remember { mutableStateOf(false) }
     var chatFraction by remember { mutableFloatStateOf(UiPreferences.chatSheetFraction) }
@@ -184,12 +163,9 @@ fun MainApp(
     LaunchedEffect(showAiChat) { SessionLog.uiNav("ai_chat", if (showAiChat) "open" else "close"); SessionLog.currentScreen = if (showAiChat) "ai_chat" else "browser" }
     LaunchedEffect(showDevTools) { SessionLog.uiNav("devtools", if (showDevTools) "open" else "close"); if (showDevTools) SessionLog.currentScreen = "devtools" }
     LaunchedEffect(showSettings) { SessionLog.uiNav("settings", if (showSettings) "open" else "close"); if (showSettings) SessionLog.currentScreen = "settings" }
-    LaunchedEffect(showBridgeInfo) { SessionLog.uiNav("bridge_info", if (showBridgeInfo) "open" else "close") }
     LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
     LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; else -> "unknown" }) }
-    val debugger = BrowserDebuggerHolder.current
     val context = LocalContext.current
-    val isActive = debugger != null
 
     Scaffold(
         topBar = {
@@ -199,18 +175,10 @@ fun MainApp(
                 exit = shrinkVertically()
             ) {
                 TopAppBar(
-                    title = { Text("DevCompanion", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                     ),
                     actions = {
-                        Text(
-                            if (isActive) "● Live" else "○ Idle",
-                            color = if (isActive) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.outline,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(end = Spacing.xs)
-                        )
                         IconButton(onClick = {
                             val url = engineRef?.getUrl()
                             val currentConvId = chatViewModel.conversationId.value
@@ -235,14 +203,6 @@ fun MainApp(
                                 Icons.Default.SmartToy,
                                 contentDescription = "AI Chat",
                                 tint = if (showAiChat) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { showBridgeInfo = !showBridgeInfo; SessionLog.uiClick("bridge_info_btn") }) {
-                            Icon(
-                                Icons.Default.SettingsEthernet,
-                                contentDescription = "Bridge API",
-                                tint = if (showBridgeInfo) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -271,7 +231,7 @@ fun MainApp(
             // Browser is always in composition — preserves browser engine state
             BrowserTab(
                 homeUrl = settingsViewModel.homeUrl.collectAsState().value,
-                clearAddressFocus = showDevTools || showBridgeInfo || showAiChat,
+                clearAddressFocus = showDevTools || showAiChat,
                 headerExpanded = headerVisible && !showAiChat,
                 headerVisible = !showAiChat,
                 onHeaderVisibilityToggle = { headerVisible = !headerVisible },
@@ -407,25 +367,6 @@ fun MainApp(
                 }
             }
 
-            // Bridge API info sheet
-            if (showBridgeInfo) {
-                ModalBottomSheet(
-                    onDismissRequest = { showBridgeInfo = false; SessionLog.uiNav("bridge_info", "close") },
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    sheetState = rememberModalBottomSheetState(
-                        skipPartiallyExpanded = false
-                    ),
-                ) {
-                    BridgeInfoPanel(
-                        authToken = bridgeAuthToken,
-                        port = bridgePort,
-                        tunnelUrl = tunnelUrl,
-                        tunnelError = tunnelError,
-                        modifier = Modifier.imePadding()
-                    )
-                }
-            }
-
             // Settings sheet
             if (showSettings) {
                 ModalBottomSheet(
@@ -463,172 +404,4 @@ private fun DevToolsPanel(
             2 -> PerformanceTab()
         }
     }
-}
-
-@Composable
-private fun BridgeInfoPanel(
-    authToken: String,
-    port: Int,
-    tunnelUrl: String? = null,
-    tunnelError: String? = null,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = Spacing.lg, vertical = Spacing.md)
-    ) {
-        Text(
-            "Bridge API",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(Spacing.sm))
-        Text(
-            "AI agents can control the browser via HTTP API",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(Spacing.md))
-
-        // Server info
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(modifier = Modifier.padding(Spacing.md)) {
-                Text("Server", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Text("Host:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.weight(0.3f))
-                    Text("0.0.0.0:$port", style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                }
-                Row(modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Token:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.weight(0.3f))
-                    Text(
-                        maskToken(authToken),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        modifier = Modifier.weight(0.55f)
-                    )
-                    TextButton(onClick = {
-                        val clip = android.content.ClipData.newPlainText("token", authToken)
-                        (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(clip)
-                        android.widget.Toast.makeText(context, "Token copied", android.widget.Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy token", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Copy", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.md))
-
-        // Tunnel status
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = if (tunnelUrl != null) MaterialTheme.colorScheme.primaryContainer
-                else if (tunnelError != null) MaterialTheme.colorScheme.errorContainer
-                else MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(modifier = Modifier.padding(Spacing.md)) {
-                when {
-                    tunnelUrl != null -> {
-                        Text("External Access", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(modifier = Modifier.height(Spacing.xs))
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            Text("URL:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.15f))
-                            Text(tunnelUrl, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
-                        }
-                        Spacer(modifier = Modifier.height(Spacing.xxs))
-                        Text(
-                            "curl -H \"Authorization: Bearer $authToken\" http://$tunnelUrl/info",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    tunnelError != null -> {
-                        Text("External Access — Error", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error)
-                        Spacer(modifier = Modifier.height(Spacing.xs))
-                        Text(tunnelError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                        Spacer(modifier = Modifier.height(Spacing.xxs))
-                        Text("Auto-reconnecting...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
-                    }
-                    else -> {
-                        Text("External Access", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(Spacing.xs))
-                        Text("Connecting to bore.pub...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(Spacing.xxs))
-                        Text("Auto-reconnects on failure", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f))
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.md))
-
-        // Endpoints
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
-        ) {
-            Column(modifier = Modifier.padding(Spacing.md)) {
-                Text("Endpoints", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                Spacer(modifier = Modifier.height(Spacing.xs))
-                val endpoints = listOf(
-                    "GET /info" to "Server info",
-                    "POST /eval" to "Evaluate JS",
-                    "GET /console" to "Console logs",
-                    "GET /network" to "Network events",
-                    "GET /dom" to "DOM snapshot",
-                    "POST /navigate" to "Navigate URL",
-                    "GET /screenshot" to "Browser engine screenshot",
-                    "GET /perf" to "Performance metrics",
-                    "POST /inspector" to "Toggle inspector",
-                )
-                endpoints.forEach { (method, desc) ->
-                    val httpMethod = method.substringBefore(' ')
-                    val methodColor = when (httpMethod) {
-                        "GET" -> MaterialTheme.colorScheme.tertiary
-                        "POST" -> MaterialTheme.colorScheme.primary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                    Row(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xxs)) {
-                        Text(method, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = methodColor, modifier = Modifier.weight(0.45f))
-                        Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(0.55f))
-                    }
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(Spacing.md))
-
-        Text(
-            "Usage: curl -H \"Authorization: Bearer $authToken\" http://<ip>:$port/info",
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-            color = MaterialTheme.colorScheme.outline
-        )
-
-        Spacer(modifier = Modifier.height(Spacing.lg))
-    }
-}
-
-private fun maskToken(token: String): String {
-    if (token.length <= 8) return "••••••••"
-    return token.take(4) + "••••" + token.takeLast(4)
 }
