@@ -67,12 +67,10 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.name }}"
           cd app/build/outputs/apk
-          # Rename release APKs
           for f in release/*-release.apk; do
             abi=$(basename "$f" | sed 's/app-\(.*\)-release.apk/\1/')
             mv "$f" "release/DevCompanion-${VERSION}-${abi}.apk"
           done
-          # Rename debug APK (explicit filename to avoid androidTest collision)
           mv "debug/app-debug.apk" "debug/DevCompanion-${VERSION}-debug.apk"
           echo "Renamed APKs:"
           ls -la release/ debug/
@@ -100,24 +98,9 @@ jobs:
             CHANGELOG="- No notable changes since ${PREV_TAG}"$'\n'
           fi
 
-          APK_INFO=$(cat <<EOTXT
-**APK 파일 안내:**
-- \`DevCompanion-${VERSION}-arm64-v8a.apk\` — 대부분의 안드로이드 기기 (ARM64)
-- \`DevCompanion-${VERSION}-x86_64.apk\` — 에뮬레이터 / x86_64 기기
-EOTXT
-)
+          APK_INFO="**APK 파일 안내:**"$'\n'"- \`DevCompanion-${VERSION}-arm64-v8a.apk\` — 대부분의 안드로이드 기기 (ARM64)"$'\n'"- \`DevCompanion-${VERSION}-x86_64.apk\` — 에뮬레이터 / x86_64 기기"
 
-          BODY=$(cat <<EOBODY
-## ${TAG} 변경사항
-
-${CHANGELOG}
-
-${APK_INFO}
-
----
-**전체 변경 이력**: [${PREV_TAG}...${TAG}](https://github.com/JooyoungChoi14/DevCompanion/compare/${PREV_TAG}...${TAG})
-EOBODY
-)
+          BODY="## ${TAG} 변경사항"$'\n\n'"${CHANGELOG}"$'\n\n'"${APK_INFO}"$'\n\n'"---"$'\n'"**전체 변경 이력**: [${PREV_TAG}...${TAG}](https://github.com/JooyoungChoi14/DevCompanion/compare/${PREV_TAG}...${TAG})"
 
           {
             echo "body<<EOF"
