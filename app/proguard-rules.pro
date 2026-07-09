@@ -1,93 +1,75 @@
 # DevCompanion ProGuard rules
 
-# OkHttp
+# ── Kotlin basics ──
+-keepattributes Signature,RuntimeVisibleAnnotations,*Annotation*
+-keep class kotlin.Metadata { *; }
+-keepclassmembers class **$WhenMappings { <fields>; }
+
+# ── OkHttp ──
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
-# Gson
--keepattributes Signature
--keepattributes *Annotation*
+# ── Gson ──
+-keep class * extends com.google.gson.reflect.TypeToken
+-keep class com.google.gson.** { *; }
+-dontwarn com.google.gson.**
 
-# JavascriptInterface bridge methods must be kept
+# ── JavascriptInterface (WebView bridge) ──
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# InspectorTarget and related data classes
+# ── DevCompanion data classes (Gson serialization) ──
 -keep class com.devcompanion.debug.InspectorTarget { *; }
 -keep class com.devcompanion.debug.BoundingRect { *; }
-
-# ConsoleItem sealed class
 -keep class com.devcompanion.debug.ConsoleItem { *; }
 -keep class com.devcompanion.debug.ConsoleItem$* { *; }
-
-# Kotlin coroutines
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler
-
-# NanoHTTPD — uses reflection for route handling
--keep class fi.iki.elonen.** { *; }
--dontwarn fi.iki.elonen.**
-
-# BridgeServer — all public methods accessed by NanoHTTPD routing
--keep class com.devcompanion.bridge.BridgeServer { *; }
-
-# BoreTunnel — protocol data classes
--keep class com.devcompanion.bridge.BoreTunnel { *; }
--keep class com.devcompanion.bridge.BoreClientMessage { *; }
--keep class com.devcompanion.bridge.BoreClientMessage$* { *; }
--keep class com.devcompanion.bridge.BoreServerMessage { *; }
--keep class com.devcompanion.bridge.BoreServerMessage$* { *; }
-
-# Data classes used with Gson — must preserve field names for serialization
 -keep class com.devcompanion.llm.ChatMessage { *; }
 -keep class com.devcompanion.llm.ConversationExport { *; }
 -keep class com.devcompanion.llm.ConversationMeta { *; }
 -keep class com.devcompanion.data.Bookmark { *; }
 -keep class com.devcompanion.data.UrlHistoryStore { *; }
 
-# Gson TypeToken and generic type resolution
--keep class * extends com.google.gson.reflect.TypeToken
--keep class com.google.gson.** { *; }
--dontwarn com.google.gson.**
+# ── NanoHTTPD (reflection-based routing) ──
+-keep class fi.iki.elonen.** { *; }
+-dontwarn fi.iki.elonen.**
+-keep class com.devcompanion.bridge.BridgeServer { *; }
+-keep class com.devcompanion.bridge.BoreTunnel { *; }
+-keep class com.devcompanion.bridge.BoreClientMessage { *; }
+-keep class com.devcompanion.bridge.BoreClientMessage$* { *; }
+-keep class com.devcompanion.bridge.BoreServerMessage { *; }
+-keep class com.devcompanion.bridge.BoreServerMessage$* { *; }
 
 # ── AndroidX ViewModel (reflection-based creation) ──
 -keep class * extends androidx.lifecycle.ViewModel {
     <init>(...);
+    *;
 }
 -keep class * extends androidx.lifecycle.AndroidViewModel {
     <init>(android.app.Application);
+    *;
 }
+-keepclassmembers class * extends androidx.lifecycle.ViewModel { *; }
+-keepclassmembers class * extends androidx.lifecycle.AndroidViewModel { *; }
 
-# ── Compose (state/composable preservation) ──
+# ── Compose ──
 -dontwarn androidx.compose.**
 -keep class androidx.compose.** { *; }
 
-# ── Kotlin Metadata & Reflection ──
--keepattributes RuntimeVisibleAnnotations
--keep class kotlin.Metadata { *; }
--keepclassmembers class **$WhenMappings {
-    <fields>;
-}
--if @kotlin.Metadata class *
--keepclassmembers class * {
-    ** Companion;
-    *** INSTANCE;
-    @kotlin.PropertyGetter *** get*();
-    @kotlin.PropertySetter *** set*();
-}
-
-# ── Kotlinx Coroutines ──
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler
--keepclassmembernames class kotlinx.coroutines.** {
-    volatile <fields>;
-}
+# ── Kotlinx Coroutines & Flow ──
+-keep class kotlinx.coroutines.** { *; }
+-keep class kotlinx.coroutines.flow.** { *; }
+-dontwarn kotlinx.coroutines.**
 
 # ── GeckoView ──
 -keep class org.mozilla.gecko.** { *; }
 -keep class org.mozilla.geckoview.** { *; }
 -dontwarn org.mozilla.gecko.**
 
-# ── DevCompanion ViewModels (all public members accessed from Compose) ──
--keep class com.devcompanion.ui.AiChatViewModel { *; }
--keep class com.devcompanion.ui.SettingsViewModel { *; }
+# ── DevCompanion core classes (Compose observes these via reflection) ──
 -keep class com.devcompanion.DevCompanionApp { *; }
+-keep class com.devcompanion.DevCompanionApp$* { *; }
+-keep class com.devcompanion.ui.AiChatViewModel { *; }
+-keep class com.devcompanion.ui.AiChatViewModel$* { *; }
+-keep class com.devcompanion.ui.SettingsViewModel { *; }
+-keep class com.devcompanion.ui.SettingsViewModel$* { *; }
