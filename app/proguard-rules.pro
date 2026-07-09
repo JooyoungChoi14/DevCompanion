@@ -57,8 +57,18 @@
 -keep class androidx.compose.** { *; }
 
 # ── Kotlinx Coroutines & Flow ──
--keep class kotlinx.coroutines.** { *; }
--keep class kotlinx.coroutines.flow.** { *; }
+# Keep Flow internal delegate fields (NPE fix: ReadonlyStateFlow.$$delegate_0)
+-keep class kotlinx.coroutines.flow.internal.** { *; }
+-keep class kotlinx.coroutines.flow.SharedFlow { *; }
+-keep class kotlinx.coroutines.flow.MutableSharedFlow { *; }
+-keep class kotlinx.coroutines.flow.StateFlow { *; }
+-keep class kotlinx.coroutines.flow.MutableStateFlow { *; }
+-keep class kotlinx.coroutines.flow.ReadonlyStateFlow { *; }
+-keep class kotlinx.coroutines.flow.SafeCollector { *; }
+-keepnames class kotlinx.coroutines.CoroutineExceptionHandler
+-keepclassmembernames class kotlinx.coroutines.** {
+    volatile <fields>;
+}
 -dontwarn kotlinx.coroutines.**
 
 # ── GeckoView ──

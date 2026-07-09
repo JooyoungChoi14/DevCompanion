@@ -38,6 +38,7 @@ class AgentService : Service() {
     }
 
     private var isStopping = false
+    private var isForeground = false
 
     override fun onCreate() {
         super.onCreate()
@@ -53,6 +54,7 @@ class AgentService : Service() {
                     // Notify ViewModel to stop the agent loop before stopping service
                     (applicationContext as? DevCompanionApp)?.emitAgentStop()
                     stopForeground(STOP_FOREGROUND_REMOVE)
+                    isForeground = false
                     android.os.Handler(mainLooper).postDelayed({
                         stopSelf(startId)
                     }, 500L)
@@ -62,9 +64,17 @@ class AgentService : Service() {
             ACTION_UPDATE -> {
                 val text = intent.getStringExtra(EXTRA_TEXT) ?: return START_NOT_STICKY
                 if (!isStopping) {
-                    val notification = buildNotification(text)
-                    val manager = getSystemService(NotificationManager::class.java)
-                    manager.notify(NOTIFICATION_ID, notification)
+                    // Ensure foreground state — system may redeliver ACTION_UPDATE
+                    // after process death without a prior ACTION_START.
+                    if (!isForeground) {
+                        val notification = buildNotification(text)
+                        startForegroundCompat(NOTIFICATION_ID, notification)
+                        isForeground = true
+                    } else {
+                        val notification = buildNotification(text)
+                        val manager = getSystemService(NotificationManager::class.java)
+                        manager.notify(NOTIFICATION_ID, notification)
+                    }
                 }
                 return START_NOT_STICKY
             }
@@ -77,12 +87,8 @@ class AgentService : Service() {
         }
 
         val notification = buildNotification("Agent is running…")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            @Suppress("DEPRECATION")
-            startForeground(NOTIFICATION_ID, notification)
-        }
+        startForegroundCompat(NOTIFICATION_ID, notification)
+        isForeground = true
         return START_NOT_STICKY
     }
 
@@ -98,6 +104,7 @@ class AgentService : Service() {
         super.onTaskRemoved(rootIntent)
         // App was swiped away from recents — stop the service immediately.
         stopForeground(STOP_FOREGROUND_REMOVE)
+        isForeground = false
         stopSelf()
     }
 
@@ -112,6 +119,15 @@ class AgentService : Service() {
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(channel)
+    }
+
+    private fun startForegroundCompat(id: Int, notification: Notification) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(id, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            @Suppress("DEPRECATION")
+            startForeground(id, notification)
+        }
     }
 
     @Suppress("DEPRECATION")

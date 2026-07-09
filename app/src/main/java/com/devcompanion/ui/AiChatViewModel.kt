@@ -296,15 +296,22 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                     is AgentState.Error -> "Agent 오류 · ${state.message?.take(40)}"
                 }
                 if (text != null) {
-                    AgentService.updateNotification(application, text)
+                    try {
+                        AgentService.updateNotification(application, text)
+                    } catch (_: Exception) {
+                        // NotificationManager may throw SecurityException on restricted profiles
+                    }
                 }
             }
         }
 
         // Listen for stop events from AgentService notification
         viewModelScope.launch {
-            (getApplication<Application>() as? DevCompanionApp)?.agentStopEvent?.collect {
-                stopAgentLoop()
+            val app = getApplication<Application>()
+            if (app is DevCompanionApp) {
+                app.agentStopEvent.collect {
+                    stopAgentLoop()
+                }
             }
         }
     }
