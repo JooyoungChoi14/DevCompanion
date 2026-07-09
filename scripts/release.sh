@@ -41,8 +41,8 @@ fi
 # --- Describe APK files ---
 APK_DESCRIPTION=""
 APK_DESCRIPTION="**APK 파일 안내:**
-- \`app-arm64-v8a-release.apk\` — 대부분의 안드로이드 기기 (ARM64)
-- \`app-x86_64-release.apk\` — 에뮬레이터 / x86_64 기기"
+- \`DevCompanion-${VERSION}-arm64-v8a.apk\` — 대부분의 안드로이드 기기 (ARM64)
+- \`DevCompanion-${VERSION}-x86_64.apk\` — 에뮬레이터 / x86_64 기기"
 
 # --- Compose release notes ---
 RELEASE_BODY="## ${TAG} 변경사항

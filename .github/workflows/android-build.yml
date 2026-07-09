@@ -18,6 +18,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -38,17 +40,104 @@ jobs:
       - name: Build Release APK (with ABI splits)
         run: ./gradlew-real assembleRelease -PabiSplit=true
 
-      - name: Upload Debug APK
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      # ── PR / push: upload with original filenames ──
+      - name: Upload Debug APK (PR)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload Release APKs
+      - name: Upload Release APKs (PR)
+        if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-          path: app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/release/*-release.apk
+
+      # ── Tag release: rename with version, then upload ──
+      - name: Rename APKs with version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION="${{ steps.version.outputs.name }}"
+          cd app/build/outputs/apk
+          # Rename release APKs
+          for f in release/*-release.apk; do
+            abi=$(basename "$f" | sed 's/app-\(.*\)-release.apk/\1/')
+            mv "$f" "release/DevCompanion-${VERSION}-${abi}.apk"
+          done
+          # Rename debug APK (explicit filename to avoid androidTest collision)
+          mv "debug/app-debug.apk" "debug/DevCompanion-${VERSION}-debug.apk"
+          echo "Renamed APKs:"
+          ls -la release/ debug/
+
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.name }}"
+          TAG="v${VERSION}"
+          PREV_TAG="$(git tag -l 'v*' --sort=-version:refname | head -20 | grep -v "^${TAG}$" | head -1)"
+          if [ -z "$PREV_TAG" ]; then
+            PREV_TAG="$(git rev-list --max-parents=0 HEAD)"
+          fi
+
+          CHANGELOG=""
+          while IFS= read -r line; do
+            if echo "$line" | grep -qE "^chore: bump version"; then
+              continue
+            fi
+            CHANGELOG="${CHANGELOG}- ${line}"$'\n'
+          done < <(git log "${PREV_TAG}..HEAD" --oneline --no-decorate)
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- No notable changes since ${PREV_TAG}"$'\n'
+          fi
+
+          APK_INFO=$(cat <<EOTXT
+**APK 파일 안내:**
+- \`DevCompanion-${VERSION}-arm64-v8a.apk\` — 대부분의 안드로이드 기기 (ARM64)
+- \`DevCompanion-${VERSION}-x86_64.apk\` — 에뮬레이터 / x86_64 기기
+EOTXT
+)
+
+          BODY=$(cat <<EOBODY
+## ${TAG} 변경사항
+
+${CHANGELOG}
+
+${APK_INFO}
+
+---
+**전체 변경 이력**: [${PREV_TAG}...${TAG}](https://github.com/JooyoungChoi14/DevCompanion/compare/${PREV_TAG}...${TAG})
+EOBODY
+)
+
+          {
+            echo "body<<EOF"
+            printf '%s\n' "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload Debug APK (Release)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/DevCompanion-*-debug.apk
+
+      - name: Upload Release APKs (Release)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: app/build/outputs/apk/release/DevCompanion-*-*.apk
 
       - name: Upload R8 Mapping
         uses: actions/upload-artifact@v4
@@ -60,9 +149,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.release_notes.outputs.body }}
           files: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
+            app/build/outputs/apk/debug/DevCompanion-*-debug.apk
+            app/build/outputs/apk/release/DevCompanion-*-*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
