@@ -283,6 +283,22 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
             Log.w(TAG, "Failed to restore last conversation", e)
         }
 
+        // Update AgentService notification when agent state changes
+        viewModelScope.launch {
+            agentState.collect { state ->
+                val text = when (state) {
+                    is AgentState.Idle -> null
+                    is AgentState.Thinking -> "Agent running · ${state.iteration}회차"
+                    is AgentState.ExecutingTool -> "Agent running · ${state.iteration}회차 · ${state.tool}"
+                    is AgentState.CheckingPermission -> "Agent running · ${state.iteration}회차 · 확인 대기"
+                    is AgentState.WaitingConfirmation -> "Agent · 확인 대기"
+                    is AgentState.Error -> "Agent 오류 · ${state.message?.take(40)}"
+                }
+                if (text != null) {
+                    AgentService.updateNotification(application, text)
+                }
+            }
+        }
     }
 
     /**

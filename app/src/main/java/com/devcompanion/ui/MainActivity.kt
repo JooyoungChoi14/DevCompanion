@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
+import com.devcompanion.llm.agent.AgentState
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
 
@@ -158,6 +159,7 @@ fun MainApp(
     val chatViewModel: AiChatViewModel = viewModel()
     val settingsViewModel: SettingsViewModel = viewModel()
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
+    val agentState by chatViewModel.agentState.collectAsState()
 
     // ── UI navigation tracking ──
     LaunchedEffect(showAiChat) { SessionLog.uiNav("ai_chat", if (showAiChat) "open" else "close"); SessionLog.currentScreen = if (showAiChat) "ai_chat" else "browser" }
@@ -179,6 +181,15 @@ fun MainApp(
                         containerColor = MaterialTheme.colorScheme.surface,
                     ),
                     actions = {
+                        // Agent state indicator
+                        if (agentState !is AgentState.Idle) {
+                            Text(
+                                "● Running",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(end = Spacing.xs)
+                            )
+                        }
                         IconButton(onClick = {
                             val url = engineRef?.getUrl()
                             val currentConvId = chatViewModel.conversationId.value

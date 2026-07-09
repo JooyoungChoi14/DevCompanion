@@ -24,6 +24,17 @@ class AgentService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_START = "com.devcompanion.ACTION_START_AGENT"
         const val ACTION_STOP = "com.devcompanion.ACTION_STOP_AGENT"
+        const val ACTION_UPDATE = "com.devcompanion.ACTION_UPDATE_AGENT"
+        const val EXTRA_TEXT = "com.devcompanion.EXTRA_TEXT"
+
+        /** Update the foreground notification text from outside the service. */
+        fun updateNotification(context: android.content.Context, text: String) {
+            val intent = Intent(context, AgentService::class.java).apply {
+                action = ACTION_UPDATE
+                putExtra(EXTRA_TEXT, text)
+            }
+            context.startService(intent)
+        }
     }
 
     private var isStopping = false
@@ -40,12 +51,18 @@ class AgentService : Service() {
                     isStopping = true
                     Log.d(TAG, "Stop requested — removing foreground, scheduling stopSelf")
                     stopForeground(STOP_FOREGROUND_REMOVE)
-                    // Give the agent loop coroutine a brief window to finish
-                    // before we kill the service, so the system doesn't fire
-                    // ForegroundServiceDidNotStopInTimeException.
                     android.os.Handler(mainLooper).postDelayed({
                         stopSelf(startId)
                     }, 500L)
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_UPDATE -> {
+                val text = intent.getStringExtra(EXTRA_TEXT) ?: return START_NOT_STICKY
+                if (!isStopping) {
+                    val notification = buildNotification(text)
+                    val manager = getSystemService(NotificationManager::class.java)
+                    manager.notify(NOTIFICATION_ID, notification)
                 }
                 return START_NOT_STICKY
             }
