@@ -177,6 +177,7 @@ fun MainApp(
                 exit = shrinkVertically()
             ) {
                 TopAppBar(
+                    title = {},
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                     ),
