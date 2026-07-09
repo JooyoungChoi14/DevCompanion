@@ -1,9 +1,13 @@
 package com.devcompanion.ui
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.devcompanion.engine.BrowserEngine
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -299,6 +303,17 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
         }
+
+        // Listen for stop broadcasts from AgentService notification
+        val stopReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (intent.action == AgentService.BROADCAST_AGENT_STOPPED) {
+                    stopAgentLoop()
+                }
+            }
+        }
+        LocalBroadcastManager.getInstance(application)
+            .registerReceiver(stopReceiver, IntentFilter(AgentService.BROADCAST_AGENT_STOPPED))
     }
 
     /**

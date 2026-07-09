@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.Build
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.devcompanion.ui.MainActivity
 
 /**
@@ -26,6 +27,7 @@ class AgentService : Service() {
         const val ACTION_STOP = "com.devcompanion.ACTION_STOP_AGENT"
         const val ACTION_UPDATE = "com.devcompanion.ACTION_UPDATE_AGENT"
         const val EXTRA_TEXT = "com.devcompanion.EXTRA_TEXT"
+        const val BROADCAST_AGENT_STOPPED = "com.devcompanion.AGENT_STOPPED"
 
         /** Update the foreground notification text from outside the service. */
         fun updateNotification(context: android.content.Context, text: String) {
@@ -50,6 +52,9 @@ class AgentService : Service() {
                 if (!isStopping) {
                     isStopping = true
                     Log.d(TAG, "Stop requested — removing foreground, scheduling stopSelf")
+                    // Notify ViewModel to stop the agent loop before stopping service
+                    val stopBroadcast = Intent(BROADCAST_AGENT_STOPPED)
+                    LocalBroadcastManager.getInstance(this).sendBroadcast(stopBroadcast)
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     android.os.Handler(mainLooper).postDelayed({
                         stopSelf(startId)
