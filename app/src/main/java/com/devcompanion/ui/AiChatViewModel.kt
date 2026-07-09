@@ -12,6 +12,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.devcompanion.AgentService
+import com.devcompanion.DevCompanionApp
 import com.devcompanion.data.UrlHistoryStore
 import com.devcompanion.llm.*
 import com.devcompanion.llm.agent.ActionRisk
