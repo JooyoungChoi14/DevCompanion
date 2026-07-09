@@ -7,8 +7,11 @@ import com.devcompanion.bridge.BridgeServer
 import com.devcompanion.bridge.BoreTunnel
 import com.devcompanion.logging.AppHealthMonitor
 import com.devcompanion.logging.SessionLog
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class DevCompanionApp : Application() {
@@ -30,6 +33,13 @@ class DevCompanionApp : Application() {
 
     private val _tunnelError = MutableStateFlow<String?>(null)
     val tunnelError: StateFlow<String?> = _tunnelError.asStateFlow()
+
+    /** Shared event flow for cross-component communication (e.g., AgentService → ViewModel). */
+    private val _agentStopEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val agentStopEvent: SharedFlow<Unit> = _agentStopEvent.asSharedFlow()
+
+    /** Emit an agent stop event from Service layer. */
+    fun emitAgentStop() = _agentStopEvent.tryEmit(Unit)
 
     override fun onCreate() {
         super.onCreate()
