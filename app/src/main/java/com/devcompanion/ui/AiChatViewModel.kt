@@ -283,37 +283,6 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
         } catch (e: Exception) {
             Log.w(TAG, "Failed to restore last conversation", e)
         }
-
-        // Update AgentService notification when agent state changes
-        viewModelScope.launch {
-            agentState.collect { state ->
-                val text = when (state) {
-                    is AgentState.Idle -> null
-                    is AgentState.Thinking -> "Agent running · ${state.iteration}회차"
-                    is AgentState.ExecutingTool -> "Agent running · ${state.iteration}회차 · ${state.tool}"
-                    is AgentState.CheckingPermission -> "Agent running · ${state.iteration}회차 · 확인 대기"
-                    is AgentState.WaitingConfirmation -> "Agent · 확인 대기"
-                    is AgentState.Error -> "Agent 오류 · ${state.message?.take(40)}"
-                }
-                if (text != null) {
-                    try {
-                        AgentService.updateNotification(application, text)
-                    } catch (_: Exception) {
-                        // NotificationManager may throw SecurityException on restricted profiles
-                    }
-                }
-            }
-        }
-
-        // Listen for stop events from AgentService notification
-        viewModelScope.launch {
-            val app = getApplication<Application>()
-            if (app is DevCompanionApp) {
-                app.agentStopEvent.collect {
-                    stopAgentLoop()
-                }
-            }
-        }
     }
 
     /**
@@ -667,6 +636,41 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
      * Used by both confirmationHandler and continueHandler since they share the same UI card.
      * Each handler resets the deferred before awaiting, so there's no cross-contamination. */
     private var confirmationDeferred = CompletableDeferred<Boolean>()
+
+    // Observations must be initialized AFTER the StateFlow/SharedFlow fields they collect,
+    // otherwise Kotlin's declaration-order initialization leaves the fields as null (NPE on release builds).
+    init {
+        // Update AgentService notification when agent state changes
+        viewModelScope.launch {
+            agentState.collect { state ->
+                val text = when (state) {
+                    is AgentState.Idle -> null
+                    is AgentState.Thinking -> "Agent running · ${state.iteration}회차"
+                    is AgentState.ExecutingTool -> "Agent running · ${state.iteration}회차 · ${state.tool}"
+                    is AgentState.CheckingPermission -> "Agent running · ${state.iteration}회차 · 확인 대기"
+                    is AgentState.WaitingConfirmation -> "Agent · 확인 대기"
+                    is AgentState.Error -> "Agent 오류 · ${state.message?.take(40)}"
+                }
+                if (text != null) {
+                    try {
+                        AgentService.updateNotification(application, text)
+                    } catch (_: Exception) {
+                        // NotificationManager may throw SecurityException on restricted profiles
+                    }
+                }
+            }
+        }
+
+        // Listen for stop events from AgentService notification
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            if (app is DevCompanionApp) {
+                app.agentStopEvent.collect {
+                    stopAgentLoop()
+                }
+            }
+        }
+    }
 
     private var agentLoop: AgentLoop? = null
     private var agentJob: kotlinx.coroutines.Job? = null

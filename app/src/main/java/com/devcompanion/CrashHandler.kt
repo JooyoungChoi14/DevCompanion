@@ -59,6 +59,7 @@ object CrashHandler : Thread.UncaughtExceptionHandler {
             val file = File(dir, "crash_$timestamp.txt")
             file.writeText(buildString {
                 appendLine("=== DevCompanion Crash Log ===")
+                appendLine("Version: ${com.devcompanion.BuildConfig.VERSION_NAME} (${com.devcompanion.BuildConfig.GIT_COMMIT})")
                 appendLine("Time: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
                 appendLine("Thread: ${Thread.currentThread().name}")
                 appendLine()

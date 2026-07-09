@@ -27,12 +27,22 @@ class CrashReportActivity : Activity() {
             setPadding(32, 32, 32, 32)
         }
 
+        val versionInfo = "DevCompanion v${BuildConfig.VERSION_NAME} (${BuildConfig.GIT_COMMIT})"
+
         val title = TextView(this).apply {
-            text = "⚠️ DevCompanion Crashed"
+            text = "⚠️ Crashed"
             textSize = 20f
-            setPadding(0, 0, 0, 24)
+            setPadding(0, 0, 0, 8)
         }
         layout.addView(title)
+
+        val versionText = TextView(this).apply {
+            text = versionInfo
+            textSize = 14f
+            setPadding(0, 0, 0, 16)
+            setTextColor(0xFFAAAAAA.toInt())
+        }
+        layout.addView(versionText)
 
         val scrollView = ScrollView(this)
 
@@ -60,7 +70,7 @@ class CrashReportActivity : Activity() {
             setOnClickListener {
                 try {
                     val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("crash_log", stackTrace))
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("crash_log", "$versionInfo\n\n$stackTrace"))
                 } catch (_: Exception) {}
                 finish()
             }
@@ -77,7 +87,7 @@ class CrashReportActivity : Activity() {
                 try {
                     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                         type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_TEXT, stackTrace)
+                        putExtra(android.content.Intent.EXTRA_TEXT, "$versionInfo\n\n$stackTrace")
                     }
                     startActivity(android.content.Intent.createChooser(intent, "Share crash log"))
                 } catch (_: Exception) {}
