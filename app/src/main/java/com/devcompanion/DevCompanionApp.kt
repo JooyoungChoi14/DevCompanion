@@ -11,8 +11,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 class DevCompanionApp : Application() {
     companion object {
@@ -29,14 +27,14 @@ class DevCompanionApp : Application() {
         private set
 
     private val _tunnelUrl = MutableStateFlow<String?>(null)
-    val tunnelUrl: StateFlow<String?> = _tunnelUrl.asStateFlow()
+    val tunnelUrl: StateFlow<String?> = _tunnelUrl
 
     private val _tunnelError = MutableStateFlow<String?>(null)
-    val tunnelError: StateFlow<String?> = _tunnelError.asStateFlow()
+    val tunnelError: StateFlow<String?> = _tunnelError
 
     /** Shared event flow for cross-component communication (e.g., AgentService → ViewModel). */
     private val _agentStopEvent = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val agentStopEvent: SharedFlow<Unit> = _agentStopEvent.asSharedFlow()
+    val agentStopEvent: SharedFlow<Unit> = _agentStopEvent
 
     /** Emit an agent stop event from Service layer. */
     fun emitAgentStop() = _agentStopEvent.tryEmit(Unit)

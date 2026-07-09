@@ -5,7 +5,6 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Persists recently visited URLs across app restarts.
@@ -21,7 +20,7 @@ class UrlHistoryStore(context: Context) {
 
     private val _urlsFlow = MutableStateFlow<List<String>>(emptyList())
     /** Reactive flow of URL history — updated on every [addUrl] or [clear] call. */
-    val urlsFlow: StateFlow<List<String>> = _urlsFlow.asStateFlow()
+    val urlsFlow: StateFlow<List<String>> = _urlsFlow
 
     init {
         // Initialize flow from persisted data

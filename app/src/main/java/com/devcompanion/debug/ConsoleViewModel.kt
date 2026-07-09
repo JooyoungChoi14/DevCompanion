@@ -16,28 +16,28 @@ class ConsoleViewModel(application: Application) : AndroidViewModel(application)
 
     // ── UI state ────────────────────────────────────────────────────────
     private val _searchQuery = MutableStateFlow("")
-    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+    val searchQuery: StateFlow<String> = _searchQuery
 
     private val _filterLevel = MutableStateFlow<ConsoleLevel?>(null) // null = show all
-    val filterLevel: StateFlow<ConsoleLevel?> = _filterLevel.asStateFlow()
+    val filterLevel: StateFlow<ConsoleLevel?> = _filterLevel
 
     val jsInput = MutableStateFlow("")
 
     private val _expandedItems = MutableStateFlow<Set<Long>>(emptySet())
-    val expandedItems: StateFlow<Set<Long>> = _expandedItems.asStateFlow()
+    val expandedItems: StateFlow<Set<Long>> = _expandedItems
 
     private val _isSelectMode = MutableStateFlow(false)
-    val isSelectMode: StateFlow<Boolean> = _isSelectMode.asStateFlow()
+    val isSelectMode: StateFlow<Boolean> = _isSelectMode
 
     private val _selectedItems = MutableStateFlow<Set<Long>>(emptySet())
-    val selectedItems: StateFlow<Set<Long>> = _selectedItems.asStateFlow()
+    val selectedItems: StateFlow<Set<Long>> = _selectedItems
 
     // ── Inspector mode ─────────────────────────────────────────────────
     private val _isInspectorMode = MutableStateFlow(false)
-    val isInspectorMode: StateFlow<Boolean> = _isInspectorMode.asStateFlow()
+    val isInspectorMode: StateFlow<Boolean> = _isInspectorMode
 
     private val _inspectorTarget = MutableStateFlow<InspectorTarget?>(null)
-    val inspectorTarget: StateFlow<InspectorTarget?> = _inspectorTarget.asStateFlow()
+    val inspectorTarget: StateFlow<InspectorTarget?> = _inspectorTarget
 
     fun toggleInspectorMode() {
         _isInspectorMode.update { !it }

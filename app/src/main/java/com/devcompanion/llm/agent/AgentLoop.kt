@@ -18,7 +18,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.launch
@@ -66,7 +65,7 @@ class AgentLoop(
     }
 
     private val _state = MutableStateFlow<AgentState>(AgentState.Idle)
-    val state: StateFlow<AgentState> = _state.asStateFlow()
+    val state: StateFlow<AgentState> = _state
 
     private var currentJob: Job? = null
     private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

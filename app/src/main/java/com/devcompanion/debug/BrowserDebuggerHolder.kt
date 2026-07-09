@@ -2,7 +2,6 @@ package com.devcompanion.debug
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Holder to share the current [BrowserDebugger] instance with DevTools tabs and BridgeServer.
@@ -10,7 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 object BrowserDebuggerHolder {
     private val _current = MutableStateFlow<BrowserDebugger?>(null)
-    val currentFlow: StateFlow<BrowserDebugger?> = _current.asStateFlow()
+    val currentFlow: StateFlow<BrowserDebugger?> = _current
 
     var current: BrowserDebugger?
         get() = _current.value

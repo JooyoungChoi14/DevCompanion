@@ -2,7 +2,6 @@ package com.devcompanion.debug
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * No-op debugger for GeckoView.
@@ -11,21 +10,21 @@ import kotlinx.coroutines.flow.asStateFlow
 class NoOpDebugger : BrowserDebugger {
 
     private val _consoleItems = MutableStateFlow<List<ConsoleItem>>(emptyList())
-    override val consoleItems: StateFlow<List<ConsoleItem>> = _consoleItems.asStateFlow()
+    override val consoleItems: StateFlow<List<ConsoleItem>> = _consoleItems
 
     private val _networkEntries = MutableStateFlow<Map<String, NetworkEntry>>(emptyMap())
-    override val networkEntries: StateFlow<Map<String, NetworkEntry>> = _networkEntries.asStateFlow()
+    override val networkEntries: StateFlow<Map<String, NetworkEntry>> = _networkEntries
 
     private val _performanceMetrics = MutableStateFlow<List<PerformanceMetric>>(emptyList())
-    override val performanceMetrics: StateFlow<List<PerformanceMetric>> = _performanceMetrics.asStateFlow()
+    override val performanceMetrics: StateFlow<List<PerformanceMetric>> = _performanceMetrics
 
     private val _urlHistory = MutableStateFlow<List<String>>(emptyList())
-    override val urlHistory: StateFlow<List<String>> = _urlHistory.asStateFlow()
+    override val urlHistory: StateFlow<List<String>> = _urlHistory
 
     override val inspectorEnabled: Boolean = false
 
     private val _inspectorTarget = MutableStateFlow<InspectorTarget?>(null)
-    override val inspectorTarget: StateFlow<InspectorTarget?> = _inspectorTarget.asStateFlow()
+    override val inspectorTarget: StateFlow<InspectorTarget?> = _inspectorTarget
 
     override fun addConsoleLog(level: ConsoleLevel, text: String, source: String?, line: Int?) {}
     override fun clearConsole() { _consoleItems.value = emptyList() }

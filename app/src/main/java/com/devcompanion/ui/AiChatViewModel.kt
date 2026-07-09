@@ -73,18 +73,18 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     // ── LLM provider ──────────────────────────────────────────────────
 
     private val _provider = MutableStateFlow<LlmProvider?>(null)
-    val provider: StateFlow<LlmProvider?> = _provider.asStateFlow()
+    val provider: StateFlow<LlmProvider?> = _provider
 
     // ── Chat messages ─────────────────────────────────────────────────
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    val messages: StateFlow<List<ChatMessage>> = _messages
 
     // ── Conversation persistence ────────────────────────────────────────
 
     // M1: Promoted from internal var to StateFlow for UI observability
     private val _conversationId = MutableStateFlow(ChatHistory.newConversationId())
-    val conversationId: StateFlow<String> = _conversationId.asStateFlow()
+    val conversationId: StateFlow<String> = _conversationId
     private var _sourceUrl: String? = null
     val sourceUrl: String? get() = _sourceUrl
 
@@ -231,29 +231,29 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     // ── Streaming state ───────────────────────────────────────────────
 
     private val _isStreaming = MutableStateFlow(false)
-    val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
+    val isStreaming: StateFlow<Boolean> = _isStreaming
 
     // Current streaming response being built token-by-token
     private val _currentResponse = MutableStateFlow("")
-    val currentResponse: StateFlow<String> = _currentResponse.asStateFlow()
+    val currentResponse: StateFlow<String> = _currentResponse
 
     // ── Web context ────────────────────────────────────────────────────
 
     private val _lastContext = MutableStateFlow<WebContextPacket?>(null)
-    val lastContext: StateFlow<WebContextPacket?> = _lastContext.asStateFlow()
+    val lastContext: StateFlow<WebContextPacket?> = _lastContext
 
     // ── Error state ────────────────────────────────────────────────────
 
     private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error.asStateFlow()
+    val error: StateFlow<String?> = _error
 
     // ── Cumulative token usage ─────────────────────────────────────────
 
     private val _totalInputTokens = MutableStateFlow(0)
-    val totalInputTokens: StateFlow<Int> = _totalInputTokens.asStateFlow()
+    val totalInputTokens: StateFlow<Int> = _totalInputTokens
 
     private val _totalOutputTokens = MutableStateFlow(0)
-    val totalOutputTokens: StateFlow<Int> = _totalOutputTokens.asStateFlow()
+    val totalOutputTokens: StateFlow<Int> = _totalOutputTokens
 
     // ── Public API ──────────────────────────────────────────────────────
 
@@ -378,7 +378,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     private var streamingJob: kotlinx.coroutines.Job? = null
 
     private var _autoCaptureEnabled = MutableStateFlow(UiPreferences.autoCaptureEnabled)
-    val autoCaptureEnabled: StateFlow<Boolean> = _autoCaptureEnabled.asStateFlow()
+    val autoCaptureEnabled: StateFlow<Boolean> = _autoCaptureEnabled
 
     fun setAutoCaptureEnabled(enabled: Boolean) {
         _autoCaptureEnabled.value = enabled
@@ -654,14 +654,14 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
     // ── Agent mode ──────────────────────────────────────────────────────
 
     private val _agentMode = MutableStateFlow(LlmSettings.agentModeDefault)
-    val agentMode: StateFlow<Boolean> = _agentMode.asStateFlow()
+    val agentMode: StateFlow<Boolean> = _agentMode
 
     private val _agentState = MutableStateFlow<AgentState>(AgentState.Idle)
-    val agentState: StateFlow<AgentState> = _agentState.asStateFlow()
+    val agentState: StateFlow<AgentState> = _agentState
 
     /** Pending confirmation request from the agent loop (if any). */
     private val _pendingConfirmation = MutableStateFlow<Pair<ToolCall, ToolConfirmationDetails>?>(null)
-    val pendingConfirmation: StateFlow<Pair<ToolCall, ToolConfirmationDetails>?> = _pendingConfirmation.asStateFlow()
+    val pendingConfirmation: StateFlow<Pair<ToolCall, ToolConfirmationDetails>?> = _pendingConfirmation
 
     /** Deferred result for user confirmation — CompletableDeferred replaces busy-wait polling.
      * Used by both confirmationHandler and continueHandler since they share the same UI card.

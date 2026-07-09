@@ -11,7 +11,6 @@ import com.devcompanion.logging.EventType
 import com.devcompanion.logging.SessionLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -34,34 +33,34 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     // ── Provider form state ─────────────────────────────────────────
 
     private val _formState = MutableStateFlow(ProviderFormState())
-    val formState: StateFlow<ProviderFormState> = _formState.asStateFlow()
+    val formState: StateFlow<ProviderFormState> = _formState
 
     private val _testing = MutableStateFlow(false)
-    val testing: StateFlow<Boolean> = _testing.asStateFlow()
+    val testing: StateFlow<Boolean> = _testing
 
     private val _testResult = MutableStateFlow<String?>(null)
-    val testResult: StateFlow<String?> = _testResult.asStateFlow()
+    val testResult: StateFlow<String?> = _testResult
 
     private val _usingPlainStorage = MutableStateFlow(LlmSettings.isUsingPlainStorage)
-    val usingPlainStorage: StateFlow<Boolean> = _usingPlainStorage.asStateFlow()
+    val usingPlainStorage: StateFlow<Boolean> = _usingPlainStorage
 
     private val _saveResult = MutableStateFlow<SaveResult?>(null)
-    val saveResult: StateFlow<SaveResult?> = _saveResult.asStateFlow()
+    val saveResult: StateFlow<SaveResult?> = _saveResult
 
     // ── Custom prompt ────────────────────────────────────────────────
 
     private val _customPrompt = MutableStateFlow(LlmSettings.loadCustomPrompt() ?: "")
-    val customPrompt: StateFlow<String> = _customPrompt.asStateFlow()
+    val customPrompt: StateFlow<String> = _customPrompt
 
     // ── Max iterations ───────────────────────────────────────────────
 
     private val _maxIterations = MutableStateFlow(LlmSettings.maxIterations)
-    val maxIterations: StateFlow<Int> = _maxIterations.asStateFlow()
+    val maxIterations: StateFlow<Int> = _maxIterations
 
     // ── Home URL ──────────────────────────────────────────────────────
 
     private val _homeUrl = MutableStateFlow(LlmSettings.homeUrl)
-    val homeUrl: StateFlow<String> = _homeUrl.asStateFlow()
+    val homeUrl: StateFlow<String> = _homeUrl
 
     init {
         loadFromStorage()
