@@ -48,6 +48,12 @@ class AgentService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                // Must call startForeground before stopping to satisfy Android's
+                // 5-second requirement if the system used startForegroundService().
+                if (!isForeground) {
+                    startForegroundCompat(NOTIFICATION_ID, buildNotification("Stopping…"))
+                    isForeground = true
+                }
                 if (!isStopping) {
                     isStopping = true
                     Log.d(TAG, "Stop requested — removing foreground, scheduling stopSelf")
@@ -62,7 +68,7 @@ class AgentService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_UPDATE -> {
-                val text = intent.getStringExtra(EXTRA_TEXT) ?: return START_NOT_STICKY
+                val text = intent.getStringExtra(EXTRA_TEXT) ?: "Agent running"
                 if (!isStopping) {
                     // Ensure foreground state — system may redeliver ACTION_UPDATE
                     // after process death without a prior ACTION_START.
@@ -80,8 +86,12 @@ class AgentService : Service() {
             }
         }
 
+        // Default / null intent (system recreated after process death)
         if (isStopping) {
-            // A stop is already in flight; don't re-start foreground.
+            // A stop is already in flight — still must call startForeground first.
+            startForegroundCompat(NOTIFICATION_ID, buildNotification("Stopping…"))
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            isForeground = false
             stopSelf(startId)
             return START_NOT_STICKY
         }
