@@ -42,7 +42,6 @@ class ToolExecutor(
                 .build()
         }
     }
-    }
 
     /** Update the scratchpad reference (called by AgentLoop when starting a new session). */
     fun updateScratchpad(pad: SessionScratchpad) {
@@ -486,92 +485,106 @@ class ToolExecutor(
             return ToolResult(call.id, "Blocked: Only http:// and https:// URLs are allowed. Received: $url", isError = true)
         }
 
+        // SSRF prevention: block localhost, private networks, and link-local addresses
+        try {
+            val host = java.net.URL(url).host
+            val blockedPatterns = listOf("localhost", "127.0.0.1", "0.0.0.0", "::1")
+            if (blockedPatterns.contains(host) ||
+                host.startsWith("10.") ||
+                host.startsWith("192.168.") ||
+                host.matches(Regex("^172\\.(1[6-9]|2[0-9]|3[01])\\.")) ||
+                host.startsWith("169.254.")) {
+                return ToolResult(call.id, "Blocked: Cannot download from local/private network addresses. Received: $url", isError = true)
+            }
+        } catch (_: Exception) {
+            return ToolResult(call.id, "Invalid URL: $url", isError = true)
+        }
+
         val overrideFilename = call.arguments.getAsJsonPrimitive("filename")?.asString
 
         return withContext(Dispatchers.IO) {
             try {
                 val request = Request.Builder().url(url).build()
-                val response = DOWNLOAD_CLIENT.newCall(request).execute()
-
-                if (!response.isSuccessful) {
-                    return@withContext ToolResult(call.id, "HTTP ${response.code}: ${response.message}", isError = true)
-                }
-
-                val body = response.body ?: return@withContext ToolResult(call.id, "Empty response body", isError = true)
-                val contentType = body.contentType()?.toString() ?: "application/octet-stream"
-                val contentLength = body.contentLength()
-
-                // Derive filename: override > Content-Disposition > URL path > "download"
-                val filename = overrideFilename ?: run {
-                    val disposition = response.header("Content-Disposition", "")
-                    val cdFilename = disposition
-                        .split(";")
-                        .map { it.trim() }
-                        .filter { it.startsWith("filename=") || it.startsWith("filename*=") }
-                        .lastOrNull()
-                        ?.removePrefix("filename=")
-                        ?.removePrefix("filename*=")
-                        ?.trim('"')
-                        ?.let { if (it.startsWith("UTF-8''")) URLDecoder.decode(it.removePrefix("UTF-8''"), "UTF-8") else it }
-                    cdFilename ?: run {
-                        val path = java.net.URL(url).path
-                        val decoded = URLDecoder.decode(path, "UTF-8")
-                        val name = decoded.substringAfterLast('/')
-                        if (name.isNotBlank() && name.contains(".")) name else "download"
-                    }
-                }
-
-                // Determine MIME type
-                val mimeType = if (contentType.contains("text/html", ignoreCase = true)) {
-                    // HTML pages shouldn't be "downloaded" as-is typically
-                    "text/html"
-                } else {
-                    contentType
-                }
-
-                // Save via MediaStore (works on Android 10+ without WRITE_EXTERNAL_STORAGE)
-                val contentValues = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
-                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        put(MediaStore.Downloads.IS_PENDING, 1)
-                    }
-                }
-
-                val uri = context.contentResolver.insert(
-                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                    contentValues
-                ) ?: return@withContext ToolResult(call.id, "Failed to create MediaStore entry", isError = true)
-
-                try {
-                    context.contentResolver.openOutputStream(uri)?.use { os ->
-                        body.byteStream().copyTo(os)
+                DOWNLOAD_CLIENT.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        return@withContext ToolResult(call.id, "HTTP ${response.code}: ${response.message}", isError = true)
                     }
 
-                    // Mark as complete
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        contentValues.clear()
-                        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
-                        context.contentResolver.update(uri, contentValues, null, null)
-                    }
+                    val body = response.body ?: return@withContext ToolResult(call.id, "Empty response body", isError = true)
+                    val contentType = body.contentType()?.toString() ?: "application/octet-stream"
+                    val contentLength = body.contentLength()
 
-                    Log.d(TAG, "Downloaded $filename (${contentLength} bytes) to $uri")
-                    ToolResult(call.id, buildString {
-                        appendLine("Downloaded successfully:")
-                        appendLine("  File: $filename")
-                        appendLine("  Size: ${if (contentLength > 0) "$contentLength bytes" else "unknown (streamed)"}")
-                        appendLine("  Type: $mimeType")
-                        appendLine("  URI: $uri")
-                        appendLine("  Location: Downloads/$filename")
-                    })
-                } catch (e: Exception) {
-                    // Clean up pending entry on error
-                    try {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            context.contentResolver.delete(uri, null, null)
+                    // Derive filename: override > Content-Disposition > URL path > "download"
+                    val filename = overrideFilename ?: run {
+                        val disposition = response.header("Content-Disposition", "")
+                        val cdFilename = disposition
+                            .split(";")
+                            .map { it.trim() }
+                            .filter { it.startsWith("filename=") || it.startsWith("filename*=") }
+                            .lastOrNull()
+                            ?.removePrefix("filename=")
+                            ?.removePrefix("filename*=")
+                            ?.trim('"')
+                            ?.let { if (it.startsWith("UTF-8''")) URLDecoder.decode(it.removePrefix("UTF-8''"), "UTF-8") else it }
+                        cdFilename ?: run {
+                            val path = java.net.URL(url).path
+                            val decoded = URLDecoder.decode(path, "UTF-8")
+                            val name = decoded.substringAfterLast('/')
+                            if (name.isNotBlank() && name.contains(".")) name else "download"
                         }
-                    } catch (_: Exception) {}
-                    throw e
+                    }
+
+                    // Determine MIME type
+                    val mimeType = if (contentType.contains("text/html", ignoreCase = true)) {
+                        "text/html"
+                    } else {
+                        contentType
+                    }
+
+                    // Save via MediaStore (works on Android 10+ without WRITE_EXTERNAL_STORAGE)
+                    val contentValues = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                        put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            put(MediaStore.Downloads.IS_PENDING, 1)
+                        }
+                    }
+
+                    val uri = context.contentResolver.insert(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        contentValues
+                    ) ?: return@withContext ToolResult(call.id, "Failed to create MediaStore entry", isError = true)
+
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { os ->
+                            body.byteStream().copyTo(os)
+                        }
+
+                        // Mark as complete
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            contentValues.clear()
+                            contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                            context.contentResolver.update(uri, contentValues, null, null)
+                        }
+
+                        Log.d(TAG, "Downloaded $filename ($contentLength bytes) to $uri")
+                        ToolResult(call.id, buildString {
+                            appendLine("Downloaded successfully:")
+                            appendLine("  File: $filename")
+                            appendLine("  Size: ${if (contentLength > 0) "$contentLength bytes" else "unknown (streamed)"}")
+                            appendLine("  Type: $mimeType")
+                            appendLine("  URI: $uri")
+                            appendLine("  Location: Downloads/$filename")
+                        })
+                    } catch (e: Exception) {
+                        // Clean up pending entry on error
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                                context.contentResolver.delete(uri, null, null)
+                            }
+                        } catch (_: Exception) {}
+                        throw e
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Download failed: $url", e)
