@@ -166,7 +166,7 @@ fun MainApp(
     LaunchedEffect(showDevTools) { SessionLog.uiNav("devtools", if (showDevTools) "open" else "close"); if (showDevTools) SessionLog.currentScreen = "devtools" }
     LaunchedEffect(showSettings) { SessionLog.uiNav("settings", if (showSettings) "open" else "close"); if (showSettings) SessionLog.currentScreen = "settings" }
     LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
-    LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; else -> "unknown" }) }
+    LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; 3 -> "files"; else -> "unknown" }) }
     val context = LocalContext.current
 
     Scaffold(
@@ -408,12 +408,14 @@ private fun DevToolsPanel(
             Tab(selected = selectedTab == 0, onClick = { onTabChange(0) }, text = { Text("Console", style = MaterialTheme.typography.titleSmall) })
             Tab(selected = selectedTab == 1, onClick = { onTabChange(1) }, text = { Text("Network", style = MaterialTheme.typography.titleSmall) })
             Tab(selected = selectedTab == 2, onClick = { onTabChange(2) }, text = { Text("Perf", style = MaterialTheme.typography.titleSmall) })
+            Tab(selected = selectedTab == 3, onClick = { onTabChange(3) }, text = { Text("Files", style = MaterialTheme.typography.titleSmall) })
         }
 
         when (selectedTab) {
             0 -> ConsoleTab()
             1 -> NetworkTab()
             2 -> PerformanceTab()
+            3 -> FilesTab()
         }
     }
 }
