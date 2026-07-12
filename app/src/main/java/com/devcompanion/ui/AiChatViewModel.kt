@@ -427,6 +427,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
                     com.devcompanion.llm.agent.WebViewTools.GET_CURRENT_MODE
                 )
                 val modeExecutor = com.devcompanion.llm.agent.ToolExecutor(
+                    context = getApplication<Application>(),
                     onSwitchMode = { mode ->
                         val isAgent = mode == "agent"
                         if (_agentMode.value != isAgent) {
@@ -719,6 +720,7 @@ class AiChatViewModel(application: Application) : AndroidViewModel(application) 
 
         // Setup agent loop components
         val executor = ToolExecutor(
+            context = getApplication<Application>(),
             onSwitchMode = { mode ->
                 val isAgent = mode == "agent"
                 if (_agentMode.value != isAgent) {

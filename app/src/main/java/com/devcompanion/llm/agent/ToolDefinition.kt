@@ -179,7 +179,7 @@ object WebViewTools {
 
     val EVAL_JS = ToolDefinition(
         name = "eval_js",
-        description = "Execute a JavaScript expression in the page context. WARNING: (1) Many sites (chatgpt.com, google.com, etc.) block eval via Content Security Policy (CSP). If you receive a CSP error, do NOT retry eval_js — switch to get_dom, extract_text, or click instead. (2) This runs inside the browser engine — you CANNOT trigger file downloads, access the filesystem, or save files via JS. A return value like 'download triggered' only means JS executed, NOT that a file was saved. (3) Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
+        description = "Execute a JavaScript expression in the page context. WARNING: (1) Many sites (chatgpt.com, google.com, etc.) block eval via Content Security Policy (CSP). If you receive a CSP error, do NOT retry eval_js — switch to get_dom, extract_text, or click instead. (2) This runs inside the browser engine — you CANNOT trigger real file downloads via JS. Use the `download_file` tool instead. A return value like 'download triggered' only means JS executed, NOT that a file was saved. (3) Dangerous patterns (document.cookie, localStorage, fetch, etc.) require user confirmation.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
@@ -208,7 +208,7 @@ object WebViewTools {
 
     val EXTRACT_TEXT = ToolDefinition(
         name = "extract_text",
-        description = "Extract visible text content from the page or a specific element. Unlike get_dom which returns HTML markup (which can be very large and truncated), this tool returns only the human-readable text. Use this when you need the actual content of a page — articles, conversations, lists — rather than its HTML structure. Returns up to ~8,000 characters. IMPORTANT: If the user asks to 'download' or 'save' data, use this tool to collect the data, then include it in your response text so the user can copy it. Do NOT try to trigger file downloads via eval_js — they do not work in the browser engine.",
+        description = "Extract visible text content from the page or a specific element. Unlike get_dom which returns HTML markup (which can be very large and truncated), this tool returns only the human-readable text. Use this when you need the actual content of a page — articles, conversations, lists — rather than its HTML structure. Returns up to ~8,000 characters. To save extracted data as a file, use the `download_file` tool with a data: URL, or include the data in your response text.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
@@ -334,6 +334,44 @@ object WebViewTools {
         }
     )
 
+    val DOWNLOAD_FILE = ToolDefinition(
+        name = "download_file",
+        description = "Download a file from a URL and save it to the device's Downloads folder. Supports http:// and https:// URLs. Returns the saved file path and size. This is the ONLY way to actually save files — eval_js cannot trigger real downloads. Requires user confirmation.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("url", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "The URL of the file to download (http:// or https:// only)")
+                })
+                add("filename", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Override filename for the saved file. If omitted, derived from URL or Content-Disposition header.")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("url") })
+        }
+    )
+
+    val READ_LOCAL_FILE = ToolDefinition(
+        name = "read_local_file",
+        description = "Read the contents of a file in the app's internal storage (logs, exported data, etc). Use this to inspect saved session logs, exported chat histories, or other app-generated files. Paths are relative to the app's files directory. Returns file content (text files) or metadata (binary files). Maximum 50KB per file read.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("path", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Path relative to the app's files directory, or 'list' to list available files. Example: 'session_logs/devcompanion-log-2026-07-12.jsonl'")
+                })
+                add("encoding", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Text encoding: 'utf-8' (default) or 'ascii'")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("path") })
+        }
+    )
+
     val RECALL = ToolDefinition(
         name = "recall",
         description = "Retrieve a previously stored tool result from the session's working memory. Use when: (1) a previous tool result was truncated and you need the full content, (2) you need to re-examine earlier data instead of re-running the same tool, (3) you want to cross-reference results from different tools. This is more efficient than re-running tools.",
@@ -359,6 +397,7 @@ object WebViewTools {
     /** All available browser tools. */
     val ALL = listOf(
         NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, EXTRACT_TEXT, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
+        DOWNLOAD_FILE, READ_LOCAL_FILE,
         RECALL,
         SWITCH_MODE, GET_CURRENT_MODE
     )

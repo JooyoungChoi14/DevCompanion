@@ -1,5 +1,9 @@
 package com.devcompanion.llm.agent
 
+import android.content.ContentValues
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
 import com.devcompanion.engine.BrowserEngine
 import com.devcompanion.engine.JsUtils
@@ -7,6 +11,10 @@ import com.devcompanion.llm.CaptureMode
 import com.devcompanion.llm.WebContextBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.net.URLDecoder
 
 /**
  * Executes tool calls on the browser engine (GeckoView).
@@ -18,6 +26,7 @@ import kotlinx.coroutines.withContext
  * Uses [BrowserEngine.evalJs] for async JavaScript execution with coroutine support.
  */
 class ToolExecutor(
+    private val context: android.content.Context,
     private val onSwitchMode: ((String) -> Unit)? = null,
     private val getCurrentMode: (() -> String)? = null,
     private var scratchpad: SessionScratchpad? = null,
@@ -25,6 +34,14 @@ class ToolExecutor(
 
     companion object {
         private const val TAG = "ToolExecutor"
+        private const val MAX_LOCAL_FILE_SIZE = 50 * 1024 // 50KB
+        private val DOWNLOAD_CLIENT: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                .build()
+        }
+    }
     }
 
     /** Update the scratchpad reference (called by AgentLoop when starting a new session). */
@@ -56,6 +73,8 @@ class ToolExecutor(
                 "get_console_logs" -> executeGetConsoleLogs(call, engine)
                 "switch_mode" -> executeSwitchMode(call)
                 "get_current_mode" -> executeGetCurrentMode(call)
+                "download_file" -> executeDownloadFile(call)
+                "read_local_file" -> executeReadLocalFile(call)
                 "recall" -> executeRecall(call)
                 else -> ToolResult(call.id, "Unknown tool: ${call.name}", isError = true)
             }
@@ -450,6 +469,208 @@ class ToolExecutor(
         val current = getCurrentMode?.invoke() ?: "unknown"
         val displayName = if (current == "agent") "Act" else "Chat"
         return ToolResult(call.id, "Current mode: $displayName ($current)")
+    }
+
+    // ── Download & File tools ──────────────────────────────────────────
+
+    /**
+     * Download a file from a URL and save it to the device's Downloads folder via MediaStore.
+     * Works on Android 10+ (Scoped Storage) and legacy storage.
+     */
+    private suspend fun executeDownloadFile(call: ToolCall): ToolResult {
+        val url = call.arguments.getAsJsonPrimitive("url")?.asString
+            ?: return ToolResult(call.id, "Missing 'url' parameter", isError = true)
+
+        // URL whitelist: only http and https
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            return ToolResult(call.id, "Blocked: Only http:// and https:// URLs are allowed. Received: $url", isError = true)
+        }
+
+        val overrideFilename = call.arguments.getAsJsonPrimitive("filename")?.asString
+
+        return withContext(Dispatchers.IO) {
+            try {
+                val request = Request.Builder().url(url).build()
+                val response = DOWNLOAD_CLIENT.newCall(request).execute()
+
+                if (!response.isSuccessful) {
+                    return@withContext ToolResult(call.id, "HTTP ${response.code}: ${response.message}", isError = true)
+                }
+
+                val body = response.body ?: return@withContext ToolResult(call.id, "Empty response body", isError = true)
+                val contentType = body.contentType()?.toString() ?: "application/octet-stream"
+                val contentLength = body.contentLength()
+
+                // Derive filename: override > Content-Disposition > URL path > "download"
+                val filename = overrideFilename ?: run {
+                    val disposition = response.header("Content-Disposition", "")
+                    val cdFilename = disposition
+                        .split(";")
+                        .map { it.trim() }
+                        .filter { it.startsWith("filename=") || it.startsWith("filename*=") }
+                        .lastOrNull()
+                        ?.removePrefix("filename=")
+                        ?.removePrefix("filename*=")
+                        ?.trim('"')
+                        ?.let { if (it.startsWith("UTF-8''")) URLDecoder.decode(it.removePrefix("UTF-8''"), "UTF-8") else it }
+                    cdFilename ?: run {
+                        val path = java.net.URL(url).path
+                        val decoded = URLDecoder.decode(path, "UTF-8")
+                        val name = decoded.substringAfterLast('/')
+                        if (name.isNotBlank() && name.contains(".")) name else "download"
+                    }
+                }
+
+                // Determine MIME type
+                val mimeType = if (contentType.contains("text/html", ignoreCase = true)) {
+                    // HTML pages shouldn't be "downloaded" as-is typically
+                    "text/html"
+                } else {
+                    contentType
+                }
+
+                // Save via MediaStore (works on Android 10+ without WRITE_EXTERNAL_STORAGE)
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                    put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                }
+
+                val uri = context.contentResolver.insert(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    contentValues
+                ) ?: return@withContext ToolResult(call.id, "Failed to create MediaStore entry", isError = true)
+
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { os ->
+                        body.byteStream().copyTo(os)
+                    }
+
+                    // Mark as complete
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        contentValues.clear()
+                        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                        context.contentResolver.update(uri, contentValues, null, null)
+                    }
+
+                    Log.d(TAG, "Downloaded $filename (${contentLength} bytes) to $uri")
+                    ToolResult(call.id, buildString {
+                        appendLine("Downloaded successfully:")
+                        appendLine("  File: $filename")
+                        appendLine("  Size: ${if (contentLength > 0) "$contentLength bytes" else "unknown (streamed)"}")
+                        appendLine("  Type: $mimeType")
+                        appendLine("  URI: $uri")
+                        appendLine("  Location: Downloads/$filename")
+                    })
+                } catch (e: Exception) {
+                    // Clean up pending entry on error
+                    try {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            context.contentResolver.delete(uri, null, null)
+                        }
+                    } catch (_: Exception) {}
+                    throw e
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Download failed: $url", e)
+                ToolResult(call.id, "Download failed: ${e.message}", isError = true)
+            }
+        }
+    }
+
+    /**
+     * Read a file from the app's internal storage.
+     * Paths are relative to context.filesDir.
+     * Special path "list" lists available files.
+     */
+    private fun executeReadLocalFile(call: ToolCall): ToolResult {
+        val path = call.arguments.getAsJsonPrimitive("path")?.asString
+            ?: return ToolResult(call.id, "Missing 'path' parameter", isError = true)
+
+        val encoding = call.arguments.getAsJsonPrimitive("encoding")?.asString ?: "utf-8"
+
+        // "list" command — list available files
+        if (path == "list") {
+            return try {
+                val filesDir = context.filesDir
+                val allFiles = mutableListOf<String>()
+
+                fun collectFiles(dir: File, prefix: String) {
+                    dir.listFiles()?.forEach { file ->
+                        if (file.isDirectory) {
+                            collectFiles(file, "$prefix${file.name}/")
+                        } else {
+                            allFiles.add("$prefix${file.name} (${file.length()} bytes)")
+                        }
+                    }
+                }
+
+                collectFiles(filesDir, "")
+
+                // Also check session_logs directory
+                val sessionLogsDir = File(filesDir, "session_logs")
+                if (sessionLogsDir.exists()) {
+                    // Already included via collectFiles
+                }
+
+                ToolResult(call.id, buildString {
+                    appendLine("Files in app internal storage (${filesDir.absolutePath}):")
+                    if (allFiles.isEmpty()) {
+                        appendLine("  (no files found)")
+                    } else {
+                        allFiles.sorted().forEach { appendLine("  $it") }
+                    }
+                    appendLine("\nUse read_local_file with a specific path to read file contents.")
+                })
+            } catch (e: Exception) {
+                ToolResult(call.id, "Failed to list files: ${e.message}", isError = true)
+            }
+        }
+
+        // Path traversal prevention
+        val filesDir = context.filesDir.canonicalPath
+        val targetFile = File(context.filesDir, path).canonicalFile
+        if (!targetFile.canonicalPath.startsWith(filesDir)) {
+            return ToolResult(call.id, "Access denied: path traversal blocked. Paths must be within app's files directory.", isError = true)
+        }
+
+        if (!targetFile.exists()) {
+            return ToolResult(call.id, "File not found: $path. Use path='list' to see available files.", isError = true)
+        }
+
+        if (targetFile.isDirectory) {
+            return ToolResult(call.id, "Path is a directory, not a file: $path. Use path='list' to see available files.", isError = true)
+        }
+
+        // Size check
+        if (targetFile.length() > MAX_LOCAL_FILE_SIZE) {
+            return ToolResult(call.id, buildString {
+                appendLine("File too large: ${targetFile.length()} bytes (max ${MAX_LOCAL_FILE_SIZE} bytes).")
+                appendLine("File: $path")
+                appendLine("Size: ${targetFile.length()} bytes")
+                appendLine("Tip: Use path='list' to find smaller files, or request a specific range.")
+            }, isError = true)
+        }
+
+        return try {
+            val charset = when (encoding.lowercase()) {
+                "ascii" -> java.nio.charset.Charset.forName("ASCII")
+                else -> Charsets.UTF_8
+            }
+            val content = targetFile.readText(charset)
+
+            ToolResult(call.id, buildString {
+                appendLine("[File: $path]")
+                appendLine("[Size: ${targetFile.length()} bytes]")
+                appendLine("---")
+                append(content)
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read local file: $path", e)
+            ToolResult(call.id, "Failed to read file: ${e.message}", isError = true)
+        }
     }
 
     private fun executeRecall(call: ToolCall): ToolResult {

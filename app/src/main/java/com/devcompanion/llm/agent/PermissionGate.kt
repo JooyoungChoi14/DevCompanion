@@ -69,8 +69,8 @@ class PermissionGate {
         "type" -> checkTypeRisk(call, engine)
         "eval_js" -> checkEvalRisk(call)
         "submit_form" -> ActionRisk.SENSITIVE
-        "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs" -> ActionRisk.MODERATE
-        "set_style" -> ActionRisk.SENSITIVE
+        "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs", "read_local_file" -> ActionRisk.MODERATE
+        "download_file", "set_style" -> ActionRisk.SENSITIVE
         "recall", "switch_mode", "get_current_mode" -> ActionRisk.SAFE
         else -> ActionRisk.MODERATE
     }
@@ -79,6 +79,12 @@ class PermissionGate {
      * Get confirmation details for a sensitive action.
      */
     fun getConfirmationDetails(call: ToolCall): ToolConfirmationDetails = when (call.name) {
+        "download_file" -> ToolConfirmationDetails(
+            action = "Download file",
+            target = call.arguments.getAsJsonPrimitive("url")?.asString ?: "unknown",
+            preview = "File will be saved to Downloads folder",
+            riskLevel = ActionRisk.SENSITIVE
+        )
         "type" -> ToolConfirmationDetails(
             action = "Type into field",
             target = call.arguments.getAsJsonPrimitive("selector")?.asString ?: "unknown",
