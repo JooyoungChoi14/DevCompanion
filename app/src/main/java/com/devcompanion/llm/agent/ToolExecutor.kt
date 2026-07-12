@@ -516,8 +516,9 @@ class ToolExecutor(
 
                     // Derive filename: override > Content-Disposition > URL path > "download"
                     val filename = overrideFilename ?: run {
-                        val disposition = response.header("Content-Disposition", "")
+                        val disposition = response.header("Content-Disposition", "") ?: ""
                         val cdFilename = disposition
+                            .ifBlank { null }
                             .split(";")
                             .map { it.trim() }
                             .filter { it.startsWith("filename=") || it.startsWith("filename*=") }
