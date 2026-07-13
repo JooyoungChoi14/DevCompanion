@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
 import java.net.URLDecoder
 
 /**
@@ -34,7 +33,6 @@ class ToolExecutor(
 
     companion object {
         private const val TAG = "ToolExecutor"
-        private const val MAX_LOCAL_FILE_SIZE = 50 * 1024 // 50KB
         private val DOWNLOAD_CLIENT: OkHttpClient by lazy {
             OkHttpClient.Builder()
                 .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -73,7 +71,8 @@ class ToolExecutor(
                 "switch_mode" -> executeSwitchMode(call)
                 "get_current_mode" -> executeGetCurrentMode(call)
                 "download_file" -> executeDownloadFile(call)
-                "read_local_file" -> executeReadLocalFile(call)
+                "list_page_resources" -> executeListPageResources(call, engine)
+                "read_page_source" -> executeReadPageSource(call, engine)
                 "recall" -> executeRecall(call)
                 else -> ToolResult(call.id, "Unknown tool: ${call.name}", isError = true)
             }
@@ -593,96 +592,68 @@ class ToolExecutor(
         }
     }
 
-    /**
-     * Read a file from the app's internal storage.
-     * Paths are relative to context.filesDir.
-     * Special path "list" lists available files.
-     */
-    private fun executeReadLocalFile(call: ToolCall): ToolResult {
-        val path = call.arguments.getAsJsonPrimitive("path")?.asString
-            ?: return ToolResult(call.id, "Missing 'path' parameter", isError = true)
-
-        val encoding = call.arguments.getAsJsonPrimitive("encoding")?.asString ?: "utf-8"
-
-        // "list" command — list available files
-        if (path == "list") {
-            return try {
-                val filesDir = context.filesDir
-                val allFiles = mutableListOf<String>()
-
-                fun collectFiles(dir: File, prefix: String) {
-                    dir.listFiles()?.forEach { file ->
-                        if (file.isDirectory) {
-                            collectFiles(file, "$prefix${file.name}/")
-                        } else {
-                            allFiles.add("$prefix${file.name} (${file.length()} bytes)")
-                        }
-                    }
-                }
-
-                collectFiles(filesDir, "")
-
-                // Also check session_logs directory
-                val sessionLogsDir = File(filesDir, "session_logs")
-                if (sessionLogsDir.exists()) {
-                    // Already included via collectFiles
-                }
-
-                ToolResult(call.id, buildString {
-                    appendLine("Files in app internal storage (${filesDir.absolutePath}):")
-                    if (allFiles.isEmpty()) {
-                        appendLine("  (no files found)")
-                    } else {
-                        allFiles.sorted().forEach { appendLine("  $it") }
-                    }
-                    appendLine("\nUse read_local_file with a specific path to read file contents.")
-                })
-            } catch (e: Exception) {
-                ToolResult(call.id, "Failed to list files: ${e.message}", isError = true)
-            }
-        }
-
-        // Path traversal prevention
-        val filesDir = context.filesDir.canonicalPath
-        val targetFile = File(context.filesDir, path).canonicalFile
-        if (!targetFile.canonicalPath.startsWith(filesDir)) {
-            return ToolResult(call.id, "Access denied: path traversal blocked. Paths must be within app's files directory.", isError = true)
-        }
-
-        if (!targetFile.exists()) {
-            return ToolResult(call.id, "File not found: $path. Use path='list' to see available files.", isError = true)
-        }
-
-        if (targetFile.isDirectory) {
-            return ToolResult(call.id, "Path is a directory, not a file: $path. Use path='list' to see available files.", isError = true)
-        }
-
-        // Size check
-        if (targetFile.length() > MAX_LOCAL_FILE_SIZE) {
-            return ToolResult(call.id, buildString {
-                appendLine("File too large: ${targetFile.length()} bytes (max ${MAX_LOCAL_FILE_SIZE} bytes).")
-                appendLine("File: $path")
-                appendLine("Size: ${targetFile.length()} bytes")
-                appendLine("Tip: Use path='list' to find smaller files, or request a specific range.")
-            }, isError = true)
-        }
+    private suspend fun executeListPageResources(call: ToolCall, engine: BrowserEngine): ToolResult {
+        val filter = call.arguments.getAsJsonPrimitive("filter")?.asString ?: "all"
 
         return try {
-            val charset = when (encoding.lowercase()) {
-                "ascii" -> java.nio.charset.Charset.forName("ASCII")
-                else -> Charsets.UTF_8
-            }
-            val content = targetFile.readText(charset)
+            val resources = engine.collectPageResources()
+            val filtered = if (filter == "all") resources
+                else resources.filter { it.type.equals(filter, ignoreCase = true) }
 
-            ToolResult(call.id, buildString {
-                appendLine("[File: $path]")
-                appendLine("[Size: ${targetFile.length()} bytes]")
-                appendLine("---")
-                append(content)
-            })
+            if (filtered.isEmpty()) {
+                ToolResult(call.id, "No page resources found.${if (filter != "all") " No resources matching filter '$filter'." else " Navigate to a page first."}")
+            } else {
+                val lines = buildString {
+                    appendLine("${filtered.size} resource(s) found${if (filter != "all") " (filtered: $filter)" else ""}:")
+                    appendLine()
+                    // Table header
+                    appendLine("| # | Type | Size | Status | URL |")
+                    appendLine("|---|------|------|--------|-----|")
+                    filtered.forEachIndexed { i, r ->
+                        val size = if (r.size >= 0) {
+                            when {
+                                r.size < 1024 -> "${r.size}B"
+                                r.size < 1024*1024 -> "${"%.1f".format(r.size/1024.0)}KB"
+                                else -> "${"%.1f".format(r.size/(1024.0*1024.0))}MB"
+                            }
+                        } else "—"
+                        val status = if (r.statusCode > 0) "${r.statusCode}" else "—"
+                        val url = r.url.take(100) + if (r.url.length > 100) "…" else ""
+                        appendLine("| ${i+1} | ${r.type} | $size | $status | $url |")
+                    }
+                    appendLine()
+                    appendLine("Use read_page_source with a resource URL to view its content.")
+                }
+                ToolResult(call.id, lines)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to read local file: $path", e)
-            ToolResult(call.id, "Failed to read file: ${e.message}", isError = true)
+            Log.e(TAG, "Failed to list page resources", e)
+            ToolResult(call.id, "Failed to list page resources: ${e.message}", isError = true)
+        }
+    }
+
+    private suspend fun executeReadPageSource(call: ToolCall, engine: BrowserEngine): ToolResult {
+        val url = call.arguments.getAsJsonPrimitive("url")?.asString
+            ?: return ToolResult(call.id, "Missing 'url' parameter. Use list_page_resources first to get available URLs.", isError = true)
+
+        return try {
+            val content = engine.fetchResourceContent(url)
+            if (content == null) {
+                // Could be binary or failed fetch
+                ToolResult(call.id, "Could not read resource content. The resource may be binary (image, font, etc.) or the fetch failed. URL: $url")
+            } else {
+                val truncated = content.length > 50000
+                val displayContent = if (truncated) content.take(50000) + "\n\n--- TRUNCATED (showing first 50KB of ${content.length} chars) ---" else content
+                ToolResult(call.id, buildString {
+                    appendLine("[Resource: $url]")
+                    appendLine("[Length: ${content.length} chars${if (truncated) ", showing first 50000" else ""}]")
+                    appendLine("---")
+                    append(displayContent)
+                })
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read page source: $url", e)
+            ToolResult(call.id, "Failed to read resource: ${e.message}", isError = true)
         }
     }
 

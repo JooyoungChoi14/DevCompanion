@@ -404,4 +404,156 @@ class GeckoEngine(
             // Not all GeckoView versions support setActive
         }
     }
+
+    // ── Page resources via Performance API ──────────────────────────
+
+    /**
+     * Collect the list of resources loaded by the current page.
+     * Uses the Performance API via evalJs to gather resource timing entries.
+     */
+    override suspend fun collectPageResources(): List<PageResource> {
+        val js = """
+            (function(){
+                var entries = performance.getEntriesByType('resource');
+                return JSON.stringify(entries.map(function(e){
+                    var type = e.initiatorType || 'other';
+                    var mapped = 'other';
+                    if (type === 'navigation' || type === 'document') mapped = 'document';
+                    else if (type === 'script') mapped = 'script';
+                    else if (type === 'link' || type === 'css') mapped = 'stylesheet';
+                    else if (type === 'img' || type === 'image') mapped = 'image';
+                    else if (type === 'font') mapped = 'font';
+                    else if (type === 'xmlhttprequest' || type === 'fetch') mapped = 'xhr';
+                    else {
+                        var ext = e.name.split('?')[0].split('.').pop().toLowerCase();
+                        if (['js'].indexOf(ext) >= 0) mapped = 'script';
+                        else if (['css'].indexOf(ext) >= 0) mapped = 'stylesheet';
+                        else if (['png','jpg','jpeg','gif','svg','webp','ico','avif'].indexOf(ext) >= 0) mapped = 'image';
+                        else if (['woff','woff2','ttf','otf','eot'].indexOf(ext) >= 0) mapped = 'font';
+                        else mapped = type;
+                    }
+                    return {
+                        name: e.name,
+                        type: mapped,
+                        size: e.transferSize || -1,
+                        statusCode: e.responseStatus || -1
+                    };
+                }));
+            })()
+        """.trimIndent()
+
+        return try {
+            val result = evalJs(js, timeoutMs = 3000L)
+            parseResourceJson(result)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to collect page resources", e)
+            emptyList()
+        }
+    }
+
+    override suspend fun fetchResourceContent(url: String): String? {
+        val escapedUrl = JsUtils.escapeJsString(url)
+        val js = """
+            (async function(){
+                try {
+                    var resp = await fetch($escapedUrl);
+                    var contentType = resp.headers.get('Content-Type') || '';
+                    var isBinary = /image|font|audio|video|pdf|zip/i.test(contentType);
+                    if (isBinary) {
+                        var buf = await resp.arrayBuffer();
+                        return JSON.stringify({binary: true, mimeType: contentType, size: buf.byteLength});
+                    }
+                    var text = await resp.text();
+                    if (text.length > 51200) text = text.substring(0, 51200) + '\\n--- TRUNCATED ---';
+                    return JSON.stringify({content: text, mimeType: contentType, size: text.length});
+                } catch(e) {
+                    return JSON.stringify({error: e.message});
+                }
+            })()
+        """.trimIndent()
+
+        return try {
+            val result = evalJs(js, timeoutMs = 5000L)
+            parseContentResult(result)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to fetch resource content for $url", e)
+            null
+        }
+    }
+
+    // ── Parsing helpers ──────────────────────────────────────────────
+
+    private fun parseResourceJson(json: String): List<PageResource> {
+        return try {
+            val trimmed = json.trim()
+            // evalJs wraps result in JSON: {"t":"...","v":"..."}
+            val inner = if (trimmed.startsWith("{\"t\":")) {
+                val obj = com.google.gson.JsonParser.parseString(trimmed).asJsonObject
+                obj.get("v")?.asString ?: trimmed
+            } else {
+                trimmed
+            }
+            // The inner value might be a JSON-encoded string — try parsing
+            val resources = try {
+                com.google.gson.JsonParser.parseString(inner).asJsonArray
+            } catch (_: Exception) {
+                // Maybe it was double-encoded
+                try {
+                    val decoded = com.google.gson.JsonParser.parseString(inner).asString
+                    com.google.gson.JsonParser.parseString(decoded).asJsonArray
+                } catch (e2: Exception) {
+                    Log.w(TAG, "Failed to parse resource JSON (double-decode): inner first 200='${inner.take(200)}'", e2)
+                    return emptyList()
+                }
+            }
+            resources.mapNotNull { element ->
+                try {
+                    val obj = element.asJsonObject
+                    PageResource(
+                        url = obj.get("name").asString,
+                        type = obj.get("type").asString,
+                        mimeType = null,
+                        size = obj.get("size")?.asLong ?: -1L,
+                        statusCode = obj.get("statusCode")?.asInt ?: -1
+                    )
+                } catch (_: Exception) { null }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse resource JSON: first 200 chars='${trimmed.take(200)}'", e)
+            emptyList()
+        }
+    }
+
+    private fun parseContentResult(json: String): String? {
+        return try {
+            val trimmed = json.trim()
+            val inner = if (trimmed.startsWith("{\"t\":")) {
+                val obj = com.google.gson.JsonParser.parseString(trimmed).asJsonObject
+                obj.get("v")?.asString ?: trimmed
+            } else {
+                trimmed
+            }
+            val parsed = try {
+                com.google.gson.JsonParser.parseString(inner).asJsonObject
+            } catch (_: Exception) {
+                try {
+                    val decoded = com.google.gson.JsonParser.parseString(inner).asString
+                    com.google.gson.JsonParser.parseString(decoded).asJsonObject
+                } catch (e2: Exception) {
+                    Log.w(TAG, "Failed to parse content result (double-decode): inner first 200='${inner.take(200)}'", e2)
+                    return null
+                }
+            }
+            if (parsed.has("content")) {
+                parsed.get("content").asString
+            } else if (parsed.has("binary")) {
+                null // Binary resource — content not available
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse content result: first 200 chars='${json.take(200)}'", e)
+            null
+        }
+    }
 }

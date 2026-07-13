@@ -4,6 +4,18 @@ import android.graphics.Bitmap
 import android.view.View
 
 /**
+ * Represents a resource loaded by a web page.
+ * Used by the Sources tab to display page resources.
+ */
+data class PageResource(
+    val url: String,
+    val type: String,       // "document", "script", "stylesheet", "image", "font", "xhr", "other"
+    val mimeType: String?,  // MIME type from response
+    val size: Long,          // bytes, -1 if unknown
+    val statusCode: Int      // HTTP status code, -1 if unknown
+)
+
+/**
  * Abstraction over browser engine implementations.
  *
  * GeckoView-based: GeckoEngine wrapping org.mozilla.geckoview.GeckoView + GeckoSession
@@ -123,6 +135,21 @@ interface BrowserEngine {
      * Uses [screenshot] internally and encodes the result.
      */
     suspend fun screenshotBase64(): String
+
+    /**
+     * Collect the list of resources loaded by the current page.
+     * Uses the Performance API via evalJs to gather resource timing entries.
+     * Only supported by GeckoEngine — WebView implementations should return empty list.
+     */
+    suspend fun collectPageResources(): List<PageResource>
+
+    /**
+     * Fetch the source content of a specific page resource.
+     * Only works for text-based resources (HTML, JS, CSS, etc.).
+     * Returns null for binary resources (images, fonts) or if the resource is not found.
+     * Only supported by GeckoEngine — WebView implementations should return null.
+     */
+    suspend fun fetchResourceContent(url: String): String?
 
     /**
      * Perform engine-specific setup after construction.

@@ -29,6 +29,7 @@
 -keep class com.devcompanion.llm.ConversationMeta { *; }
 -keep class com.devcompanion.data.Bookmark { *; }
 -keep class com.devcompanion.data.UrlHistoryStore { *; }
+-keep class com.devcompanion.engine.PageResource { *; }
 
 # ── NanoHTTPD (reflection-based routing) ──
 -keep class fi.iki.elonen.** { *; }

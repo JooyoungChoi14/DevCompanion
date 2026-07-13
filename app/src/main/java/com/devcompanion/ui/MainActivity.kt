@@ -374,6 +374,7 @@ fun MainApp(
                     DevToolsPanel(
                         selectedTab = devToolsTab,
                         onTabChange = { devToolsTab = it },
+                        engine = engineRef,
                         modifier = Modifier.imePadding()
                     )
                 }
@@ -401,6 +402,7 @@ fun MainApp(
 private fun DevToolsPanel(
     selectedTab: Int,
     onTabChange: (Int) -> Unit,
+    engine: BrowserEngine? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -408,14 +410,14 @@ private fun DevToolsPanel(
             Tab(selected = selectedTab == 0, onClick = { onTabChange(0) }, text = { Text("Console", style = MaterialTheme.typography.titleSmall) })
             Tab(selected = selectedTab == 1, onClick = { onTabChange(1) }, text = { Text("Network", style = MaterialTheme.typography.titleSmall) })
             Tab(selected = selectedTab == 2, onClick = { onTabChange(2) }, text = { Text("Perf", style = MaterialTheme.typography.titleSmall) })
-            Tab(selected = selectedTab == 3, onClick = { onTabChange(3) }, text = { Text("Files", style = MaterialTheme.typography.titleSmall) })
+            Tab(selected = selectedTab == 3, onClick = { onTabChange(3) }, text = { Text("Sources", style = MaterialTheme.typography.titleSmall) })
         }
 
         when (selectedTab) {
             0 -> ConsoleTab()
             1 -> NetworkTab()
             2 -> PerformanceTab()
-            3 -> FilesTab()
+            3 -> SourcesTab(engine = engine)
         }
     }
 }

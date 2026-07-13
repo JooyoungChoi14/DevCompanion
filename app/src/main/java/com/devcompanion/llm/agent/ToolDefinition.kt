@@ -353,22 +353,32 @@ object WebViewTools {
         }
     )
 
-    val READ_LOCAL_FILE = ToolDefinition(
-        name = "read_local_file",
-        description = "Read the contents of a file in the app's internal storage (logs, exported data, etc). Use this to inspect saved session logs, exported chat histories, or other app-generated files. Paths are relative to the app's files directory. Returns file content (text files) or metadata (binary files). Maximum 50KB per file read.",
+    val LIST_PAGE_RESOURCES = ToolDefinition(
+        name = "list_page_resources",
+        description = "List all resources loaded by the current page (scripts, stylesheets, images, fonts, XHR, etc). Returns resource URLs with type, size, and status code. Useful for understanding what a page loads and debugging loading issues.",
         parameters = JsonObject().apply {
             addProperty("type", "object")
             add("properties", JsonObject().apply {
-                add("path", JsonObject().apply {
+                add("filter", JsonObject().apply {
                     addProperty("type", "string")
-                    addProperty("description", "Path relative to the app's files directory, or 'list' to list available files. Example: 'session_logs/devcompanion-log-2026-07-12.jsonl'")
-                })
-                add("encoding", JsonObject().apply {
-                    addProperty("type", "string")
-                    addProperty("description", "Text encoding: 'utf-8' (default) or 'ascii'")
+                    addProperty("description", "Filter by resource type: 'script', 'stylesheet', 'image', 'font', 'xhr', 'document', or 'all' (default: 'all')")
                 })
             })
-            add("required", com.google.gson.JsonArray().apply { add("path") })
+        }
+    )
+
+    val READ_PAGE_SOURCE = ToolDefinition(
+        name = "read_page_source",
+        description = "Read the source code of a page resource (JavaScript, CSS, HTML). Only works for text-based resources — images, fonts, and other binary resources return metadata only. Only same-origin resources are readable due to browser security (CORS/SOP). Use list_page_resources first to get available URLs.",
+        parameters = JsonObject().apply {
+            addProperty("type", "object")
+            add("properties", JsonObject().apply {
+                add("url", JsonObject().apply {
+                    addProperty("type", "string")
+                    addProperty("description", "Full URL of the resource to read (from list_page_resources). Must be same-origin.")
+                })
+            })
+            add("required", com.google.gson.JsonArray().apply { add("url") })
         }
     )
 
@@ -397,7 +407,7 @@ object WebViewTools {
     /** All available browser tools. */
     val ALL = listOf(
         NAVIGATE, CLICK, TYPE, SCROLL, EVAL_JS, GET_DOM, EXTRACT_TEXT, GET_COMPUTED_STYLE, SET_STYLE, SCREENSHOT, SUBMIT_FORM, GET_CONSOLE_LOGS,
-        DOWNLOAD_FILE, READ_LOCAL_FILE,
+        DOWNLOAD_FILE, LIST_PAGE_RESOURCES, READ_PAGE_SOURCE,
         RECALL,
         SWITCH_MODE, GET_CURRENT_MODE
     )

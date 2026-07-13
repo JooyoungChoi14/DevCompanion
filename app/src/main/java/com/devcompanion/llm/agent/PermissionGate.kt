@@ -69,7 +69,7 @@ class PermissionGate {
         "type" -> checkTypeRisk(call, engine)
         "eval_js" -> checkEvalRisk(call)
         "submit_form" -> ActionRisk.SENSITIVE
-        "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs", "read_local_file" -> ActionRisk.MODERATE
+        "click", "scroll", "get_dom", "extract_text", "get_computed_style", "screenshot", "get_console_logs", "list_page_resources", "read_page_source" -> ActionRisk.MODERATE
         "download_file", "set_style" -> ActionRisk.SENSITIVE
         "recall", "switch_mode", "get_current_mode" -> ActionRisk.SAFE
         else -> ActionRisk.MODERATE
