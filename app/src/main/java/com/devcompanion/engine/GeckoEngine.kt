@@ -484,8 +484,8 @@ class GeckoEngine(
     // ── Parsing helpers ──────────────────────────────────────────────
 
     private fun parseResourceJson(json: String): List<PageResource> {
+        val trimmed = json.trim()
         return try {
-            val trimmed = json.trim()
             // evalJs wraps result in JSON: {"t":"...","v":"..."}
             val inner = if (trimmed.startsWith("{\"t\":")) {
                 val obj = com.google.gson.JsonParser.parseString(trimmed).asJsonObject
