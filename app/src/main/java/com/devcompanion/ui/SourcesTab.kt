@@ -73,8 +73,11 @@ fun SourcesTab(
     suspend fun collectResources() {
         isLoading = true
         try {
-            resources = engine?.collectPageResources() ?: emptyList()
-        } catch (_: Exception) {
+            val result = engine?.collectPageResources() ?: emptyList()
+            android.util.Log.d("SourcesTab", "Collected ${result.size} resources (url=$currentUrl)")
+            resources = result
+        } catch (e: Exception) {
+            android.util.Log.e("SourcesTab", "Failed to collect resources", e)
             resources = emptyList()
         } finally {
             isLoading = false

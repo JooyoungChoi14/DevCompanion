@@ -444,6 +444,7 @@ class GeckoEngine(
 
         return try {
             val result = evalJs(js, timeoutMs = 3000L)
+            Log.d(TAG, "collectPageResources evalJs result length=${result.length}, first200=${result.take(200)}")
             parseResourceJson(result)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to collect page resources", e)
