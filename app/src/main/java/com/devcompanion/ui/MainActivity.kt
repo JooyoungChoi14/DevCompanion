@@ -159,6 +159,7 @@ fun MainApp(
     val chatViewModel: AiChatViewModel = viewModel()
     val settingsViewModel: SettingsViewModel = viewModel()
     var currentUrlForChat by remember { mutableStateOf<String?>(null) }
+    var currentBrowserUrl by remember { mutableStateOf<String?>(null) }
     val agentState by chatViewModel.agentState.collectAsState()
 
     // ── UI navigation tracking ──
@@ -166,7 +167,7 @@ fun MainApp(
     LaunchedEffect(showDevTools) { SessionLog.uiNav("devtools", if (showDevTools) "open" else "close"); if (showDevTools) SessionLog.currentScreen = "devtools" }
     LaunchedEffect(showSettings) { SessionLog.uiNav("settings", if (showSettings) "open" else "close"); if (showSettings) SessionLog.currentScreen = "settings" }
     LaunchedEffect(showSessionChoice) { SessionLog.uiNav("session_choice", if (showSessionChoice) "open" else "close") }
-    LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; 3 -> "files"; else -> "unknown" }) }
+    LaunchedEffect(devToolsTab) { SessionLog.uiTab("devtools", when(devToolsTab) { 0 -> "console"; 1 -> "network"; 2 -> "perf"; 3 -> "sources"; else -> "unknown" }) }
     val context = LocalContext.current
 
     Scaffold(
@@ -364,6 +365,10 @@ fun MainApp(
 
             // DevTools as bottom sheet overlay
             if (showDevTools) {
+                // Refresh current browser URL when devtools opens
+                LaunchedEffect(showDevTools) {
+                    currentBrowserUrl = engineRef?.getUrl()
+                }
                 ModalBottomSheet(
                     onDismissRequest = { showDevTools = false; SessionLog.uiNav("devtools", "close") },
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -375,6 +380,7 @@ fun MainApp(
                         selectedTab = devToolsTab,
                         onTabChange = { devToolsTab = it },
                         engine = engineRef,
+                        currentUrl = currentBrowserUrl,
                         modifier = Modifier.imePadding()
                     )
                 }
@@ -403,6 +409,7 @@ private fun DevToolsPanel(
     selectedTab: Int,
     onTabChange: (Int) -> Unit,
     engine: BrowserEngine? = null,
+    currentUrl: String? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -417,7 +424,7 @@ private fun DevToolsPanel(
             0 -> ConsoleTab()
             1 -> NetworkTab()
             2 -> PerformanceTab()
-            3 -> SourcesTab(engine = engine)
+            3 -> SourcesTab(engine = engine, currentUrl = currentUrl)
         }
     }
 }

@@ -55,7 +55,8 @@ private fun typeIcon(type: String) = when (type) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SourcesTab(
-    engine: BrowserEngine? = null
+    engine: BrowserEngine? = null,
+    currentUrl: String? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -80,9 +81,11 @@ fun SourcesTab(
         }
     }
 
-    // Load resources on first composition and when engine changes
-    LaunchedEffect(engine) {
-        collectResources()
+    // Reload resources when engine or page URL changes (skip about:blank)
+    LaunchedEffect(engine, currentUrl) {
+        if (currentUrl != null && currentUrl != "about:blank") {
+            collectResources()
+        }
     }
 
     // Filter and search resources
