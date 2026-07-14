@@ -22,14 +22,14 @@ import org.mozilla.geckoview.WebExtension
  * The WebExtension approach:
  * - Uses browser.webRequest.onHeadersReceived to capture MIME type, status code,
  *   and Content-Length for every request (no CORS restriction)
- * - Communicates via GeckoRuntime messaging (no URL length limit)
+ * - Communicates via GeckoView WebExtension port messaging (no URL length limit)
  * - Accumulates resources in real-time as the page loads
  * - Resets on main-frame navigation (via webNavigation.onBeforeNavigate in background.js)
  *
  * GeckoView WebExtension API:
  * - registration: runtime.webExtensionController.installBuiltIn(uri)
- * - messaging: runtime.webExtensionController.sendMessage(id, message)
- *   (NOT ext.sendMessage — that's for native messaging ports, not runtime messages)
+ * - messaging: WebExtension.setMessageDelegate() + MessageDelegate.onMessage()
+ *   Port-based messaging with browser.runtime.connect() / port.onMessage
  */
 class ResourceCollector(
     private val runtime: GeckoRuntime
@@ -37,7 +37,7 @@ class ResourceCollector(
     companion object {
         private const val TAG = "ResourceCollector"
         private const val EXTENSION_URI = "resource://android/assets/extensions/resource-monitor/"
-        private const val EXTENSION_ID = "resource-monitor@devcompanion"
+        private const val NATIVE_APP_ID = "devcompanion"
         private const val MESSAGE_TIMEOUT_MS = 3000L
     }
 
@@ -56,9 +56,6 @@ class ResourceCollector(
      * Uses WebExtensionController.installBuiltIn() which returns GeckoResult.
      * Must be called BEFORE any GeckoSession is opened, because webRequest
      * listeners need to be in place before navigation begins.
-     *
-     * The caller should await the result before proceeding. If registration
-     * fails, collectPageResources() will fall back to the Performance API.
      *
      * @return true if registration succeeded, false otherwise
      */
@@ -99,7 +96,6 @@ class ResourceCollector(
 
     /**
      * Collect page resources from the WebExtension background script.
-     * Sends a "getResources" message via WebExtensionController and parses the response.
      *
      * Returns an empty list if the extension is not registered or if
      * communication times out, so the caller can fall back to Performance API.
@@ -113,7 +109,7 @@ class ResourceCollector(
 
         return try {
             val response = withTimeout(MESSAGE_TIMEOUT_MS) {
-                sendMessage("getResources")
+                sendMessage(ext, "getResources")
             }
             parseResourceResponse(response)
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
@@ -130,13 +126,14 @@ class ResourceCollector(
     /**
      * Send a message to the WebExtension background script and await response.
      *
-     * CRITICAL: Uses runtime.webExtensionController.sendMessage() — the
-     * controller-level API that sends runtime messages to the extension's
-     * background script, where browser.runtime.onMessage receives them.
+     * Uses WebExtension.sendMessage() with a nativeAppId. The extension's
+     * background.js receives this via browser.runtime.onMessage.addListener()
+     * and returns a response via sendResponse.
      *
-     * This is NOT ext.sendMessage() which sends to a native messaging port.
+     * In GeckoView, sendMessage() sends a runtime message (not a port message).
+     * The nativeAppId parameter identifies the native app endpoint.
      */
-    private suspend fun sendMessage(command: String): JSONObject? {
+    private suspend fun sendMessage(ext: WebExtension, command: String): JSONObject? {
         val deferred = CompletableDeferred<JSONObject?>()
 
         withContext(Dispatchers.Main) {
@@ -145,14 +142,20 @@ class ResourceCollector(
                     put("command", command)
                 }
 
-                // Controller-level messaging: sends to the extension's background script
-                // via browser.runtime.onMessage, NOT to a native messaging port.
-                val result = runtime.webExtensionController.sendMessage(
-                    EXTENSION_ID, message, null
-                )
-                result.then({ response ->
+                // WebExtension.sendMessage() sends a runtime message to the extension.
+                // The extension receives it via browser.runtime.onMessage.addListener().
+                // The third parameter (session) is null for background script messages.
+                val result: GeckoResult<Any?> = ext.sendMessage(NATIVE_APP_ID, message, null)
+                result.then({ response: Any? ->
                     if (response is JSONObject) {
                         deferred.complete(response)
+                    } else if (response is String) {
+                        try {
+                            deferred.complete(JSONObject(response))
+                        } catch (e: Exception) {
+                            Log.d(TAG, "Failed to parse string response as JSON")
+                            deferred.complete(null)
+                        }
                     } else if (response != null) {
                         try {
                             val jsonStr = response.toString()
@@ -162,11 +165,12 @@ class ResourceCollector(
                             deferred.complete(null)
                         }
                     } else {
+                        Log.d(TAG, "Null response from extension")
                         deferred.complete(null)
                     }
                     null as GeckoResult<Any?>?
-                }, { throwable ->
-                    Log.w(TAG, "Extension message error: ${throwable?.message}")
+                }, { throwable: Throwable ->
+                    Log.w(TAG, "Extension message error: ${throwable.message}")
                     deferred.complete(null)
                     null as GeckoResult<Any?>?
                 })
