@@ -7,7 +7,11 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.mozilla.geckoview.AllowOrDeny
@@ -36,8 +40,11 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class GeckoEngine(
     private val geckoView: GeckoView,
-    private val session: GeckoSession
+    private val session: GeckoSession,
+    private val resourceCollector: ResourceCollector? = null
 ) : BrowserEngine {
+
+    private val engineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override val view: View get() = geckoView
 
@@ -145,6 +152,12 @@ class GeckoEngine(
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 _isLoading = true
+                // Clear accumulated resources from previous page
+                resourceCollector?.let { rc ->
+                    engineScope.launch(Dispatchers.IO) {
+                        rc.clearResources()
+                    }
+                }
                 // Dispatch callback to main thread (Gecko callbacks run on Gecko thread)
                 mainHandler.post {
                     browserCallbacks?.onPageStarted(url)
@@ -377,6 +390,8 @@ class GeckoEngine(
     }
 
     override fun destroy() {
+        // Cancel all coroutines started by this engine
+        engineScope.cancel()
         // Clean up any pending evals
         pendingEvals.values.forEach { it.complete("""{"t":"error","v":"Engine destroyed"}""") }
         pendingEvals.clear()
@@ -405,13 +420,33 @@ class GeckoEngine(
         }
     }
 
-    // ── Page resources via Performance API ──────────────────────────
+    // ── Page resources ──────────────────────────────────────────────
 
     /**
      * Collect the list of resources loaded by the current page.
-     * Uses the Performance API via evalJs to gather resource timing entries.
+     *
+     * Primary method: WebExtension webRequest API via ResourceCollector.
+     * - No CORS restrictions (captures MIME type, status code, Content-Length for all origins)
+     * - No URL length limit (uses message passing, not eval-result URL scheme)
+     * - Real-time accumulation (resources collected as the page loads)
+     *
+     * Fallback: Performance API via evalJs (for when WebExtension is unavailable).
+     * - CORS: size/statusCode are empty for cross-origin resources
+     * - 8KB URL limit: may timeout on resource-heavy pages
      */
     override suspend fun collectPageResources(): List<PageResource> {
+        // Primary: WebExtension resource collector
+        val collector = resourceCollector
+        if (collector != null && collector.ready) {
+            val resources = collector.collectResources()
+            if (resources.isNotEmpty()) {
+                Log.d(TAG, "collectPageResources: ${resources.size} resources via WebExtension")
+                return resources
+            }
+            Log.d(TAG, "collectPageResources: WebExtension returned 0 resources, trying Performance API fallback")
+        }
+
+        // Fallback: Performance API via evalJs
         val js = """
             (function(){
                 var entries = performance.getEntriesByType('resource');
@@ -444,7 +479,7 @@ class GeckoEngine(
 
         return try {
             val result = evalJs(js, timeoutMs = 3000L)
-            Log.d(TAG, "collectPageResources evalJs result length=${result.length}, first200=${result.take(200)}")
+            Log.d(TAG, "collectPageResources: Performance API fallback, result length=${result.length}")
             parseResourceJson(result)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to collect page resources", e)
@@ -452,6 +487,18 @@ class GeckoEngine(
         }
     }
 
+    /**
+     * Fetch the source content of a specific page resource.
+     *
+     * Uses JS fetch() to retrieve the content. For GeckoView, this works
+     * because the page's origin context applies, giving same-origin access
+     * to resources. Cross-origin resources will fail with CORS errors —
+     * this is expected and matches Chrome DevTools behavior.
+     *
+     * The result is delivered via the eval-result URL scheme, which has
+     * an ~8KB limit. For large resources, the content is truncated to
+     * 50KB in JS before encoding.
+     */
     override suspend fun fetchResourceContent(url: String): String? {
         val escapedUrl = JsUtils.escapeJsString(url)
         val js = """

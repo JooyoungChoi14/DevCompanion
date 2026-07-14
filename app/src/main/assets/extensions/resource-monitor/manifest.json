@@ -1,0 +1,13 @@
+{
+  "manifest_version": 2,
+  "name": "DevCompanion Resource Monitor",
+  "version": "1.0",
+  "description": "Monitors page resource loads for the DevCompanion Sources panel",
+  "permissions": [
+    "webRequest",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  }
+}
