@@ -6,6 +6,7 @@
   "permissions": [
     "webRequest",
     "webNavigation",
+    "nativeMessaging",
     "<all_urls>"
   ],
   "background": {

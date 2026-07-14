@@ -181,7 +181,7 @@ class ResourceCollector(
             Log.d(TAG, "Extension connected: port=${port.name}")
             this@ResourceCollector.port = port
             // Set port delegate to receive messages from the extension
-            port.setPortDelegate(ResourcePortDelegate())
+            port.setDelegate(ResourcePortDelegate())
         }
 
         override fun onMessage(
@@ -212,7 +212,7 @@ class ResourceCollector(
     /**
      * Port delegate for receiving messages sent through the port.
      */
-    private inner class ResourcePortDelegate : WebExtension.Port.PortDelegate {
+    private inner class ResourcePortDelegate : WebExtension.PortDelegate {
         override fun onPortMessage(message: Any, port: WebExtension.Port) {
             Log.d(TAG, "Received port message from extension")
             try {

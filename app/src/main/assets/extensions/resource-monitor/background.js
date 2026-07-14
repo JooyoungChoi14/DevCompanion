@@ -154,9 +154,9 @@ browser.webNavigation.onBeforeNavigate.addListener(
  */
 function connectToHost() {
   try {
-    // browser.runtime.connect() creates a port that the app can receive
+    // browser.runtime.connectNative() creates a port that the host app receives
     // via WebExtension.MessageDelegate.onConnect()
-    hostPort = browser.runtime.connect('devcompanion');
+    hostPort = browser.runtime.connectNative('devcompanion');
 
     hostPort.onMessage.addListener((message) => {
       // Handle commands from the host app
