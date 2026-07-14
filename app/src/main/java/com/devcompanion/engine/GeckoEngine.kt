@@ -152,12 +152,8 @@ class GeckoEngine(
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onPageStart(session: GeckoSession, url: String) {
                 _isLoading = true
-                // Clear accumulated resources from previous page
-                resourceCollector?.let { rc ->
-                    engineScope.launch(Dispatchers.IO) {
-                        rc.clearResources()
-                    }
-                }
+                // Note: Resource clearing is handled by the WebExtension's
+                // webNavigation.onBeforeNavigate listener — no Kotlin-side clear needed.
                 // Dispatch callback to main thread (Gecko callbacks run on Gecko thread)
                 mainHandler.post {
                     browserCallbacks?.onPageStarted(url)

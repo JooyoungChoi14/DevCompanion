@@ -2,7 +2,8 @@
  * DevCompanion Resource Monitor — WebExtension Background Script
  *
  * Intercepts network requests via webRequest API and accumulates resource entries.
- * Communicates with the host app via message passing (GeckoRuntime WebExtension messaging).
+ * Communicates with the host app via GeckoView WebExtension messaging
+ * (runtime.webExtensionController.sendMessage → browser.runtime.onMessage).
  *
  * This replaces the previous Performance API polling approach which had two critical flaws:
  * 1. CORS restrictions: performance.getEntriesByType('resource') returns empty
@@ -18,6 +19,9 @@ const resources = new Map();
 
 /** Resource entry limit to prevent memory exhaustion on extremely heavy pages */
 const MAX_RESOURCES = 500;
+
+/** Resource types that should never be evicted (core page resources) */
+const PROTECTED_TYPES = new Set(['document', 'stylesheet']);
 
 /** Current page URL (top-level navigation) */
 let currentPageUrl = null;
@@ -54,17 +58,10 @@ function mapType(initiatorType, contentType) {
 /**
  * onHeadersReceived: capture response headers (Content-Type, Content-Length, status code)
  * This is where we get MIME type and status code — not available in onBeforeRequest.
+ * No CORS restriction: webRequest runs with extension permissions.
  */
 browser.webRequest.onHeadersReceived.addListener(
   (details) => {
-    // Only track main_frame and sub_resource types
-    if (details.type !== 'main_frame' && details.type !== 'sub_frame' &&
-        details.type !== 'script' && details.type !== 'stylesheet' &&
-        details.type !== 'image' && details.type !== 'font' &&
-        details.type !== 'xmlhttprequest' && details.type !== 'other') {
-      return;
-    }
-
     const headers = details.responseHeaders || [];
     let contentType = null;
     let contentLength = -1;
@@ -89,16 +86,21 @@ browser.webRequest.onHeadersReceived.addListener(
       type: type,
       mimeType: contentType,
       size: contentLength,
-      statusCode: details.statusCode || -1,
-      initiatorType: details.type
+      statusCode: details.statusCode || -1
     };
 
     // Deduplicate: same URL gets updated with richer info
     resources.set(details.url, entry);
-    // Enforce limit
+
+    // Enforce limit with priority-based eviction:
+    // Protected types (document, stylesheet) are never evicted.
+    // Among unprotected, evict the oldest entry first.
     if (resources.size > MAX_RESOURCES) {
-      const firstKey = resources.keys().next().value;
-      resources.delete(firstKey);
+      for (const [key, val] of resources) {
+        if (PROTECTED_TYPES.has(val.type)) continue;
+        resources.delete(key);
+        if (resources.size <= MAX_RESOURCES) break;
+      }
     }
   },
   { urls: ['<all_urls>'] },
@@ -106,27 +108,12 @@ browser.webRequest.onHeadersReceived.addListener(
 );
 
 /**
- * onBeforeRedirect: update URL when a resource redirects
+ * onBeforeRedirect: remove old URL when a resource redirects.
+ * The redirect target will be captured by onHeadersReceived.
  */
 browser.webRequest.onBeforeRedirect.addListener(
   (details) => {
-    // Remove the old URL, the redirect target will be captured by onHeadersReceived
     resources.delete(details.url);
-  },
-  { urls: ['<all_urls>'] }
-);
-
-/**
- * onCompleted / onErrorOccurred: track transfer size for resources
- * where Content-Length was missing but transferSize is available.
- */
-browser.webRequest.onCompleted.addListener(
-  (details) => {
-    const existing = resources.get(details.url);
-    if (existing && existing.size < 0 && details.type !== 'main_frame') {
-      // No Content-Length was captured, try transferSize from onCompleted
-      // Note: details doesn't have transferSize in MV2 webRequest
-    }
   },
   { urls: ['<all_urls>'] }
 );
@@ -151,25 +138,20 @@ browser.webNavigation.onBeforeNavigate.addListener(
 /* ── Message handler ───────────────────────────────────── */
 
 /**
- * Handle messages from the host app (GeckoRuntime messaging).
+ * Handle messages from the host app (GeckoView messaging).
  *
  * Commands:
  * - "getResources": Return current page resources as JSON array
- * - "clearResources": Clear accumulated resources (e.g., on page refresh)
  * - "getResourceCount": Return just the count (lightweight check)
+ *
+ * Note: "clearResources" is NOT needed here because
+ * webNavigation.onBeforeNavigate already clears resources on navigation.
  */
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.command === 'getResources') {
     const list = Array.from(resources.values());
     sendResponse({ resources: list });
     return true; // async response
-  }
-
-  if (message.command === 'clearResources') {
-    resources.clear();
-    currentPageUrl = null;
-    sendResponse({ ok: true });
-    return true;
   }
 
   if (message.command === 'getResourceCount') {

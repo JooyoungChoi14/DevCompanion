@@ -4,6 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.devcompanion.debug.BrowserDebugger
 import com.devcompanion.debug.NoOpDebugger
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
@@ -20,8 +24,10 @@ import org.mozilla.geckoview.GeckoView
  */
 object EngineFactory {
     private const val TAG = "EngineFactory"
+    private val factoryScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var runtime: GeckoRuntime? = null
     private var resourceCollector: ResourceCollector? = null
+    @Volatile
     private var extensionRegistered = false
 
     /** Create the debugger instance (no-op for GeckoView). */
@@ -40,14 +46,21 @@ object EngineFactory {
         }
 
         if (!extensionRegistered) {
-            // Synchronous registration — installBuiltIn returns GeckoResult but
-            // we optimistically proceed. If it fails, collectPageResources()
+            // Fire-and-forget async registration. installBuiltIn() returns GeckoResult
+            // which completes asynchronously. If it fails, collectPageResources()
             // will fall back to the Performance API.
-            try {
-                collector.register()
-                extensionRegistered = true
-            } catch (e: Exception) {
-                Log.w(TAG, "WebExtension registration failed, will use Performance API fallback", e)
+            extensionRegistered = true // Mark as attempted
+            factoryScope.launch {
+                try {
+                    val success = collector.registerAsync()
+                    if (success) {
+                        Log.i(TAG, "WebExtension registered successfully")
+                    } else {
+                        Log.w(TAG, "WebExtension registration failed, will use Performance API fallback")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "WebExtension registration error, will use Performance API fallback", e)
+                }
             }
         }
 
