@@ -2,8 +2,13 @@
  * DevCompanion Resource Monitor — WebExtension Background Script
  *
  * Intercepts network requests via webRequest API and accumulates resource entries.
- * Communicates with the host app via GeckoView WebExtension messaging
- * (runtime.webExtensionController.sendMessage → browser.runtime.onMessage).
+ * Communicates with the host app via GeckoView port-based messaging.
+ *
+ * Port-based messaging flow:
+ * 1. This extension calls browser.runtime.connect() to establish a port
+ * 2. The host app receives the port via WebExtension.MessageDelegate.onConnect()
+ * 3. The host app sends commands via port.postMessage()
+ * 4. This extension responds via port.postMessage()
  *
  * This replaces the previous Performance API polling approach which had two critical flaws:
  * 1. CORS restrictions: performance.getEntriesByType('resource') returns empty
@@ -25,6 +30,9 @@ const PROTECTED_TYPES = new Set(['document', 'stylesheet']);
 
 /** Current page URL (top-level navigation) */
 let currentPageUrl = null;
+
+/** Port connection to the host app */
+let hostPort = null;
 
 /** MIME type → resource type mapping for SourcesTab display */
 function mapType(initiatorType, contentType) {
@@ -135,29 +143,88 @@ browser.webNavigation.onBeforeNavigate.addListener(
   { url: [{ schemes: ['http', 'https'] }] }
 );
 
-/* ── Message handler ───────────────────────────────────── */
+/* ── Host Port Connection ───────────────────────────────── */
 
 /**
- * Handle messages from the host app (GeckoView messaging).
+ * Connect to the native app when the extension starts.
+ * The host app (GeckoView) will receive this via MessageDelegate.onConnect().
  *
- * Commands:
- * - "getResources": Return current page resources as JSON array
- * - "getResourceCount": Return just the count (lightweight check)
- *
- * Note: "clearResources" is NOT needed here because
- * webNavigation.onBeforeNavigate already clears resources on navigation.
+ * Uses browser.runtime.connectNative() for port-based communication with the app.
+ * The nativeAppId must match what the app used in setMessageDelegate().
+ */
+function connectToHost() {
+  try {
+    // browser.runtime.connect() creates a port that the app can receive
+    // via WebExtension.MessageDelegate.onConnect()
+    hostPort = browser.runtime.connect('devcompanion');
+
+    hostPort.onMessage.addListener((message) => {
+      // Handle commands from the host app
+      handleHostCommand(message);
+    });
+
+    hostPort.onDisconnect.addListener(() => {
+      console.log('[ResourceMonitor] Host port disconnected');
+      hostPort = null;
+      // Attempt reconnect after a delay
+      setTimeout(connectToHost, 2000);
+    });
+
+    console.log('[ResourceMonitor] Connected to host app');
+  } catch (e) {
+    console.error('[ResourceMonitor] Failed to connect to host:', e);
+    // Retry after delay
+    setTimeout(connectToHost, 3000);
+  }
+}
+
+/**
+ * Handle commands from the host app sent via port.postMessage().
+ */
+function handleHostCommand(message) {
+  if (!message || !message.command) return;
+
+  switch (message.command) {
+    case 'getResources':
+      const list = Array.from(resources.values());
+      hostPort.postMessage({ resources: list });
+      break;
+
+    case 'getResourceCount':
+      hostPort.postMessage({ count: resources.size });
+      break;
+
+    default:
+      console.warn('[ResourceMonitor] Unknown command:', message.command);
+  }
+}
+
+/* ── Runtime message handler (fallback for sendMessage) ── */
+
+/**
+ * Handle runtime messages as a fallback communication channel.
+ * This handles browser.runtime.onMessage from the host app if it
+ * uses WebExtension.setMessageDelegate() + direct messaging.
  */
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.command === 'getResources') {
-    const list = Array.from(resources.values());
-    sendResponse({ resources: list });
-    return true; // async response
-  }
+  if (!message || !message.command) return false;
 
-  if (message.command === 'getResourceCount') {
-    sendResponse({ count: resources.size });
-    return true;
-  }
+  switch (message.command) {
+    case 'getResources':
+      const list = Array.from(resources.values());
+      sendResponse({ resources: list });
+      return true;
 
-  return false;
+    case 'getResourceCount':
+      sendResponse({ count: resources.size });
+      return true;
+
+    default:
+      return false;
+  }
 });
+
+/* ── Initialize ─────────────────────────────────────────── */
+
+// Connect to host app on startup
+connectToHost();

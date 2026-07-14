@@ -22,14 +22,15 @@ import org.mozilla.geckoview.WebExtension
  * The WebExtension approach:
  * - Uses browser.webRequest.onHeadersReceived to capture MIME type, status code,
  *   and Content-Length for every request (no CORS restriction)
- * - Communicates via GeckoView WebExtension port messaging (no URL length limit)
+ * - Communicates via GeckoView port-based messaging (no URL length limit)
  * - Accumulates resources in real-time as the page loads
  * - Resets on main-frame navigation (via webNavigation.onBeforeNavigate in background.js)
  *
  * GeckoView WebExtension API:
  * - registration: runtime.webExtensionController.installBuiltIn(uri)
- * - messaging: WebExtension.setMessageDelegate() + MessageDelegate.onMessage()
- *   Port-based messaging with browser.runtime.connect() / port.onMessage
+ * - messaging: Port-based via WebExtension.MessageDelegate
+ *   background.js calls browser.runtime.connect() → we get a Port
+ *   We send commands via port.postMessage() → background.js responds via port.postMessage()
  */
 class ResourceCollector(
     private val runtime: GeckoRuntime
@@ -46,6 +47,13 @@ class ResourceCollector(
 
     @Volatile
     private var isRegistered = false
+
+    /** Active port for communicating with the extension's background script */
+    @Volatile
+    private var port: WebExtension.Port? = null
+
+    /** Pending response completable for the current request-response cycle */
+    private var pendingResponse: CompletableDeferred<JSONObject?>? = null
 
     /** Whether the WebExtension has been successfully registered */
     val ready: Boolean get() = isRegistered && extension != null
@@ -71,14 +79,19 @@ class ResourceCollector(
                 val deferred = CompletableDeferred<WebExtension?>()
 
                 controller.installBuiltIn(EXTENSION_URI)
-                    .then({ webExtension ->
+                    .then({ webExtension: WebExtension ->
                         Log.i(TAG, "Resource monitor extension installed: ${webExtension.id}")
                         extension = webExtension
                         isRegistered = true
+                        // Set up message delegate for port-based communication
+                        webExtension.setMessageDelegate(
+                            ResourceMessageDelegate(),
+                            NATIVE_APP_ID
+                        )
                         deferred.complete(webExtension)
                         null as GeckoResult<Any?>?
-                    }, { throwable ->
-                        Log.e(TAG, "Failed to install resource monitor extension: ${throwable?.message}")
+                    }, { throwable: Throwable ->
+                        Log.e(TAG, "Failed to install resource monitor extension: ${throwable.message}")
                         isRegistered = false
                         deferred.complete(null)
                         null as GeckoResult<Any?>?
@@ -101,15 +114,20 @@ class ResourceCollector(
      * communication times out, so the caller can fall back to Performance API.
      */
     suspend fun collectResources(): List<PageResource> {
-        val ext = extension
-        if (!isRegistered || ext == null) {
+        if (!isRegistered || extension == null) {
             Log.w(TAG, "Extension not registered, returning empty resources")
+            return emptyList()
+        }
+
+        val currentPort = port
+        if (currentPort == null) {
+            Log.w(TAG, "No active port, returning empty resources")
             return emptyList()
         }
 
         return try {
             val response = withTimeout(MESSAGE_TIMEOUT_MS) {
-                sendMessage(ext, "getResources")
+                sendPortMessage(currentPort, "getResources")
             }
             parseResourceResponse(response)
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
@@ -121,66 +139,87 @@ class ResourceCollector(
         }
     }
 
-    // ── Messaging ──────────────────────────────────────────
+    // ── Port-based Messaging ───────────────────────────────
 
     /**
-     * Send a message to the WebExtension background script and await response.
+     * Send a command to the extension's background script via port and await response.
      *
-     * Uses WebExtension.sendMessage() with a nativeAppId. The extension's
-     * background.js receives this via browser.runtime.onMessage.addListener()
-     * and returns a response via sendResponse.
-     *
-     * In GeckoView, sendMessage() sends a runtime message (not a port message).
-     * The nativeAppId parameter identifies the native app endpoint.
+     * The port was established by the extension calling browser.runtime.connect().
+     * We send a command via port.postMessage() and wait for the response in
+     * ResourceMessageDelegate.onPortMessage().
      */
-    private suspend fun sendMessage(ext: WebExtension, command: String): JSONObject? {
-        val deferred = CompletableDeferred<JSONObject?>()
+    private suspend fun sendPortMessage(port: WebExtension.Port, command: String): JSONObject? {
+        val responseDeferred = CompletableDeferred<JSONObject?>()
+        pendingResponse = responseDeferred
 
         withContext(Dispatchers.Main) {
             try {
                 val message = JSONObject().apply {
                     put("command", command)
                 }
-
-                // WebExtension.sendMessage() sends a runtime message to the extension.
-                // The extension receives it via browser.runtime.onMessage.addListener().
-                // The third parameter (session) is null for background script messages.
-                val result: GeckoResult<Any?> = ext.sendMessage(NATIVE_APP_ID, message, null)
-                result.then({ response: Any? ->
-                    if (response is JSONObject) {
-                        deferred.complete(response)
-                    } else if (response is String) {
-                        try {
-                            deferred.complete(JSONObject(response))
-                        } catch (e: Exception) {
-                            Log.d(TAG, "Failed to parse string response as JSON")
-                            deferred.complete(null)
-                        }
-                    } else if (response != null) {
-                        try {
-                            val jsonStr = response.toString()
-                            deferred.complete(JSONObject(jsonStr))
-                        } catch (e: Exception) {
-                            Log.d(TAG, "Non-JSONObject response: ${response.javaClass.simpleName}")
-                            deferred.complete(null)
-                        }
-                    } else {
-                        Log.d(TAG, "Null response from extension")
-                        deferred.complete(null)
-                    }
-                    null as GeckoResult<Any?>?
-                }, { throwable: Throwable ->
-                    Log.w(TAG, "Extension message error: ${throwable.message}")
-                    deferred.complete(null)
-                    null as GeckoResult<Any?>?
-                })
+                port.postMessage(message)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to send extension message", e)
-                deferred.complete(null)
+                Log.w(TAG, "Failed to send port message", e)
+                responseDeferred.complete(null)
             }
         }
 
-        return deferred.await()
+        return responseDeferred.await()
+    }
+
+    /**
+     * Message delegate for receiving port-based messages from the WebExtension.
+     *
+     * The extension connects via browser.runtime.connect(NATIVE_APP_ID)
+     * and we receive the port in onConnect(). Messages come through onPortMessage().
+     */
+    private inner class ResourceMessageDelegate : WebExtension.MessageDelegate {
+        override fun onConnect(port: WebExtension.Port) {
+            Log.d(TAG, "Extension connected: port=${port.name}")
+            this@ResourceCollector.port = port
+        }
+
+        override fun onMessage(
+            nativeAppId: String,
+            message: Any,
+            sender: WebExtension.MessageSender
+        ): GeckoResult<Any>? {
+            // Handle runtime messages (from browser.runtime.onMessage/sendResponse)
+            Log.d(TAG, "Received runtime message from extension")
+            try {
+                val json = when (message) {
+                    is JSONObject -> message
+                    is String -> JSONObject(message)
+                    else -> {
+                        Log.d(TAG, "Unexpected message type: ${message.javaClass.simpleName}")
+                        null
+                    }
+                }
+                json?.let { pendingResponse?.complete(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse extension message", e)
+                pendingResponse?.complete(null)
+            }
+            return null
+        }
+
+        override fun onPortMessage(message: Any, port: WebExtension.Port) {
+            Log.d(TAG, "Received port message from extension")
+            try {
+                val json = when (message) {
+                    is JSONObject -> message
+                    is String -> JSONObject(message)
+                    else -> {
+                        Log.d(TAG, "Unexpected port message type: ${message.javaClass.simpleName}")
+                        null
+                    }
+                }
+                json?.let { pendingResponse?.complete(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse port message", e)
+                pendingResponse?.complete(null)
+            }
+        }
     }
 
     // ── Parsing ───────────────────────────────────────────
