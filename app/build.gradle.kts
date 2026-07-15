@@ -12,8 +12,8 @@ android {
         applicationId = "com.devcompanion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 29
-        versionName = "1.5.12"
+        versionCode = 30
+        versionName = "1.5.13"
 
         // Inject git commit hash for traceability in logs
         val gitCommitHash = providers.exec {
