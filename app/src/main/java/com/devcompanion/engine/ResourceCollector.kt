@@ -240,7 +240,7 @@ class ResourceCollector(
             }
         } else {
             // Legacy: no requestId — complete the first pending response (backward compat)
-            val anyKey = pendingResponses.keys().firstOrNull()
+            val anyKey = pendingResponses.keys().toList().firstOrNull()
             if (anyKey != null) {
                 val deferred = pendingResponses.remove(anyKey)
                 deferred?.complete(json)
