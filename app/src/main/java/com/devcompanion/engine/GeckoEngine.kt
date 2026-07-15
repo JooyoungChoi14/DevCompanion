@@ -486,16 +486,24 @@ class GeckoEngine(
     /**
      * Fetch the source content of a specific page resource.
      *
-     * Uses JS fetch() to retrieve the content. For GeckoView, this works
-     * because the page's origin context applies, giving same-origin access
-     * to resources. Cross-origin resources will fail with CORS errors —
-     * this is expected and matches Chrome DevTools behavior.
-     *
-     * The result is delivered via the eval-result URL scheme, which has
-     * an ~8KB limit. For large resources, the content is truncated to
-     * 50KB in JS before encoding.
+     * Strategy:
+     * 1. Check if the WebExtension has pre-captured content (from filterResponseData)
+     * 2. If yes, return it directly (no CORS issues, no network round-trip)
+     * 3. If no, fall back to JS fetch() (subject to CORS for cross-origin resources)
      */
     override suspend fun fetchResourceContent(url: String): String? {
+        // Primary: check WebExtension pre-captured content
+        val collector = resourceCollector
+        if (collector != null && collector.ready) {
+            val content = collector.getResourceContent(url)
+            if (content != null) {
+                Log.d(TAG, "fetchResourceContent: got content from WebExtension for $url")
+                return content
+            }
+        }
+
+        // Fallback: JS fetch (subject to CORS for cross-origin resources)
+        Log.d(TAG, "fetchResourceContent: WebExtension has no content, falling back to JS fetch for $url")
         val escapedUrl = JsUtils.escapeJsString(url)
         val js = """
             (async function(){

@@ -12,7 +12,9 @@ data class PageResource(
     val type: String,       // "document", "script", "stylesheet", "image", "font", "xhr", "other"
     val mimeType: String?,  // MIME type from response
     val size: Long,          // bytes, -1 if unknown
-    val statusCode: Int      // HTTP status code, -1 if unknown
+    val statusCode: Int,     // HTTP status code, -1 if unknown
+    val content: String? = null,  // Pre-captured response body (null if not captured or binary)
+    val isBinary: Boolean = false  // true for images, fonts, audio, video, etc.
 )
 
 /**

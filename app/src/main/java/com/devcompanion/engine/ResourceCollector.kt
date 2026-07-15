@@ -22,15 +22,11 @@ import org.mozilla.geckoview.WebExtension
  * The WebExtension approach:
  * - Uses browser.webRequest.onHeadersReceived to capture MIME type, status code,
  *   and Content-Length for every request (no CORS restriction)
+ * - Uses browser.webRequest.filterResponseData to capture response bodies
+ *   for text-based resources (CSS, JS, HTML, JSON, etc.)
  * - Communicates via GeckoView port-based messaging (no URL length limit)
  * - Accumulates resources in real-time as the page loads
  * - Resets on main-frame navigation (via webNavigation.onBeforeNavigate in background.js)
- *
- * GeckoView WebExtension API:
- * - registration: runtime.webExtensionController.installBuiltIn(uri)
- * - messaging: Port-based via WebExtension.MessageDelegate
- *   background.js calls browser.runtime.connect() → we get a Port
- *   We send commands via port.postMessage() → background.js responds via port.postMessage()
  */
 class ResourceCollector(
     private val runtime: GeckoRuntime
@@ -40,6 +36,7 @@ class ResourceCollector(
         private const val EXTENSION_URI = "resource://android/assets/extensions/resource-monitor/"
         private const val NATIVE_APP_ID = "devcompanion"
         private const val MESSAGE_TIMEOUT_MS = 3000L
+        private const val CONTENT_TIMEOUT_MS = 5000L
     }
 
     @Volatile
@@ -53,6 +50,7 @@ class ResourceCollector(
     private var port: WebExtension.Port? = null
 
     /** Pending response completable for the current request-response cycle */
+    @Volatile
     private var pendingResponse: CompletableDeferred<JSONObject?>? = null
 
     /** Whether the WebExtension has been successfully registered */
@@ -114,6 +112,9 @@ class ResourceCollector(
      *
      * Returns an empty list if the extension is not registered or if
      * communication times out, so the caller can fall back to Performance API.
+     *
+     * Resources include inline content for small text bodies (≤10KB).
+     * Larger content must be fetched via [getResourceContent].
      */
     suspend fun collectResources(): List<PageResource> {
         if (!isRegistered || extension == null) {
@@ -141,6 +142,42 @@ class ResourceCollector(
         }
     }
 
+    /**
+     * Get the content of a specific resource by URL.
+     *
+     * This is used for resources whose content was too large to include inline
+     * in the getResources response (content > 10KB). The WebExtension returns
+     * the full captured body (up to 50KB).
+     *
+     * @param url The URL of the resource to get content for
+     * @return The resource content string, or null if not available/binary/not found
+     */
+    suspend fun getResourceContent(url: String): String? {
+        if (!isRegistered || extension == null) {
+            Log.w(TAG, "Extension not registered, cannot get resource content")
+            return null
+        }
+
+        val currentPort = port
+        if (currentPort == null) {
+            Log.w(TAG, "No active port, cannot get resource content")
+            return null
+        }
+
+        return try {
+            val response = withTimeout(CONTENT_TIMEOUT_MS) {
+                sendPortMessage(currentPort, "getResourceContent", mapOf("url" to url))
+            }
+            parseContentResponse(response)
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.w(TAG, "getResourceContent timed out for $url")
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get resource content for $url", e)
+            null
+        }
+    }
+
     // ── Port-based Messaging ───────────────────────────────
 
     /**
@@ -150,7 +187,11 @@ class ResourceCollector(
      * We send a command via port.postMessage() and wait for the response in
      * ResourceMessageDelegate.onPortMessage().
      */
-    private suspend fun sendPortMessage(port: WebExtension.Port, command: String): JSONObject? {
+    private suspend fun sendPortMessage(
+        port: WebExtension.Port,
+        command: String,
+        params: Map<String, String> = emptyMap()
+    ): JSONObject? {
         val responseDeferred = CompletableDeferred<JSONObject?>()
         pendingResponse = responseDeferred
 
@@ -158,6 +199,9 @@ class ResourceCollector(
             try {
                 val message = JSONObject().apply {
                     put("command", command)
+                    for ((key, value) in params) {
+                        put(key, value)
+                    }
                 }
                 port.postMessage(message)
             } catch (e: Exception) {
@@ -171,16 +215,11 @@ class ResourceCollector(
 
     /**
      * Message delegate for receiving port-based messages from the WebExtension.
-     *
-     * The extension connects via browser.runtime.connect(NATIVE_APP_ID)
-     * and we receive the port in onConnect().
-     * We set a PortDelegate on the port to receive messages.
      */
     private inner class ResourceMessageDelegate : WebExtension.MessageDelegate {
         override fun onConnect(port: WebExtension.Port) {
             Log.d(TAG, "Extension connected: port=${port.name}")
             this@ResourceCollector.port = port
-            // Set port delegate to receive messages from the extension
             port.setDelegate(ResourcePortDelegate())
         }
 
@@ -189,7 +228,6 @@ class ResourceCollector(
             message: Any,
             sender: WebExtension.MessageSender
         ): GeckoResult<Any>? {
-            // Handle runtime messages (from browser.runtime.onMessage/sendResponse)
             Log.d(TAG, "Received runtime message from extension")
             try {
                 val json = when (message) {
@@ -249,17 +287,46 @@ class ResourceCollector(
             try {
                 val r = resourcesArray.getJSONObject(i)
                 val url = r.optString("url", null) ?: return@mapNotNull null
+
+                val content = r.optString("content", null)?.takeIf { it.isNotEmpty() && it != "null" }
+                val isBinary = r.optBoolean("isBinary", false)
+                val hasContent = r.optBoolean("hasContent", false)
+
                 PageResource(
                     url = url,
                     type = r.optString("type", "other"),
                     mimeType = r.optString("mimeType", null)?.takeIf { it.isNotEmpty() && it != "null" },
                     size = r.optLong("size", -1L),
-                    statusCode = r.optInt("statusCode", -1)
+                    statusCode = r.optInt("statusCode", -1),
+                    content = content,
+                    isBinary = isBinary
                 )
             } catch (e: Exception) {
                 Log.d(TAG, "Failed to parse resource entry", e)
                 null
             }
         }
+    }
+
+    private fun parseContentResponse(response: JSONObject?): String? {
+        if (response == null) {
+            Log.w(TAG, "Content response is null")
+            return null
+        }
+
+        // Check for error
+        val error = response.optString("error", null)
+        if (error != null) {
+            Log.w(TAG, "Content response error: $error")
+            return null
+        }
+
+        // Check for binary
+        if (response.optBoolean("isBinary", false)) {
+            Log.d(TAG, "Content is binary, returning null")
+            return null
+        }
+
+        return response.optString("content", null)
     }
 }

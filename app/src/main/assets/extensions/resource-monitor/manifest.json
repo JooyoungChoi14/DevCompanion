@@ -5,6 +5,7 @@
   "description": "Monitors page resource loads for the DevCompanion Sources panel",
   "permissions": [
     "webRequest",
+    "webRequestBlocking",
     "webNavigation",
     "nativeMessaging",
     "<all_urls>"

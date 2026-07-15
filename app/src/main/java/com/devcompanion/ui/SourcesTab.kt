@@ -212,22 +212,30 @@ fun SourcesTab(
                         resource = resource,
                         onClick = {
                             viewingResource = resource
-                            contentLoading = true
                             contentError = null
-                            resourceContent = null
-                            // Fetch content asynchronously
-                            scope.launch {
-                                try {
-                                    val content = engine?.fetchResourceContent(resource.url)
-                                    if (isTextResource(resource)) {
-                                        resourceContent = content
+
+                            // Use pre-captured content from WebExtension if available
+                            if (resource.content != null) {
+                                resourceContent = resource.content
+                                contentLoading = false
+                            } else if (resource.isBinary) {
+                                resourceContent = null
+                                contentLoading = false
+                            } else {
+                                // No pre-captured content — fetch via WebExtension or JS fetch
+                                resourceContent = null
+                                contentLoading = true
+                                scope.launch {
+                                    try {
+                                        val content = engine?.fetchResourceContent(resource.url)
+                                        if (isTextResource(resource)) {
+                                            resourceContent = content
+                                        }
                                         contentLoading = false
-                                    } else {
+                                    } catch (e: Exception) {
+                                        contentError = "Failed to load: ${e.message}"
                                         contentLoading = false
                                     }
-                                } catch (e: Exception) {
-                                    contentError = "Failed to load: ${e.message}"
-                                    contentLoading = false
                                 }
                             }
                         }
