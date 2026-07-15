@@ -14,7 +14,8 @@ data class PageResource(
     val size: Long,          // bytes, -1 if unknown
     val statusCode: Int,     // HTTP status code, -1 if unknown
     val content: String? = null,  // Pre-captured response body (null if not captured or binary)
-    val isBinary: Boolean = false  // true for images, fonts, audio, video, etc.
+    val isBinary: Boolean = false,  // true for images, fonts, audio, video, etc.
+    val hasContent: Boolean = false  // true if content exists but wasn't inlined (too large)
 )
 
 /**

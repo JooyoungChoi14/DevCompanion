@@ -26,8 +26,14 @@ const resources = new Map();
 /** Resource entry limit to prevent memory exhaustion on extremely heavy pages */
 const MAX_RESOURCES = 500;
 
-/** Maximum content size to capture (in bytes). Larger responses are truncated. */
+/** Maximum content size per resource (in bytes). Larger responses are truncated. */
 const MAX_CONTENT_BYTES = 51200; // 50KB
+
+/** Maximum total content bytes across all resources. Oldest content is nulled when exceeded. */
+const MAX_TOTAL_CONTENT_BYTES = 5 * 1024 * 1024; // 5MB
+
+/** Running total of captured content bytes (for OOM protection). */
+let totalContentBytes = 0;
 
 /** Maximum content to include in getResources response (in bytes). Larger content requires getResourceContent. */
 const MAX_INLINE_CONTENT_BYTES = 10240; // 10KB — inline small content in list responses
@@ -49,8 +55,12 @@ const TEXT_MIME_PATTERNS = [
 
 /** Binary MIME type patterns — these are NEVER body-captured */
 const BINARY_MIME_PATTERNS = [
-  'image/', 'font', 'audio', 'video', 'pdf', 'zip',
-  'octet-stream', 'wasm', 'application/java'
+  'image/', 'font/', 'audio', 'video', 'pdf', 'zip',
+  'octet-stream', 'wasm', 'application/java',
+  'application/x-', 'application/pdf', 'application/zip',
+  'application/octet-stream', 'application/wasm',
+  'application/java-archive', 'application/x-font-',
+  'font/woff', 'font/ttf', 'font/otf'
 ];
 
 /** Resource types (from webRequest) that are text and should be captured */
@@ -89,9 +99,9 @@ function mapType(initiatorType, contentType) {
 
 /** Check if a Content-Type is a text-based MIME that should have its body captured */
 function isTextMimeType(contentType) {
-  if (!contentType) return false;
+  if (!contentType) return false; // No Content-Type → safe default: don't capture
   const ct = contentType.toLowerCase();
-  // Explicitly exclude binary types
+  // Explicitly exclude binary types first
   for (const pattern of BINARY_MIME_PATTERNS) {
     if (ct.includes(pattern)) return false;
   }
@@ -99,7 +109,7 @@ function isTextMimeType(contentType) {
   for (const pattern of TEXT_MIME_PATTERNS) {
     if (ct.includes(pattern)) return true;
   }
-  return false;
+  return false; // Unknown MIME type → don't capture (safe default)
 }
 
 /** Check if a resource type (from webRequest details.type) should have its body captured */
@@ -107,49 +117,7 @@ function isCapturableResourceType(type) {
   return CAPTURABLE_TYPES.has(type);
 }
 
-/** Convert a ReadableStream of bytes to a string, with size limit */
-function streamToString(stream, maxSize) {
-  return new Promise((resolve) => {
-    const decoder = new TextDecoder('utf-8');
-    let chunks = [];
-    let totalSize = 0;
-    let truncated = false;
 
-    const reader = stream.getReader();
-
-    function processChunk({ done, value }) {
-      if (done) {
-        const content = chunks.join('');
-        resolve({ content, truncated });
-        return;
-      }
-
-      // value is a Uint8Array
-      totalSize += value.length;
-
-      if (totalSize > maxSize) {
-        // Only keep up to maxSize bytes
-        const remaining = maxSize - (totalSize - value.length);
-        if (remaining > 0) {
-          chunks.push(decoder.decode(value.slice(0, remaining), { stream: false }));
-        }
-        truncated = true;
-        reader.cancel();
-        const content = chunks.join('');
-        resolve({ content, truncated });
-        return;
-      }
-
-      chunks.push(decoder.decode(value, { stream: true }));
-      return reader.read().then(processChunk);
-    }
-
-    reader.read().then(processChunk).catch((e) => {
-      console.warn('[ResourceMonitor] Stream read error:', e);
-      resolve({ content: chunks.join(''), truncated: true });
-    });
-  });
-}
 
 /* ── webRequest Listeners ──────────────────────────────── */
 
@@ -159,6 +127,44 @@ function streamToString(stream, maxSize) {
  * For text-based resources with Content-Length ≤ threshold (or unknown length),
  * we use filterResponseData to intercept the response stream.
  */
+/** Evict oldest content to stay under MAX_TOTAL_CONTENT_BYTES. */
+function evictContent(newBytes) {
+  totalContentBytes += newBytes;
+  while (totalContentBytes > MAX_TOTAL_CONTENT_BYTES) {
+    let oldestKey = null;
+    let oldestTime = Infinity;
+    // Find the oldest non-protected entry with content
+    for (const [key, val] of resources) {
+      if (val.content != null && !PROTECTED_TYPES.has(val.type)) {
+        // Use insertion order (Map preserves it) as proxy for age
+        if (oldestKey === null) {
+          oldestKey = key;
+          break; // Map iterates in insertion order, first with content is oldest
+        }
+      }
+    }
+    if (oldestKey === null) break; // Nothing left to evict
+    const entry = resources.get(oldestKey);
+    if (entry && entry.content != null) {
+      totalContentBytes -= entry.content.length; // Approximate byte count
+      entry.content = null; // Free memory but keep metadata
+    } else {
+      break;
+    }
+  }
+}
+
+/** Check if response headers indicate an authenticated resource that should not be captured. */
+function isAuthenticated(headers) {
+  for (const h of headers) {
+    const name = h.name.toLowerCase();
+    if (name === 'authorization' || name === 'www-authenticate') {
+      return true;
+    }
+  }
+  return false;
+}
+
 browser.webRequest.onHeadersReceived.addListener(
   (details) => {
     const headers = details.responseHeaders || [];
@@ -180,7 +186,15 @@ browser.webRequest.onHeadersReceived.addListener(
       contentType
     );
 
-    const isBinary = contentType ? !isTextMimeType(contentType) && type !== 'document' && type !== 'script' && type !== 'stylesheet' : false;
+    // Determine binary status: no Content-Type → treat as binary (safe default)
+    // to prevent WASM and other binary content from being decoded as text.
+    const isBinary = !contentType ? true : !isTextMimeType(contentType);
+
+    // Decide whether to capture the response body (must be determined BEFORE resources.set)
+    const shouldCapture = !isBinary &&
+      isCapturableResourceType(details.type) &&
+      (contentLength === -1 || contentLength <= MAX_CONTENT_BYTES) &&
+      !isAuthenticated(headers);
 
     const entry = {
       url: details.url,
@@ -189,9 +203,18 @@ browser.webRequest.onHeadersReceived.addListener(
       size: contentLength,
       statusCode: details.statusCode || -1,
       isBinary: isBinary,
+      hasContent: shouldCapture, // Signal to Kotlin that content will be available
       content: null,  // Will be filled by stream capture if applicable
       contentTruncated: false
     };
+
+    // Merge with existing entry to preserve content if we already captured it
+    const existing = resources.get(details.url);
+    if (existing && existing.content != null) {
+      // Preserve previously captured content (don't overwrite with null)
+      entry.content = existing.content;
+      entry.contentTruncated = existing.contentTruncated;
+    }
 
     // Deduplicate: same URL gets updated with richer info
     resources.set(details.url, entry);
@@ -200,17 +223,21 @@ browser.webRequest.onHeadersReceived.addListener(
     if (resources.size > MAX_RESOURCES) {
       for (const [key, val] of resources) {
         if (PROTECTED_TYPES.has(val.type)) continue;
+        // Reclaim content bytes before deleting
+        if (val.content != null) {
+          totalContentBytes -= val.content.length;
+        }
         resources.delete(key);
         if (resources.size <= MAX_RESOURCES) break;
       }
     }
 
-    // Decide whether to capture the response body
-    const shouldCapture = !isBinary &&
-      isCapturableResourceType(details.type) &&
-      (contentLength === -1 || contentLength <= MAX_CONTENT_BYTES);
+    // Early return: skip filterResponseData overhead if not capturing
+    if (!shouldCapture) {
+      return;
+    }
 
-    if (shouldCapture && typeof browser.webRequest.filterResponseData === 'function') {
+    if (typeof browser.webRequest.filterResponseData === 'function') {
       try {
         const filter = browser.webRequest.filterResponseData(details.requestId);
         const capturedChunks = [];
@@ -221,7 +248,7 @@ browser.webRequest.onHeadersReceived.addListener(
           filter.write(event.data);
 
           // Also collect it for our purposes
-          if (!isBinary && capturedSize < MAX_CONTENT_BYTES) {
+          if (capturedSize < MAX_CONTENT_BYTES) {
             const remaining = MAX_CONTENT_BYTES - capturedSize;
             if (event.data.byteLength <= remaining) {
               capturedChunks.push(event.data);
@@ -252,7 +279,7 @@ browser.webRequest.onHeadersReceived.addListener(
               // Flush the decoder
               content += decoder.decode(undefined, { stream: false });
 
-              // Update the resource entry
+              // Update the resource entry — but check it still exists (may have been evicted)
               const current = resources.get(details.url);
               if (current) {
                 current.content = content;
@@ -261,6 +288,8 @@ browser.webRequest.onHeadersReceived.addListener(
                 if (current.size <= 0) {
                   current.size = totalBytes;
                 }
+                // Enforce total content budget
+                evictContent(content.length);
               }
             } catch (e) {
               console.warn('[ResourceMonitor] Failed to decode captured stream:', e);
@@ -301,8 +330,9 @@ browser.webRequest.onBeforeRedirect.addListener(
 browser.webNavigation.onBeforeNavigate.addListener(
   (details) => {
     if (details.frameId === 0) {
-      // Main frame navigation — reset resources
+      // Main frame navigation — reset resources and content budget
       resources.clear();
+      totalContentBytes = 0;
       currentPageUrl = details.url;
     }
   },
@@ -343,19 +373,22 @@ function connectToHost() {
  */
 function handleHostCommand(message) {
   if (!message || !message.command) return;
+  const requestId = message.requestId; // Forward requestId for response correlation
 
   switch (message.command) {
     case 'getResources':
-      sendResourceList();
+      sendResourceList(requestId);
       break;
 
     case 'getResourceContent':
-      sendResourceContent(message.url);
+      sendResourceContent(message.url, requestId);
       break;
 
     case 'getResourceCount':
       if (hostPort) {
-        hostPort.postMessage({ count: resources.size });
+        const msg = { command: 'getResourceCount', count: resources.size };
+        if (requestId) msg.requestId = requestId;
+        hostPort.postMessage(msg);
       }
       break;
 
@@ -368,7 +401,7 @@ function handleHostCommand(message) {
  * Send the list of resources with inline content for small text resources.
  * Large content is excluded — use getResourceContent for those.
  */
-function sendResourceList() {
+function sendResourceList(requestId) {
   const list = Array.from(resources.values()).map((entry) => {
     const obj = {
       url: entry.url,
@@ -376,22 +409,24 @@ function sendResourceList() {
       mimeType: entry.mimeType,
       size: entry.size,
       statusCode: entry.statusCode,
-      isBinary: entry.isBinary
+      isBinary: entry.isBinary,
+      hasContent: !!entry.content // Always send hasContent
     };
     // Inline small content to avoid round-trip
     if (entry.content && entry.content.length <= MAX_INLINE_CONTENT_BYTES) {
       obj.content = entry.content;
       obj.contentTruncated = entry.contentTruncated;
     } else if (entry.content) {
-      // Content exists but is too large for inline — signal availability
-      obj.hasContent = true;
+      // Content exists but is too large for inline — hasContent already set to true
       obj.contentTruncated = entry.contentTruncated;
     }
     return obj;
   });
 
   if (hostPort) {
-    hostPort.postMessage({ resources: list });
+    const msg = { command: 'getResources', resources: list };
+    if (requestId) msg.requestId = requestId;
+    hostPort.postMessage(msg);
   }
 }
 
@@ -399,24 +434,30 @@ function sendResourceList() {
  * Send the content of a specific resource, identified by URL.
  * Used by the host app when the user taps a resource to view its source.
  */
-function sendResourceContent(url) {
+function sendResourceContent(url, requestId) {
   const entry = resources.get(url);
   if (!entry) {
     if (hostPort) {
-      hostPort.postMessage({ url: url, content: null, error: 'Resource not found' });
+      const msg = { command: 'getResourceContent', url: url, content: null, error: 'Resource not found' };
+      if (requestId) msg.requestId = requestId;
+      hostPort.postMessage(msg);
     }
     return;
   }
 
   if (entry.isBinary || !entry.content) {
     if (hostPort) {
-      hostPort.postMessage({ url: url, content: null, isBinary: entry.isBinary });
+      const msg = { command: 'getResourceContent', url: url, content: null, isBinary: entry.isBinary };
+      if (requestId) msg.requestId = requestId;
+      hostPort.postMessage(msg);
     }
     return;
   }
 
   if (hostPort) {
-    hostPort.postMessage({ url: url, content: entry.content, contentTruncated: entry.contentTruncated });
+    const msg = { command: 'getResourceContent', url: url, content: entry.content, contentTruncated: entry.contentTruncated };
+    if (requestId) msg.requestId = requestId;
+    hostPort.postMessage(msg);
   }
 }
 
@@ -437,38 +478,54 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
           mimeType: entry.mimeType,
           size: entry.size,
           statusCode: entry.statusCode,
-          isBinary: entry.isBinary
+          isBinary: entry.isBinary,
+          hasContent: !!entry.content
         };
         if (entry.content && entry.content.length <= MAX_INLINE_CONTENT_BYTES) {
           obj.content = entry.content;
           obj.contentTruncated = entry.contentTruncated;
         } else if (entry.content) {
-          obj.hasContent = true;
           obj.contentTruncated = entry.contentTruncated;
         }
         return obj;
       });
-      sendResponse({ resources: list });
+      const response = { resources: list };
+      if (message.requestId) response.requestId = message.requestId;
+      sendResponse(response);
       return true;
     }
 
     case 'getResourceContent': {
       const entry = resources.get(message.url);
+      const response = {};
+      if (message.requestId) response.requestId = message.requestId;
       if (!entry) {
-        sendResponse({ url: message.url, content: null, error: 'Resource not found' });
+        response.url = message.url;
+        response.content = null;
+        response.error = 'Resource not found';
+        sendResponse(response);
         return true;
       }
       if (entry.isBinary || !entry.content) {
-        sendResponse({ url: message.url, content: null, isBinary: entry.isBinary });
+        response.url = message.url;
+        response.content = null;
+        response.isBinary = entry.isBinary;
+        sendResponse(response);
         return true;
       }
-      sendResponse({ url: message.url, content: entry.content, contentTruncated: entry.contentTruncated });
+      response.url = message.url;
+      response.content = entry.content;
+      response.contentTruncated = entry.contentTruncated;
+      sendResponse(response);
       return true;
     }
 
-    case 'getResourceCount':
-      sendResponse({ count: resources.size });
+    case 'getResourceCount': {
+      const response = { count: resources.size };
+      if (message.requestId) response.requestId = message.requestId;
+      sendResponse(response);
       return true;
+    }
 
     default:
       return false;

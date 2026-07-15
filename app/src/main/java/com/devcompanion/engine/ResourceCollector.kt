@@ -5,6 +5,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoRuntime
@@ -37,6 +39,7 @@ class ResourceCollector(
         private const val NATIVE_APP_ID = "devcompanion"
         private const val MESSAGE_TIMEOUT_MS = 3000L
         private const val CONTENT_TIMEOUT_MS = 5000L
+        private val REQUEST_ID_COUNTER = java.util.concurrent.atomic.AtomicLong(0)
     }
 
     @Volatile
@@ -49,9 +52,11 @@ class ResourceCollector(
     @Volatile
     private var port: WebExtension.Port? = null
 
-    /** Pending response completable for the current request-response cycle */
-    @Volatile
-    private var pendingResponse: CompletableDeferred<JSONObject?>? = null
+    /** Mutex for thread-safe access to port and pendingResponses */
+    private val messageMutex = Mutex()
+
+    /** Pending response completables, keyed by requestId for concurrent request-response correlation */
+    private val pendingResponses = java.util.concurrent.ConcurrentHashMap<String, CompletableDeferred<JSONObject?>>()
 
     /** Whether the WebExtension has been successfully registered */
     val ready: Boolean get() = isRegistered && extension != null
@@ -183,34 +188,64 @@ class ResourceCollector(
     /**
      * Send a command to the extension's background script via port and await response.
      *
-     * The port was established by the extension calling browser.runtime.connect().
-     * We send a command via port.postMessage() and wait for the response in
-     * ResourceMessageDelegate.onPortMessage().
+     * Uses a unique requestId for each request to correctly route responses
+     * even when multiple requests are in-flight concurrently.
+     *
+     * Protected by messageMutex to ensure atomic port access + pending registration.
      */
     private suspend fun sendPortMessage(
         port: WebExtension.Port,
         command: String,
         params: Map<String, String> = emptyMap()
-    ): JSONObject? {
+    ): JSONObject? = messageMutex.withLock {
+        val requestId = REQUEST_ID_COUNTER.incrementAndGet().toString()
         val responseDeferred = CompletableDeferred<JSONObject?>()
-        pendingResponse = responseDeferred
+        pendingResponses[requestId] = responseDeferred
 
-        withContext(Dispatchers.Main) {
-            try {
-                val message = JSONObject().apply {
-                    put("command", command)
-                    for ((key, value) in params) {
-                        put(key, value)
+        try {
+            withContext(Dispatchers.Main) {
+                try {
+                    val message = JSONObject().apply {
+                        put("command", command)
+                        put("requestId", requestId)
+                        for ((key, value) in params) {
+                            put(key, value)
+                        }
                     }
+                    port.postMessage(message)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send port message", e)
+                    responseDeferred.complete(null)
                 }
-                port.postMessage(message)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to send port message", e)
-                responseDeferred.complete(null)
+            }
+
+            responseDeferred.await()
+        } finally {
+            pendingResponses.remove(requestId)
+        }
+    }
+
+    /**
+     * Route an incoming message to the correct pending CompletableDeferred
+     * based on the requestId field.
+     */
+    private fun routeResponse(json: JSONObject) {
+        val requestId = json.optString("requestId", null)
+        if (requestId != null) {
+            val deferred = pendingResponses.remove(requestId)
+            if (deferred != null) {
+                deferred.complete(json)
+            } else {
+                Log.w(TAG, "No pending request for requestId=$requestId")
+            }
+        } else {
+            // Legacy: no requestId — complete the first pending response (backward compat)
+            val anyKey = pendingResponses.keys().firstOrNull()
+            if (anyKey != null) {
+                val deferred = pendingResponses.remove(anyKey)
+                deferred?.complete(json)
             }
         }
-
-        return responseDeferred.await()
     }
 
     /**
@@ -238,10 +273,14 @@ class ResourceCollector(
                         null
                     }
                 }
-                json?.let { pendingResponse?.complete(it) }
+                json?.let { routeResponse(it) }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse extension message", e)
-                pendingResponse?.complete(null)
+                // Try to complete any pending response with null
+                val anyKey = pendingResponses.keys().firstOrNull()
+                if (anyKey != null) {
+                    pendingResponses.remove(anyKey)?.complete(null)
+                }
             }
             return null
         }
@@ -262,10 +301,14 @@ class ResourceCollector(
                         null
                     }
                 }
-                json?.let { pendingResponse?.complete(it) }
+                json?.let { routeResponse(it) }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse port message", e)
-                pendingResponse?.complete(null)
+                // Try to complete any pending response with null
+                val anyKey = pendingResponses.keys().firstOrNull()
+                if (anyKey != null) {
+                    pendingResponses.remove(anyKey)?.complete(null)
+                }
             }
         }
     }
@@ -299,7 +342,8 @@ class ResourceCollector(
                     size = r.optLong("size", -1L),
                     statusCode = r.optInt("statusCode", -1),
                     content = content,
-                    isBinary = isBinary
+                    isBinary = isBinary,
+                    hasContent = hasContent
                 )
             } catch (e: Exception) {
                 Log.d(TAG, "Failed to parse resource entry", e)

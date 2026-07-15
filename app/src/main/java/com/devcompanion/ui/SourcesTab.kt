@@ -218,7 +218,8 @@ fun SourcesTab(
                             if (resource.content != null) {
                                 resourceContent = resource.content
                                 contentLoading = false
-                            } else if (resource.isBinary) {
+                            } else if (resource.isBinary || !resource.hasContent) {
+                                // Binary resource or no content available — don't attempt fetch
                                 resourceContent = null
                                 contentLoading = false
                             } else {
