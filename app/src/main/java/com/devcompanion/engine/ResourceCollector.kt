@@ -277,7 +277,7 @@ class ResourceCollector(
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse extension message", e)
                 // Try to complete any pending response with null
-                val anyKey = pendingResponses.keys().firstOrNull()
+                val anyKey = pendingResponses.keys().toList().firstOrNull()
                 if (anyKey != null) {
                     pendingResponses.remove(anyKey)?.complete(null)
                 }
@@ -305,7 +305,7 @@ class ResourceCollector(
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse port message", e)
                 // Try to complete any pending response with null
-                val anyKey = pendingResponses.keys().firstOrNull()
+                val anyKey = pendingResponses.keys().toList().firstOrNull()
                 if (anyKey != null) {
                     pendingResponses.remove(anyKey)?.complete(null)
                 }
