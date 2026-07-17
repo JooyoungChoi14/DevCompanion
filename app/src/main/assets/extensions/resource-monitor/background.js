@@ -186,9 +186,14 @@ browser.webRequest.onHeadersReceived.addListener(
       contentType
     );
 
-    // Determine binary status: no Content-Type → treat as binary (safe default)
-    // to prevent WASM and other binary content from being decoded as text.
-    const isBinary = !contentType ? true : !isTextMimeType(contentType);
+    // Determine binary status using both Content-Type and request type.
+    // Many servers omit Content-Type for JS/CSS, but webRequest details.type
+    // reliably identifies the resource category.
+    const isTextByType = isCapturableResourceType(details.type) ||
+      details.type === 'main_frame' || details.type === 'sub_frame';
+    const isBinary = contentType
+      ? !isTextMimeType(contentType)  // Has Content-Type: use it
+      : !isTextByType;                  // No Content-Type: trust request type instead of assuming binary
 
     // Decide whether to capture the response body (must be determined BEFORE resources.set)
     const shouldCapture = !isBinary &&
@@ -208,12 +213,17 @@ browser.webRequest.onHeadersReceived.addListener(
       contentTruncated: false
     };
 
-    // Merge with existing entry to preserve content if we already captured it
+    // Merge with existing entry: preserve content AND metadata when we already captured it
     const existing = resources.get(details.url);
-    if (existing && existing.content != null) {
-      // Preserve previously captured content (don't overwrite with null)
-      entry.content = existing.content;
-      entry.contentTruncated = existing.contentTruncated;
+    if (existing) {
+      if (existing.content != null) {
+        // Preserve previously captured content (don't overwrite with null)
+        entry.content = existing.content;
+        entry.contentTruncated = existing.contentTruncated;
+        // Also fix metadata: if we have content, the resource is not binary and has content
+        entry.isBinary = false;
+        entry.hasContent = true;
+      }
     }
 
     // Deduplicate: same URL gets updated with richer info

@@ -218,12 +218,14 @@ fun SourcesTab(
                             if (resource.content != null) {
                                 resourceContent = resource.content
                                 contentLoading = false
-                            } else if (resource.isBinary || !resource.hasContent) {
-                                // Binary resource or no content available — don't attempt fetch
+                            } else if (resource.isBinary) {
+                                // Binary resource — don't attempt text fetch
                                 resourceContent = null
                                 contentLoading = false
                             } else {
-                                // No pre-captured content — fetch via WebExtension or JS fetch
+                                // Text resource without pre-captured content — try fetch
+                                // (hasContent may be false due to Content-Type missing or size unknown,
+                                //  but the resource type indicates text content worth fetching)
                                 resourceContent = null
                                 contentLoading = true
                                 scope.launch {
