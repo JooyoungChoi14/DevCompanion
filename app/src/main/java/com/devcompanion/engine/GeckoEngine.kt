@@ -208,7 +208,7 @@ class GeckoEngine(
                         val deferred = pendingEvals.remove(id)
                         if (deferred != null) {
                             if (type == "err") {
-                                val escaped = data.replace("\\", "\\\\").replace("\"", "\\"").replace("\n", "\\n").replace("\r", "\\r")
+                                val escaped = data.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
                                 deferred.complete("{\"t\":\"error\",\"v\":\"$escaped\"}")
                             } else {
                                 deferred.complete(data)
@@ -216,7 +216,7 @@ class GeckoEngine(
                         } else {
                             Log.w(TAG, "eval-prompt: no pending request for id=$id")
                         }
-                        return GeckoResult.allow("") // Dismiss the prompt
+                        return GeckoResult.fromValue("") // Dismiss the prompt
                     }
                 }
                 return null // Let other prompts fall through to default handling
