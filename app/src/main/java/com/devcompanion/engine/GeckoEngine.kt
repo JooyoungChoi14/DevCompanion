@@ -18,6 +18,7 @@ import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
+import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import com.devcompanion.logging.SessionLog
 import com.devcompanion.logging.EventType
 import java.util.concurrent.ConcurrentHashMap
@@ -91,6 +92,9 @@ class GeckoEngine(
 
         /** Map of pending eval requests, keyed by request ID. */
         private val pendingEvals = ConcurrentHashMap<String, CompletableDeferred<String>>()
+
+        /** Prefix for eval results delivered via window.prompt() — avoids URL length limits. */
+        private const val EVAL_PROMPT_PREFIX = "__DC_EVAL__:"
     }
 
     /** Set BrowserEngine-level callbacks. Thread-safe via @Volatile. */
@@ -183,14 +187,55 @@ class GeckoEngine(
             }
         }
 
-        Log.i(TAG, "GeckoEngine delegates installed (with eval-result scheme interceptor)")
+        // Intercept window.prompt() calls used by evalJs to deliver large results.
+        // This avoids URL length limits when sending eval results via location.href.
+        // JS sends: window.prompt("__DC_EVAL__:<id>:<type>:<data>")
+        // where <type> is "ok" or "err".
+        session.promptDelegate = object : PromptDelegate {
+            override fun onTextPrompt(
+                session: GeckoSession,
+                prompt: PromptDelegate.TextPrompt
+            ): GeckoResult<String>? {
+                val message = prompt.message ?: ""
+                if (message.startsWith(EVAL_PROMPT_PREFIX)) {
+                    val payload = message.substring(EVAL_PROMPT_PREFIX.length)
+                    val colon1 = payload.indexOf(':')
+                    val colon2 = if (colon1 >= 0) payload.indexOf(':', colon1 + 1) else -1
+                    if (colon1 >= 0 && colon2 >= 0) {
+                        val id = payload.substring(0, colon1)
+                        val type = payload.substring(colon1 + 1, colon2)
+                        val data = payload.substring(colon2 + 1)
+                        val deferred = pendingEvals.remove(id)
+                        if (deferred != null) {
+                            if (type == "err") {
+                                val escaped = data.replace("\\", "\\\\").replace("\"", "\\"").replace("\n", "\\n").replace("\r", "\\r")
+                                deferred.complete("{\"t\":\"error\",\"v\":\"$escaped\"}")
+                            } else {
+                                deferred.complete(data)
+                            }
+                        } else {
+                            Log.w(TAG, "eval-prompt: no pending request for id=$id")
+                        }
+                        return GeckoResult.allow("") // Dismiss the prompt
+                    }
+                }
+                return null // Let other prompts fall through to default handling
+            }
+        }
+
+        Log.i(TAG, "GeckoEngine delegates installed (with eval-result scheme interceptor + prompt bridge)")
     }
 
     /**
      * Parse a devcompanion://eval-result URI and deliver the result to the pending deferred.
      *
-     * URI format: devcompanion://eval-result?id=<requestId>&data=<urlEncodedResult>
-     * Error format: devcompanion://eval-result?id=<requestId>&error=<urlEncodedError>
+     * This is now a fallback path — primary result delivery uses window.prompt()
+     * (see PromptDelegate in setupDelegates) which has no length limits.
+     * location.href delivery is only used as a fallback when prompt() fails.
+     *
+     * URI formats:
+     *   devcompanion://eval-result?id=X&data=<urlEncodedResult>  — inline result (small data, fallback)
+     *   devcompanion://eval-result?id=X&error=<urlEncodedError>     — error
      */
     private fun handleEvalResult(uri: String) {
         try {
@@ -340,20 +385,23 @@ class GeckoEngine(
     /**
      * Build JavaScript code that:
      * 1. Executes the given [js] code
-     * 2. Encodes the result (or error) as URL parameters
-     * 3. Navigates to devcompanion://eval-result?id=X&data=Y (or &error=Z)
+     * 2. If the result is a Promise, waits for it to resolve
+     * 3. Delivers results via window.prompt() (no URL length limit)
+     *    Format: window.prompt("__DC_EVAL__:<id>:<type>:<data>")
+     *    where type is "ok" for success or "err" for error
+     * 4. Falls back to devcompanion://eval-result URL for errors (short)
      *
-     * The navigation is intercepted by onLoadRequest, which delivers the result
-     * to the pending CompletableDeferred.
+     * window.prompt() has no practical length limit, unlike location.href URLs.
+     * The PromptDelegate intercepts these prompts and delivers results to pendingEvals.
+     *
+     * Supports both sync and async JS code. If the eval result is a Promise,
+     * it is awaited before sending the result back.
      */
     private fun buildEvalJs(id: String, js: String): String {
-        // Encode the JS code safely for embedding in a javascript: URI
-        // The wrapped code:
-        // - Runs the user's JS in a try/catch
-        // - Stringifies the result (or error message)
-        // - URL-encodes it
-        // - Navigates to our custom scheme URI
-        return """(function(){try{var r=eval(${escapeJsString(js)});var s=r===undefined?'undefined':typeof r==='object'?JSON.stringify(r):String(r);location.href='devcompanion://eval-result?id=${id}&data='+encodeURIComponent(s)}catch(e){location.href='devcompanion://eval-result?id=${id}&error='+encodeURIComponent(e.message)}})()"""
+        // Use window.prompt() for result delivery — no URL length limit.
+        // Format: __DC_EVAL__:<id>:<type>:<data>
+        // The PromptDelegate intercepts these and completes the pending CompletableDeferred.
+        return """(function(){var _id='${id}';function _ok(v){var s=v===undefined?'undefined':typeof v==='object'?JSON.stringify(v):String(v);try{window.prompt('__DC_EVAL__:'+_id+':ok:'+s)}catch(e){location.href='devcompanion://eval-result?id='+_id+'&error='+encodeURIComponent(e.message)}}function _err(e){var m=e.message||String(e);try{window.prompt('__DC_EVAL__:'+_id+':err:'+m)}catch(e2){location.href='devcompanion://eval-result?id='+_id+'&error='+encodeURIComponent(m)}}try{var r=eval(${escapeJsString(js)});if(r&&typeof r.then==='function'){r.then(function(v){_ok(v)}).catch(function(e){_err(e)})}else{_ok(r)}}catch(e){_err(e)}})()"""
     }
 
     /**
