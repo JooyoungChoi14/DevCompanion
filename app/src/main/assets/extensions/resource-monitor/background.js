@@ -352,12 +352,16 @@ browser.webNavigation.onBeforeNavigate.addListener(
 /* ── Host Port Connection ───────────────────────────────── */
 
 /**
- * Connect to the native app when the extension starts.
+ * Connect to the host app when the extension starts.
  * The host app (GeckoView) will receive this via MessageDelegate.onConnect().
+ *
+ * browser.runtime.connect() is the GeckoView-specific API for app↔extension
+ * port-based messaging. connectNative() is for desktop Firefox native messaging
+ * (requires OS-level native host JSON) and does NOT work in GeckoView.
  */
 function connectToHost() {
   try {
-    hostPort = browser.runtime.connectNative('devcompanion');
+    hostPort = browser.runtime.connect('devcompanion');
 
     hostPort.onMessage.addListener((message) => {
       handleHostCommand(message);

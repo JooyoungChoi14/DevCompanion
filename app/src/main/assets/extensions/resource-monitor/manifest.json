@@ -7,7 +7,6 @@
     "webRequest",
     "webRequestBlocking",
     "webNavigation",
-    "nativeMessaging",
     "<all_urls>"
   ],
   "background": {

@@ -195,7 +195,7 @@ class GeckoEngine(
             override fun onTextPrompt(
                 session: GeckoSession,
                 prompt: PromptDelegate.TextPrompt
-            ): GeckoResult<String>? {
+            ): GeckoResult<PromptDelegate.PromptResponse>? {
                 val message = prompt.message ?: ""
                 if (message.startsWith(EVAL_PROMPT_PREFIX)) {
                     val payload = message.substring(EVAL_PROMPT_PREFIX.length)
@@ -216,7 +216,7 @@ class GeckoEngine(
                         } else {
                             Log.w(TAG, "eval-prompt: no pending request for id=$id")
                         }
-                        return GeckoResult.fromValue("") // Dismiss the prompt
+                        return GeckoResult.fromValue(prompt.confirm("")) // Dismiss the prompt
                     }
                 }
                 return null // Let other prompts fall through to default handling
