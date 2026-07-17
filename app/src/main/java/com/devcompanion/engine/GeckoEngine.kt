@@ -437,9 +437,15 @@ class GeckoEngine(
             val resources = collector.collectResources()
             if (resources.isNotEmpty()) {
                 Log.d(TAG, "collectPageResources: ${resources.size} resources via WebExtension")
+                // Log sample resources for debugging
+                resources.take(5).forEachIndexed { idx, r ->
+                    Log.d(TAG, "  [$idx] url=${r.url.take(80)} type=${r.type} mime=${r.mimeType} isBinary=${r.isBinary} hasContent=${r.hasContent} contentLen=${r.content?.length ?: "null"}")
+                }
                 return resources
             }
             Log.d(TAG, "collectPageResources: WebExtension returned 0 resources, trying Performance API fallback")
+        } else {
+            Log.w(TAG, "collectPageResources: ResourceCollector not ready (collector=${collector != null}, ready=${collector?.ready}), trying Performance API fallback")
         }
 
         // Fallback: Performance API via evalJs

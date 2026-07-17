@@ -75,9 +75,31 @@ fun SourcesTab(
         try {
             val result = engine?.collectPageResources() ?: emptyList()
             android.util.Log.d("SourcesTab", "Collected ${result.size} resources (url=$currentUrl)")
+            // Log resource details for debugging
+            result.forEachIndexed { idx, r ->
+                com.devcompanion.logging.SessionLog.log(
+                    com.devcompanion.logging.EventType.UI_CLICK,
+                    mapOf(
+                        "target" to "resource_entry",
+                        "index" to idx.toString(),
+                        "url" to r.url.take(120),
+                        "type" to r.type,
+                        "mimeType" to (r.mimeType ?: "null"),
+                        "size" to r.size.toString(),
+                        "statusCode" to r.statusCode.toString(),
+                        "isBinary" to r.isBinary.toString(),
+                        "hasContent" to r.hasContent.toString(),
+                        "contentLen" to (r.content?.length?.toString() ?: "null")
+                    )
+                )
+            }
             resources = result
         } catch (e: Exception) {
             android.util.Log.e("SourcesTab", "Failed to collect resources", e)
+            com.devcompanion.logging.SessionLog.log(
+                com.devcompanion.logging.EventType.UI_CLICK,
+                mapOf("target" to "resource_error", "detail" to (e.message?.take(200) ?: "unknown"))
+            )
             resources = emptyList()
         } finally {
             isLoading = false
@@ -216,21 +238,61 @@ fun SourcesTab(
 
                             // Use pre-captured content from WebExtension if available
                             if (resource.content != null) {
+                                // Pre-captured content available
+                                com.devcompanion.logging.SessionLog.log(
+                                    com.devcompanion.logging.EventType.UI_CLICK,
+                                    mapOf(
+                                        "target" to "resource_view",
+                                        "url" to resource.url.take(120),
+                                        "type" to resource.type,
+                                        "source" to "pre_captured",
+                                        "contentLen" to (resource.content?.length?.toString() ?: "null")
+                                    )
+                                )
                                 resourceContent = resource.content
                                 contentLoading = false
                             } else if (resource.isBinary) {
                                 // Binary resource — don't attempt text fetch
+                                com.devcompanion.logging.SessionLog.log(
+                                    com.devcompanion.logging.EventType.UI_CLICK,
+                                    mapOf(
+                                        "target" to "resource_view",
+                                        "url" to resource.url.take(120),
+                                        "type" to resource.type,
+                                        "source" to "binary_skip",
+                                        "isBinary" to "true",
+                                        "mimeType" to (resource.mimeType ?: "null")
+                                    )
+                                )
                                 resourceContent = null
                                 contentLoading = false
                             } else {
                                 // Text resource without pre-captured content — try fetch
-                                // (hasContent may be false due to Content-Type missing or size unknown,
-                                //  but the resource type indicates text content worth fetching)
+                                com.devcompanion.logging.SessionLog.log(
+                                    com.devcompanion.logging.EventType.UI_CLICK,
+                                    mapOf(
+                                        "target" to "resource_view",
+                                        "url" to resource.url.take(120),
+                                        "type" to resource.type,
+                                        "source" to "fetch_attempt",
+                                        "hasContent" to resource.hasContent.toString(),
+                                        "mimeType" to (resource.mimeType ?: "null")
+                                    )
+                                )
                                 resourceContent = null
                                 contentLoading = true
                                 scope.launch {
                                     try {
                                         val content = engine?.fetchResourceContent(resource.url)
+                                        com.devcompanion.logging.SessionLog.log(
+                                            com.devcompanion.logging.EventType.UI_CLICK,
+                                            mapOf(
+                                                "target" to "resource_fetch_result",
+                                                "url" to resource.url.take(120),
+                                                "contentLen" to (content?.length?.toString() ?: "null"),
+                                                "isNull" to (content == null).toString()
+                                            )
+                                        )
                                         if (isTextResource(resource)) {
                                             resourceContent = content
                                         }
@@ -238,6 +300,14 @@ fun SourcesTab(
                                     } catch (e: Exception) {
                                         contentError = "Failed to load: ${e.message}"
                                         contentLoading = false
+                                        com.devcompanion.logging.SessionLog.log(
+                                            com.devcompanion.logging.EventType.UI_CLICK,
+                                            mapOf(
+                                                "target" to "resource_fetch_error",
+                                                "url" to resource.url.take(120),
+                                                "error" to (e.message?.take(200) ?: "unknown")
+                                            )
+                                        )
                                     }
                                 }
                             }
