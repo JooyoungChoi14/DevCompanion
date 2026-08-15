@@ -290,6 +290,15 @@ class GeckoEngine(
         session.goForward()
     }
 
+    override fun clearHistory() {
+        // GeckoView doesn't have a direct clearHistory() API.
+        // Workaround: load about:blank, which clears the back stack.
+        // Then the user can navigate forward from a clean state.
+        session.loadUri("about:blank")
+        _canGoBack = false
+        _canGoForward = false
+    }
+
     override fun reload() {
         session.reload()
     }

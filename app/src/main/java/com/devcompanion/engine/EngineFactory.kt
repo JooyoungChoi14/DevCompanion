@@ -30,6 +30,11 @@ object EngineFactory {
     @Volatile
     private var extensionRegistered = false
 
+    /** Get GeckoView runtime version string for logging. */
+    fun getRuntimeVersion(): String? {
+        return "150.0.20260511200624"
+    }
+
     /** Create the debugger instance (no-op for GeckoView). */
     fun createDebugger(): BrowserDebugger = NoOpDebugger()
 

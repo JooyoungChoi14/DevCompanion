@@ -9,6 +9,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
@@ -53,9 +55,10 @@ sealed class BrowserAction {
     object GoBack : BrowserAction()
     object GoForward : BrowserAction()
     object Reload : BrowserAction()
+    object ClearHistory : BrowserAction()
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BrowserTab(
     modifier: Modifier = Modifier,
@@ -80,6 +83,10 @@ fun BrowserTab(
     var urlHadFocus by remember { mutableStateOf(false) }
     var engineCrashed by remember { mutableStateOf(false) }
     var engineKey by remember { mutableIntStateOf(0) }
+    var showRedirectLoopDialog by remember { mutableStateOf(false) }
+    // Redirect loop detection: track consecutive goBack attempts that land on the same URL
+    var lastUrlAfterGoBack by remember { mutableStateOf<String?>(null) }
+    var consecutiveGoBackCount by remember { mutableIntStateOf(0) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -95,6 +102,8 @@ fun BrowserTab(
     LaunchedEffect(engineRef, canGoBack) {
         onEngineReady?.invoke {
             if (canGoBack && engineRef != null) {
+                val currentUrl = engineRef?.getUrl()
+                lastUrlAfterGoBack = currentUrl
                 engineRef?.goBack()
                 SessionLog.uiClick("browser_back")
                 true
@@ -254,12 +263,21 @@ fun BrowserTab(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = { pendingAction = BrowserAction.GoBack },
-                        enabled = canGoBack,
-                        modifier = Modifier.size(28.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .combinedClickable(
+                                onClick = { pendingAction = BrowserAction.GoBack },
+                                onLongClick = { showRedirectLoopDialog = true }
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", modifier = Modifier.size(18.dp))
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = "Back (long press to clear history)",
+                            modifier = Modifier.size(18.dp),
+                            tint = if (canGoBack) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                        )
                     }
                     IconButton(
                         onClick = { pendingAction = BrowserAction.GoForward },
@@ -413,6 +431,18 @@ fun BrowserTab(
                         canGoBack = canBack
                         canGoForward = canFwd
                         pageTitle = title ?: ""
+                        // Redirect loop detection: if goBack lands on same URL 3+ times, show dialog
+                        if (lastUrlAfterGoBack != null && url == lastUrlAfterGoBack) {
+                            consecutiveGoBackCount++
+                            if (consecutiveGoBackCount >= 3) {
+                                showRedirectLoopDialog = true
+                                consecutiveGoBackCount = 0
+                                lastUrlAfterGoBack = null
+                            }
+                        } else {
+                            consecutiveGoBackCount = 0
+                            lastUrlAfterGoBack = null
+                        }
                     }
                     override fun onRenderProcessGone() {
                         engineCrashed = true
@@ -430,7 +460,12 @@ fun BrowserTab(
                         pendingAction = null
                     }
                     BrowserAction.GoBack -> {
-                        if (engineRef?.canGoBack() == true) engineRef?.goBack()
+                        if (engineRef?.canGoBack() == true) {
+                            val currentUrl = engineRef?.getUrl()
+                            lastUrlAfterGoBack = currentUrl
+                            engineRef?.goBack()
+                            SessionLog.uiClick("browser_back")
+                        }
                         pendingAction = null
                     }
                     BrowserAction.GoForward -> {
@@ -441,11 +476,41 @@ fun BrowserTab(
                         engineRef?.reload()
                         pendingAction = null
                     }
+                    BrowserAction.ClearHistory -> {
+                        engineRef?.clearHistory()
+                        canGoBack = false
+                        canGoForward = false
+                        urlTextValue = TextFieldValue("about:blank")
+                        showRedirectLoopDialog = false
+                        consecutiveGoBackCount = 0
+                        lastUrlAfterGoBack = null
+                        SessionLog.uiClick("browser_clear_history")
+                        pendingAction = null
+                    }
                     null -> { }
                 }
             }
         )
         }
+
+            // ── Redirect loop dialog ──────────────────────────────
+            if (showRedirectLoopDialog) {
+                AlertDialog(
+                    onDismissRequest = { showRedirectLoopDialog = false },
+                    title = { Text("Stuck in redirect loop") },
+                    text = { Text("The back button keeps returning to the same page. This can happen when a site uses server-side redirects (e.g. twitter.com \u2192 x.com).\n\nClear history and navigate to a blank page?") },
+                    confirmButton = {
+                        TextButton(onClick = { pendingAction = BrowserAction.ClearHistory }) {
+                            Text("Clear history")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRedirectLoopDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
 
             // ── Crash overlay ───────────────────────────────────────
             if (engineCrashed) {

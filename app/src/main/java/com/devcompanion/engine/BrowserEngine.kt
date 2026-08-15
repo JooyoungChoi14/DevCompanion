@@ -94,6 +94,11 @@ interface BrowserEngine {
     /** Capture a screenshot of the current page. Returns null on failure. */
     suspend fun screenshot(): Bitmap?
 
+    /** Clear browser navigation history and navigate to about:blank.
+     * Used to escape redirect loops where goBack keeps returning to the same URL.
+     */
+    fun clearHistory()
+
     /** Destroy the engine and release resources. Callers must remove the view from composition first. */
     fun destroy()
 

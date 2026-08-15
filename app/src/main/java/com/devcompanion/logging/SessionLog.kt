@@ -84,25 +84,25 @@ object SessionLog {
             "appVersion" to "",
             "appVersionCode" to "",
             "gitCommit" to "",
-            "webViewPackage" to ""
+            "engineType" to "",
+            "engineDetail" to ""
         )
         appContext?.let { ctx ->
             versionInfo["appVersion"] = BuildConfig.VERSION_NAME
             versionInfo["appVersionCode"] = BuildConfig.VERSION_CODE.toString()
             versionInfo["gitCommit"] = BuildConfig.GIT_COMMIT
-            versionInfo["webViewPackage"] = getCurrentWebViewInfo(ctx)
+            versionInfo["engineType"] = "GeckoView"
+            versionInfo["engineDetail"] = getGeckoViewInfo(ctx)
         }
         log(EventType.SESSION_START, versionInfo)
     }
 
-    /** Get current WebView package info (e.g. "com.google.android.webview@123.0.6312.42"). */
-    private fun getCurrentWebViewInfo(context: Context): String {
+    /** Get GeckoView runtime version info. */
+    private fun getGeckoViewInfo(context: Context): String {
         return try {
-            val pm = context.packageManager
-            val pkg = pm.getPackageInfo("com.google.android.webview", 0)
-            "${pkg.packageName}@${pkg.versionName}"
+            val rt = com.devcompanion.engine.EngineFactory.getRuntimeVersion()
+            rt ?: "unknown"
         } catch (_: Exception) {
-            // WebView not found (emulator, non-GMS device, etc.)
             "unknown"
         }
     }
